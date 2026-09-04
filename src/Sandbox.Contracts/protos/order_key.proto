@@ -1,0 +1,7 @@
+syntax = "proto3";
+package sandbox.orders.v1;
+option csharp_namespace = "Sandbox.Contracts";
+
+message OrderKey {
+  string order_id = 1;
+}

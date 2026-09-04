@@ -1,0 +1,14 @@
+syntax = "proto3";
+package sandbox.common.v1;
+option csharp_namespace = "Sandbox.Contracts.Common";
+
+message Money {
+  string currency = 1;
+  double amount = 2;
+}
+
+enum OrderStatus {
+  ORDER_STATUS_UNSPECIFIED = 0;
+  ORDER_STATUS_CREATED = 1;
+  ORDER_STATUS_PAID = 2;
+}
