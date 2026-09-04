@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Sandbox.Contracts</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Google.Protobuf" Version="3.29.3" />
+    <PackageReference Include="Grpc.Tools" Version="2.69.0">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProtoSchema Include="protos/**/*.proto" />
+    <Protobuf Include="@(ProtoSchema)" ProtoRoot="protos" />
+  </ItemGroup>
+
+  <Target Name="SyncProtoSchemas" AfterTargets="Build">
+    <Copy SourceFiles="@(ProtoSchema)" DestinationFiles="@(ProtoSchema->'$(MSBuildProjectDirectory)/../../docker/clickhouse/format_schemas/%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+  </Target>
+
+</Project>

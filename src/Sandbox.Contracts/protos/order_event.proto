@@ -1,0 +1,15 @@
+syntax = "proto3";
+package sandbox.orders.v1;
+
+import "common/money.proto";
+
+option csharp_namespace = "Sandbox.Contracts";
+
+message OrderEvent {
+  string order_id = 1;
+  string category = 2;
+  sandbox.common.v1.Money price = 3;
+  uint32 quantity = 4;
+  int64 event_time_unix_ms = 5;
+  sandbox.common.v1.OrderStatus status = 6;
+}
