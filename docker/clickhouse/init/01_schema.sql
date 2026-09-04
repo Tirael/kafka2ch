@@ -16,7 +16,7 @@ SETTINGS
     kafka_topic_list = 'orders',
     kafka_group_name = 'clickhouse-orders',
     kafka_format = 'ProtobufSingle',
-    kafka_schema = 'order_event.proto:sandbox.orders.v1.OrderEvent',
+    kafka_schema = 'order_event:OrderEvent',
     kafka_schema_registry_skip_bytes = 6,
     kafka_num_consumers = 1;
 
