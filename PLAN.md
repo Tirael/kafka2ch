@@ -12,8 +12,8 @@
 ## Архитектура
 
 ```
-┌─────────────────────────── sandbox app (.NET 8) ────────────────────────────┐
-│  ProducerWorker (BackgroundService)          AggregatesReaderWorker         │
+┌────────────────── sandbox app (.NET 8, vertical slices) ────────────────────┐
+│  Features/PublishOrders                      Features/ReadAggregates        │
 │  Confluent.Kafka + ProtobufSerializer        ClickHouse.Client (HTTP :8123) │
 └───────────────┬──────────────────────────────────────────▲──────────────────┘
                 │ protobuf (Confluent wire format)          │ SELECT агрегатов
@@ -185,12 +185,22 @@ GROUP BY minute, category
 ORDER BY minute DESC, category;
 ```
 
-## Sandbox-приложение (.NET 8)
+## Sandbox-приложение (.NET 8, vertical slice architecture)
 
-Один worker-хост (`Microsoft.NET.Sdk.Worker`), два hosted service:
+Один worker-хост (`Microsoft.NET.Sdk.Worker`), код организован по вертикальным срезам: каждая фича — самодостаточный каталог со своим worker-ом, моделями, опциями конфигурации и регистрацией DI. Технических слоёв (Services/Repositories/Infrastructure-проектов) нет.
 
-- **ProducerWorker**: каждые ~500 мс генерирует `OrderEvent` (случайная категория/сумма) и публикует в топик `orders` через `IProducer<string, OrderEvent>` с `ProtobufSerializer<OrderEvent>` (`AutoRegisterSchemas = true` — схема сама попадает в Schema Registry при первом сообщении).
-- **AggregatesReaderWorker**: каждые ~5 с выполняет запрос к `orders_agg_1m` через `ClickHouse.Client` (HTTP :8123) и пишет свод в лог.
+Срезы:
+
+- **`Features/PublishOrders`**: каждые ~500 мс генерирует `OrderEvent` (случайная категория/сумма) и публикует в топик `orders` через `IProducer<string, OrderEvent>` с `ProtobufSerializer<OrderEvent>` (`AutoRegisterSchemas = true` — схема и её references сами попадают в Schema Registry при первом сообщении). Внутри среза: `PublishOrdersWorker` (BackgroundService), `OrderEventFactory` (генерация демо-данных), `PublishOrdersOptions`, `PublishOrdersSlice.AddPublishOrders(...)` — extension-метод регистрации.
+- **`Features/ReadAggregates`**: каждые ~5 с выполняет запрос к `orders_agg_1m` через `ClickHouse.Client` (HTTP :8123) и пишет свод в лог. Внутри среза: `ReadAggregatesWorker`, `OrderAggregateRow` (модель строки результата), `ReadAggregatesOptions`, `ReadAggregatesSlice.AddReadAggregates(...)`.
+
+Правила организации:
+
+- Срезы не ссылаются друг на друга; общаются только через внешние системы (Kafka, ClickHouse) — что соответствует реальному потоку данных демо.
+- **`Common/`** — минимальное разделяемое ядро: фабрики подключений (`KafkaClientFactory` c конфигом брокера/SR, `ClickHouseConnectionFactory`), retry-хелпер для старта. Только то, что нужно более чем одному срезу; бизнес-логики в Common нет.
+- `Program.cs` — composition root: `builder.Services.AddCommon(...).AddPublishOrders(...).AddReadAggregates(...)`; конфигурация каждого среза — отдельная секция `appsettings.json`/env (`PublishOrders__IntervalMs`, `ReadAggregates__WindowMinutes`, ...).
+- Contracts (protobuf codegen) — отдельный проект, разделяемый срезами как контракт внешней системы.
+- MediatR/CQRS-обвязка не используется: в срезе один сценарий, посредник не добавил бы ничего, кроме церемонии.
 
 Структура решения:
 
@@ -201,9 +211,23 @@ src/
       order_event.proto     # главный файл, import "common/money.proto"
       common/money.proto    # кастомные общие типы (Money, OrderStatus)
   Sandbox.App/
-    Workers/ProducerWorker.cs
-    Workers/AggregatesReaderWorker.cs
-    Program.cs              # Host, DI, конфигурация из env
+    Features/
+      PublishOrders/
+        PublishOrdersWorker.cs
+        OrderEventFactory.cs
+        PublishOrdersOptions.cs
+        PublishOrdersSlice.cs        # DI-регистрация среза
+      ReadAggregates/
+        ReadAggregatesWorker.cs
+        OrderAggregateRow.cs
+        ReadAggregatesOptions.cs
+        ReadAggregatesSlice.cs
+    Common/
+      KafkaClientFactory.cs
+      ClickHouseConnectionFactory.cs
+      StartupRetry.cs
+      CommonSlice.cs
+    Program.cs              # composition root
     appsettings.json
 docker/
   clickhouse/init/01_schema.sql
@@ -239,9 +263,9 @@ NuGet-зависимости (все MIT/Apache-2.0, активно поддер
 
 1. **Каркас и контракты**: solution, `Sandbox.Contracts` с деревом `protos/` (главный файл + импортируемый `common/money.proto`) и codegen через ProtoRoot; синхронизация дерева `protos/` в `docker/clickhouse/format_schemas` (copy-скрипт или msbuild target), чтобы импорты разрешались одинаково.
 2. **Инфраструктура**: docker-compose с kafka (KRaft), schema-registry, clickhouse + init-SQL и format schema; healthcheck-и. Smoke: `docker compose up`, вручную произвести сообщение `kcat`-ом невозможно (protobuf) — проверяем просто готовность сервисов.
-3. **Producer**: `ProducerWorker` + Dockerfile; проверка — в SR зарегистрированы оба subject (главная схема и импортируемая), у `orders-value` заполнен блок `references` (`GET :8081/subjects`, `GET :8081/subjects/orders-value/versions/latest`), сообщения в топике (kafka-ui).
+3. **Срез PublishOrders**: каркас `Sandbox.App` (composition root, `Common/` с фабриками подключений), срез `PublishOrders` + Dockerfile; проверка — в SR зарегистрированы оба subject (главная схема и импортируемая), у `orders-value` заполнен блок `references` (`GET :8081/subjects`, `GET :8081/subjects/orders-value/versions/latest`), сообщения в топике (kafka-ui).
 4. **Пайплайн ClickHouse**: убедиться, что `orders` наполняется и `orders_agg_1m` растёт; при ошибках парсинга смотреть `system.kafka_consumers` / лог clickhouse. Здесь же валидируется решение `skip_bytes = 6`; при провале — переключение на план Б.
-5. **Reader**: `AggregatesReaderWorker`, вывод агрегатов в лог.
+5. **Срез ReadAggregates**: worker чтения агрегатов, вывод свода в лог.
 6. **Полировка**: README с инструкцией запуска и проверочными запросами, `.env` с версиями образов, e2e-прогон с нуля (`docker compose down -v && up`).
 
 ## Риски
