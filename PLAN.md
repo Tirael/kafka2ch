@@ -52,23 +52,54 @@ Producer с `Confluent.SchemaRegistry.Serdes.Protobuf` пишет сообщен
 
 ## Модель данных
 
-Демо-домен — заказы. `contracts/order_event.proto`:
+Демо-домен — заказы. Контракт разбит на два файла: основной `order_event.proto` импортирует кастомные общие типы из `common/money.proto`.
+
+`protos/common/money.proto`:
+
+```protobuf
+syntax = "proto3";
+package sandbox.common.v1;
+option csharp_namespace = "Sandbox.Contracts.Common";
+
+message Money {
+  string currency = 1;          // ISO 4217: RUB, USD ...
+  double amount = 2;
+}
+
+enum OrderStatus {
+  ORDER_STATUS_UNSPECIFIED = 0;
+  ORDER_STATUS_CREATED = 1;
+  ORDER_STATUS_PAID = 2;
+}
+```
+
+`protos/order_event.proto`:
 
 ```protobuf
 syntax = "proto3";
 package sandbox.orders.v1;
+
+import "common/money.proto";
+
 option csharp_namespace = "Sandbox.Contracts";
 
 message OrderEvent {
-  string order_id = 1;          // UUID
-  string category = 2;          // electronics / books / food ...
-  double amount = 3;
+  string order_id = 1;                    // UUID
+  string category = 2;                    // electronics / books / food ...
+  sandbox.common.v1.Money price = 3;
   uint32 quantity = 4;
   int64 event_time_unix_ms = 5;
+  sandbox.common.v1.OrderStatus status = 6;
 }
 ```
 
-Один и тот же файл используется дважды: codegen в C# (Grpc.Tools) и как format schema в ClickHouse (монтируется в контейнер).
+Одно и то же дерево `protos/` используется дважды: codegen в C# и как format schemas в ClickHouse. Импорт должен корректно разрешаться в трёх местах:
+
+1. **C# codegen (Grpc.Tools)**: в `Sandbox.Contracts.csproj` задаётся `ProtoRoot="protos"`, компилируются оба файла — относительный путь в `import "common/money.proto"` разрешается от ProtoRoot.
+2. **Schema Registry**: `ProtobufSerializer` при `AutoRegisterSchemas = true` рекурсивно регистрирует импортируемые схемы как schema references — `common/money.proto` становится отдельным subject, на который ссылается `orders-value`. Ставим `SkipKnownTypes = true`, чтобы не регистрировать well-known types Google. Проверка: `GET :8081/subjects` показывает оба subject, `GET :8081/subjects/orders-value/versions/latest` содержит блок `references`.
+3. **ClickHouse**: импорты в format schema разрешаются относительно каталога `/var/lib/clickhouse/format_schemas`, поэтому монтируем всё дерево `protos/` с сохранением относительных путей (`format_schemas/order_event.proto`, `format_schemas/common/money.proto`). В `kafka_schema` указывается только главный файл — импортированный подтянется сам.
+
+На конверт Confluent (`skip_bytes = 6`) импорты не влияют: message-indexes считаются по top-level message-ам главного файла, а `OrderEvent` в нём остаётся первым и единственным (типы из импортов в индексацию не входят).
 
 ## DDL ClickHouse (docker-entrypoint-initdb.d)
 
@@ -77,9 +108,13 @@ CREATE TABLE orders_queue
 (
     order_id            String,
     category            LowCardinality(String),
-    amount              Float64,
+    -- вложенный message Money из common/money.proto маппится на колонки с точкой
+    `price.currency`    String,
+    `price.amount`      Float64,
     quantity            UInt32,
-    event_time_unix_ms  Int64
+    event_time_unix_ms  Int64,
+    -- proto enum маппится по именам значений
+    status              Enum8('ORDER_STATUS_UNSPECIFIED' = 0, 'ORDER_STATUS_CREATED' = 1, 'ORDER_STATUS_PAID' = 2)
 )
 ENGINE = Kafka
 SETTINGS
@@ -95,8 +130,10 @@ CREATE TABLE orders
 (
     order_id   String,
     category   LowCardinality(String),
+    currency   LowCardinality(String),
     amount     Float64,
     quantity   UInt32,
+    status     LowCardinality(String),
     event_time DateTime64(3)
 )
 ENGINE = MergeTree
@@ -106,8 +143,10 @@ CREATE MATERIALIZED VIEW orders_mv TO orders AS
 SELECT
     order_id,
     category,
-    amount,
+    `price.currency`            AS currency,
+    `price.amount`              AS amount,
     quantity,
+    toString(status)            AS status,
     fromUnixTimestamp64Milli(event_time_unix_ms) AS event_time
 FROM orders_queue;
 
@@ -157,7 +196,10 @@ ORDER BY minute DESC, category;
 
 ```
 src/
-  Sandbox.Contracts/        # .proto + Grpc.Tools codegen
+  Sandbox.Contracts/        # Grpc.Tools codegen, ProtoRoot=protos
+    protos/
+      order_event.proto     # главный файл, import "common/money.proto"
+      common/money.proto    # кастомные общие типы (Money, OrderStatus)
   Sandbox.App/
     Workers/ProducerWorker.cs
     Workers/AggregatesReaderWorker.cs
@@ -165,7 +207,9 @@ src/
     appsettings.json
 docker/
   clickhouse/init/01_schema.sql
-  clickhouse/format_schemas/order_event.proto   # symlink/copy contracts
+  clickhouse/format_schemas/           # копия всего дерева protos/
+    order_event.proto                  # (относительные пути сохраняются,
+    common/money.proto                 #  иначе import не разрешится)
 docker-compose.yml
 Dockerfile                  # multi-stage build Sandbox.App
 README.md
@@ -193,16 +237,18 @@ NuGet-зависимости (все MIT/Apache-2.0, активно поддер
 
 ## Этапы реализации
 
-1. **Каркас и контракты**: solution, `Sandbox.Contracts` с `.proto` и codegen, копирование `.proto` в `docker/clickhouse/format_schemas` на build.
+1. **Каркас и контракты**: solution, `Sandbox.Contracts` с деревом `protos/` (главный файл + импортируемый `common/money.proto`) и codegen через ProtoRoot; синхронизация дерева `protos/` в `docker/clickhouse/format_schemas` (copy-скрипт или msbuild target), чтобы импорты разрешались одинаково.
 2. **Инфраструктура**: docker-compose с kafka (KRaft), schema-registry, clickhouse + init-SQL и format schema; healthcheck-и. Smoke: `docker compose up`, вручную произвести сообщение `kcat`-ом невозможно (protobuf) — проверяем просто готовность сервисов.
-3. **Producer**: `ProducerWorker` + Dockerfile; проверка — схема появилась в SR (`GET :8081/subjects`), сообщения в топике (kafka-ui).
+3. **Producer**: `ProducerWorker` + Dockerfile; проверка — в SR зарегистрированы оба subject (главная схема и импортируемая), у `orders-value` заполнен блок `references` (`GET :8081/subjects`, `GET :8081/subjects/orders-value/versions/latest`), сообщения в топике (kafka-ui).
 4. **Пайплайн ClickHouse**: убедиться, что `orders` наполняется и `orders_agg_1m` растёт; при ошибках парсинга смотреть `system.kafka_consumers` / лог clickhouse. Здесь же валидируется решение `skip_bytes = 6`; при провале — переключение на план Б.
 5. **Reader**: `AggregatesReaderWorker`, вывод агрегатов в лог.
 6. **Полировка**: README с инструкцией запуска и проверочными запросами, `.env` с версиями образов, e2e-прогон с нуля (`docker compose down -v && up`).
 
 ## Риски
 
-- **`skip_bytes` и message-indexes**: длина конверта 6 байт гарантирована только для первого message в схеме — держим один message на файл; при эволюции схемы с несколькими типами конверт «поплывёт». Митигируется планом Б.
+- **`skip_bytes` и message-indexes**: длина конверта 6 байт гарантирована только для первого top-level message в главном файле — держим в нём один message (типы из импортов на индексацию не влияют); при эволюции схемы с несколькими типами конверт «поплывёт». Митигируется планом Б.
+- **Расхождение путей импорта**: `import "common/money.proto"` должен разрешаться одинаково от ProtoRoot в codegen и от корня `format_schemas` в ClickHouse — дерево `protos/` копируется в `format_schemas` как есть, без переименований; иначе ClickHouse упадёт с ошибкой резолва схемы при создании Kafka-таблицы.
+- **Маппинг вложенных типов в ClickHouse**: вложенный message читается в колонки с точкой в имени (`price.currency`), proto enum — в Enum8 по именам значений; проверяется на этапе 4 вместе со `skip_bytes`.
 - **Версия ClickHouse**: настройка появилась в конце 2025 — тег образа 26.x обязателен, старые кэши образов не подойдут.
 - **Отставание видимости агрегатов**: Kafka engine флашит блоками (по `kafka_max_block_size`/таймауту ~стрим-флаш); в демо задержка в секунды — норма, отражаем в README.
 - **Порядок старта контейнеров**: закрывается healthcheck-ами + ретраями в приложении.
@@ -212,4 +258,4 @@ NuGet-зависимости (все MIT/Apache-2.0, активно поддер
 - `docker compose up -d --build` с чистого состояния поднимает весь стенд без ручных действий.
 - В логах `sandbox-app` видно и публикацию событий, и периодический вывод поминутных агрегатов по категориям.
 - `SELECT count() FROM orders` растёт; суммы в `orders_agg_1m` (через GROUP BY) сходятся с `orders`.
-- Схема `orders-value` зарегистрирована в Schema Registry.
+- В Schema Registry зарегистрированы схема `orders-value` и импортируемая `common/money.proto`, связь между ними видна в `references`.
