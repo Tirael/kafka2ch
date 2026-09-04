@@ -5,7 +5,7 @@
 Демонстрационный стенд в docker compose:
 
 1. Приложение на C# (.NET 8) публикует Protobuf-сообщения в Kafka (KRaft) через Confluent Schema Registry.
-2. ClickHouse 26.x средствами Kafka table engine читает топик и складывает события в «сырую» таблицу.
+2. ClickHouse 26.6+ средствами Kafka table engine читает топик и складывает события в «сырую» таблицу.
 3. Инкрементальная materialized view агрегирует данные в отдельную таблицу.
 4. Background worker в том же sandbox-приложении периодически читает агрегаты из ClickHouse и логирует их.
 
@@ -20,9 +20,9 @@
                 ▼                                           │
         Kafka (KRaft) ── topic `orders` ◄── Schema Registry (регистрация схемы)
                 │
-                ▼  ClickHouse 26.x
+                ▼  ClickHouse 26.6+
   Kafka engine table (ProtobufSingle, kafka_schema_registry_skip_bytes = 6)
-                │  MV (триггер на insert)
+                │  MV (триггер при poll/insert батча из Kafka engine)
                 ▼
         orders (MergeTree, сырые события)
                 │  MV (инкрементальная агрегация)
@@ -35,8 +35,9 @@
 Producer с `Confluent.SchemaRegistry.Serdes.Protobuf` пишет сообщения в Confluent wire format:
 `magic byte (1) + schema id (4) + message-indexes (varint, для первого message в .proto — 1 байт 0x00) + protobuf payload`.
 
-- Нативного формата `ProtobufConfluent` в ClickHouse 26.x **нет** (PR [#94750](https://github.com/ClickHouse/ClickHouse/pull/94750) ещё открыт).
-- Используем настройку Kafka engine `kafka_schema_registry_skip_bytes = 6` (доступна с версий после ноября 2025, PR [#89621](https://github.com/ClickHouse/ClickHouse/pull/89621)): ClickHouse пропускает 6-байтовый конверт и парсит payload как `ProtobufSingle` по локальной `.proto`-схеме из `/var/lib/clickhouse/format_schemas`.
+- Нативного формата `ProtobufConfluent` в ClickHouse **нет** (PR [#94750](https://github.com/ClickHouse/ClickHouse/pull/94750) закрыт без merge).
+- Используем настройку Kafka engine `kafka_schema_registry_skip_bytes = 6` (доступна с **25.11+**, PR [#89621](https://github.com/ClickHouse/ClickHouse/pull/89621)): ClickHouse пропускает 6-байтовый конверт и парсит payload как `ProtobufSingle` по локальной `.proto`-схеме из `/var/lib/clickhouse/format_schemas`.
+- **Важно:** официальные примеры ClickHouse для Confluent Schema Registry (JSON/Avro) используют `skip_bytes = 5` (magic + schema id). Для **Protobuf** нужно **6** — добавляется 1 байт message-index (`0x00` для первого top-level message). Не путать при отладке.
 - **Ограничение**: заголовок фиксированной длины 6 байт валиден только когда сериализуется *первый* (лучше — единственный) `message` в `.proto`-файле. Держим в файле ровно один message-тип. Категория: derived.
 - План Б (если skip_bytes окажется недоступен в выбранном образе): producer регистрирует схему в Schema Registry «для порядка», но сериализует чистый protobuf без конверта (`Google.Protobuf` напрямую); ClickHouse читает `ProtobufSingle` без skip_bytes.
 
@@ -63,7 +64,7 @@ option csharp_namespace = "Sandbox.Contracts.Common";
 
 message Money {
   string currency = 1;          // ISO 4217: RUB, USD ...
-  double amount = 2;
+  double amount = 2;            // для демо OK; в production — Decimal или Int64 (копейки)
 }
 
 enum OrderStatus {
@@ -107,8 +108,8 @@ message OrderEvent {
 
 Одно и то же дерево `protos/` используется дважды: codegen в C# и как format schemas в ClickHouse. Импорт должен корректно разрешаться в трёх местах:
 
-1. **C# codegen (Grpc.Tools)**: в `Sandbox.Contracts.csproj` задаётся `ProtoRoot="protos"`, компилируются оба файла — относительный путь в `import "common/money.proto"` разрешается от ProtoRoot.
-2. **Schema Registry**: `ProtobufSerializer` при `AutoRegisterSchemas = true` рекурсивно регистрирует импортируемые схемы как schema references — `common/money.proto` становится отдельным subject, на который ссылается `orders-value`; схема ключа регистрируется как subject `orders-key`. Ставим `SkipKnownTypes = true`, чтобы не регистрировать well-known types Google. Проверка: `GET :8081/subjects` показывает три subject (`orders-key`, `orders-value`, схема-reference), `GET :8081/subjects/orders-value/versions/latest` содержит блок `references`.
+1. **C# codegen (Grpc.Tools)**: в `Sandbox.Contracts.csproj` задаётся `ProtoRoot="protos"`, компилируются оба файла — относительный путь в `import "common/money.proto"` разрешается от ProtoRoot. Синхронизация в ClickHouse — MSBuild target `SyncProtoSchemas` (AfterTargets="Build"), копирует `@(Protobuf)` в `docker/clickhouse/format_schemas/` с сохранением структуры каталогов (`SkipUnchangedFiles="true"`), чтобы исключить drift между codegen и format schemas.
+2. **Schema Registry**: `ProtobufSerializer` при `AutoRegisterSchemas = true` рекурсивно регистрирует импортируемые схемы как schema references — `common/money.proto` становится отдельным subject, на который ссылается `orders-value`; схема ключа регистрируется как subject `orders-key`. Ставим `SkipKnownTypes = true`, чтобы не регистрировать well-known types Google. Проверка: `GET :8081/subjects` показывает три subject (`orders-key`, `orders-value`, схема-reference), `GET :8081/subjects/orders-value/versions/latest` содержит блок `references`. **Имя reference-subject** Confluent назначает по умолчанию (обычно имя файла, напр. `common/money.proto` или нормализованный вариант) — на этапе 3 зафиксировать фактическое имя и записать в README.
 3. **ClickHouse**: импорты в format schema разрешаются относительно каталога `/var/lib/clickhouse/format_schemas`, поэтому монтируем всё дерево `protos/` с сохранением относительных путей (`format_schemas/order_event.proto`, `format_schemas/common/money.proto`). В `kafka_schema` указывается только главный файл — импортированный подтянется сам.
 
 На конверт Confluent (`skip_bytes = 6`) импорты не влияют: message-indexes считаются по top-level message-ам главного файла, а `OrderEvent` в нём остаётся первым и единственным (типы из импортов в индексацию не входят).
@@ -127,7 +128,7 @@ CREATE TABLE orders_queue
     `price.amount`      Float64,
     quantity            UInt32,
     event_time_unix_ms  Int64,
-    -- proto enum маппится по именам значений
+    -- proto enum маппится по именам значений; fallback при ошибке парсинга — Int32 + toString() в MV
     status              Enum8('ORDER_STATUS_UNSPECIFIED' = 0, 'ORDER_STATUS_CREATED' = 1, 'ORDER_STATUS_PAID' = 2)
 )
 ENGINE = Kafka
@@ -220,7 +221,7 @@ ORDER BY minute DESC, category;
 
 ```
 src/
-  Sandbox.Contracts/        # Grpc.Tools codegen, ProtoRoot=protos
+  Sandbox.Contracts/        # Grpc.Tools codegen, ProtoRoot=protos, SyncProtoSchemas target
     protos/
       order_event.proto     # value: главный файл, import "common/money.proto"
       order_key.proto       # key: protobuf-ключ сообщения
@@ -266,35 +267,91 @@ NuGet-зависимости (все MIT/Apache-2.0, активно поддер
 
 | Сервис | Образ | Назначение |
 |---|---|---|
-| `kafka` | `apache/kafka:3.9.x` (или `confluentinc/cp-kafka:7.8.x`), single-node KRaft (combined broker+controller) | брокер; listener'ы: `kafka:9092` внутри сети, `localhost:29092` наружу для отладки |
-| `schema-registry` | `confluentinc/cp-schema-registry:7.8.x` | :8081; `depends_on: kafka (healthy)` |
-| `clickhouse` | `clickhouse/clickhouse-server:26.x` (запинить актуальный патч) | монтируются `docker/clickhouse/init` → `/docker-entrypoint-initdb.d`, `format_schemas` → `/var/lib/clickhouse/format_schemas`; healthcheck `SELECT 1` |
-| `sandbox-app` | build из `Dockerfile` | `depends_on` на healthy kafka/schema-registry/clickhouse; конфигурация через env |
+| `kafka` | **`confluentinc/cp-kafka:7.8.x`** (основной; совместим с SR из того же стека) | single-node KRaft; listener'ы: `kafka:9092` внутри сети, `localhost:29092` наружу |
+| `schema-registry` | `confluentinc/cp-schema-registry:7.8.x` | :8081; `depends_on: kafka (condition: service_healthy)` |
+| `clickhouse` | `clickhouse/clickhouse-server:26.x` (минимум **26.6+**, pin на конкретный патч в `.env`) | init → `/docker-entrypoint-initdb.d`, format_schemas → `/var/lib/clickhouse/format_schemas` |
+| `sandbox-app` | build из `Dockerfile` | `depends_on` на healthy kafka / schema-registry / clickhouse; конфигурация через env |
+| `kafka-init` | `confluentinc/cp-kafka:7.8.x` (one-shot) | создаёт топик `orders --partitions 1 --replication-factor 1`; `depends_on: kafka (healthy)` |
 | `kafka-ui` (опционально) | `provectuslabs/kafka-ui` | визуальная проверка топика и схемы в SR |
 
-Плюс: сервис-«одноразовый» `kafka-init` (или auto.create.topics) для создания топика `orders` с 1 партицией.
+### Kafka listeners (критично для Docker)
+
+Самая частая причина падения стенда — некорректные **advertised listeners**: ClickHouse и .NET producer внутри compose-сети должны резолвить `kafka:9092`, хост — `localhost:29092`. Без dual-listener конфигурации клиенты получают `localhost:9092` из metadata и падают с connection refused.
+
+```yaml
+# confluentinc/cp-kafka:7.8.x
+KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,PLAINTEXT_HOST://0.0.0.0:29092
+KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+```
+
+Producer и ClickHouse (`kafka_broker_list = 'kafka:9092'`) используют internal listener `PLAINTEXT`. Отладка с хоста — `--bootstrap-server localhost:29092`.
+
+### Healthcheck-и
+
+| Сервис | Проверка |
+|---|---|
+| `kafka` | `kafka-broker-api-versions --bootstrap-server localhost:9092` |
+| `schema-registry` | `curl -f http://localhost:8081/subjects` |
+| `clickhouse` | `clickhouse-client --query "SELECT 1"` |
+
+`sandbox-app` стартует только после `condition: service_healthy` у kafka, schema-registry и clickhouse.
+
+### kafka-init (one-shot)
+
+```yaml
+kafka-init:
+  image: confluentinc/cp-kafka:7.8.x
+  depends_on:
+    kafka:
+      condition: service_healthy
+  entrypoint: ["/bin/sh", "-c"]
+  command:
+    - |
+      kafka-topics --bootstrap-server kafka:9092 \
+        --create --if-not-exists \
+        --topic orders --partitions 1 --replication-factor 1
+  restart: "no"
+```
+
+### ClickHouse init
+
+Скрипты в `/docker-entrypoint-initdb.d` выполняются **только при пустом volume**. Для пересоздания схемы: `docker compose down -v && docker compose up`.
 
 ## Этапы реализации
 
-1. **Каркас и контракты**: solution, `Sandbox.Contracts` с деревом `protos/` (главный файл + импортируемый `common/money.proto`) и codegen через ProtoRoot; синхронизация дерева `protos/` в `docker/clickhouse/format_schemas` (copy-скрипт или msbuild target), чтобы импорты разрешались одинаково.
-2. **Инфраструктура**: docker-compose с kafka (KRaft), schema-registry, clickhouse + init-SQL и format schema; healthcheck-и. Smoke: `docker compose up`, вручную произвести сообщение `kcat`-ом невозможно (protobuf) — проверяем просто готовность сервисов.
-3. **Срез PublishOrders**: каркас `Sandbox.App` (composition root, `Common/` с фабриками подключений), срез `PublishOrders` + Dockerfile; проверка — в SR зарегистрированы subjects `orders-key`, `orders-value` и импортируемая схема, у `orders-value` заполнен блок `references` (`GET :8081/subjects`, `GET :8081/subjects/orders-value/versions/latest`), сообщения в топике (kafka-ui).
-4. **Пайплайн ClickHouse**: убедиться, что `orders` наполняется и `orders_agg_1m` растёт; при ошибках парсинга смотреть `system.kafka_consumers` / лог clickhouse. Здесь же валидируется решение `skip_bytes = 6`; при провале — переключение на план Б.
+1. **Каркас и контракты**: solution, `Sandbox.Contracts` с деревом `protos/` (главный файл + импортируемый `common/money.proto`) и codegen через ProtoRoot; MSBuild target `SyncProtoSchemas` копирует `protos/` → `docker/clickhouse/format_schemas/` при сборке.
+2. **Инфраструктура**: docker-compose (`cp-kafka:7.8.x` + SR + clickhouse >= 26.6) с dual-listener Kafka, healthcheck-ами и `kafka-init`; init-SQL и format schemas. Smoke: `docker compose up`, все healthcheck-и green; вручную произвести сообщение `kcat`-ом невозможно (protobuf) — проверяем готовность сервисов.
+3. **Срез PublishOrders**: каркас `Sandbox.App` (composition root, `Common/` с фабриками подключений), срез `PublishOrders` + Dockerfile; проверка — в SR зарегистрированы subjects `orders-key`, `orders-value` и reference-схема (зафиксировать фактическое имя subject), у `orders-value` заполнен блок `references` (`GET :8081/subjects`, `GET :8081/subjects/orders-value/versions/latest`), сообщения в топике (kafka-ui).
+4. **Пайплайн ClickHouse**: убедиться, что `orders` наполняется и `orders_agg_1m` растёт; при ошибках парсинга смотреть `system.kafka_consumers` / лог clickhouse. **Smoke-check envelope** (до отладки DDL):
+   ```bash
+   # первые 6 байт value: 00 <schema_id_be_4_bytes> 00
+   docker exec kafka kafka-console-consumer \
+     --bootstrap-server kafka:9092 --topic orders \
+     --from-beginning --max-messages 1 --property print.key=false | xxd
+   ```
+   Здесь же валидируется `skip_bytes = 6` и маппинг nested/enum; при провале enum — fallback `status Int32` + `toString()` в MV; при провале envelope — переключение на план Б.
 5. **Срез ReadAggregates**: worker чтения агрегатов, вывод свода в лог.
-6. **Полировка**: README с инструкцией запуска и проверочными запросами, `.env` с версиями образов, e2e-прогон с нуля (`docker compose down -v && up`).
+6. **Полировка**: README с инструкцией запуска, проверочными запросами и зафиксированным именем reference-subject в SR; `.env` с версиями образов (CH >= 26.6, cp-kafka 7.8.x); e2e-прогон с нуля (`docker compose down -v && up`).
 
 ## Риски
 
 - **`skip_bytes` и message-indexes**: длина конверта 6 байт гарантирована только для первого top-level message в главном файле — держим в нём один message (типы из импортов на индексацию не влияют); при эволюции схемы с несколькими типами конверт «поплывёт». Митигируется планом Б.
 - **Расхождение путей импорта**: `import "common/money.proto"` должен разрешаться одинаково от ProtoRoot в codegen и от корня `format_schemas` в ClickHouse — дерево `protos/` копируется в `format_schemas` как есть, без переименований; иначе ClickHouse упадёт с ошибкой резолва схемы при создании Kafka-таблицы.
-- **Маппинг вложенных типов в ClickHouse**: вложенный message читается в колонки с точкой в имени (`price.currency`), proto enum — в Enum8 по именам значений; проверяется на этапе 4 вместе со `skip_bytes`.
-- **Версия ClickHouse**: настройка появилась в конце 2025 — тег образа 26.x обязателен, старые кэши образов не подойдут.
+- **Маппинг вложенных типов в ClickHouse**: вложенный message читается в колонки с точкой в имени (`price.currency`), proto enum — в Enum8 по именам значений; проверяется на этапе 4 вместе со `skip_bytes`. Fallback: `status Int32` + `toString()` в MV.
+- **`Money.amount` как double/Float64**: для демо допустимо; в production — потеря точности, нужен Decimal или Int64 (копейки).
+- **Версия ClickHouse**: `kafka_schema_registry_skip_bytes` появился в **25.11**; pin на конкретный патч в `.env` (рекомендуется 26.x); старые кэши образов (< 26.6) не подойдут.
+- **Kafka advertised listeners в Docker**: без dual-listener конфигурации клиенты внутри compose-сети получают `localhost` из metadata и падают — см. раздел «Kafka listeners».
+- **ClickHouse init одноразовый**: `/docker-entrypoint-initdb.d` только при пустом volume; для пересоздания схемы нужен `docker compose down -v`.
+- **Drift protos**: без MSBuild target `SyncProtoSchemas` C# codegen и ClickHouse format schemas разойдутся.
 - **Отставание видимости агрегатов**: Kafka engine флашит блоками (по `kafka_max_block_size`/таймауту ~стрим-флаш); в демо задержка в секунды — норма, отражаем в README.
-- **Порядок старта контейнеров**: закрывается healthcheck-ами + ретраями в приложении.
+- **Порядок старта контейнеров**: закрывается healthcheck-ами + `kafka-init` + ретраями в приложении.
 
 ## Критерии готовности демо
 
 - `docker compose up -d --build` с чистого состояния поднимает весь стенд без ручных действий.
 - В логах `sandbox-app` видно и публикацию событий, и периодический вывод поминутных агрегатов по категориям.
 - `SELECT count() FROM orders` растёт; суммы в `orders_agg_1m` (через GROUP BY) сходятся с `orders`.
-- В Schema Registry зарегистрированы схемы `orders-key`, `orders-value` и импортируемая `common/money.proto`; связь value-схемы с импортом видна в `references`.
+- В Schema Registry зарегистрированы схемы `orders-key`, `orders-value` и reference-схема импорта (фактическое имя subject задокументировано в README); связь value-схемы с импортом видна в `references`.
