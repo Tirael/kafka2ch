@@ -52,7 +52,7 @@ Producer с `Confluent.SchemaRegistry.Serdes.Protobuf` пишет сообщен
 
 ## Модель данных
 
-Демо-домен — заказы. Контракт разбит на два файла: основной `order_event.proto` импортирует кастомные общие типы из `common/money.proto`.
+Демо-домен — заказы. И ключ, и значение Kafka-сообщения — protobuf. Контракт разбит на три файла: основной `order_event.proto` (value) импортирует кастомные общие типы из `common/money.proto`; ключ — отдельный `order_key.proto`.
 
 `protos/common/money.proto`:
 
@@ -73,7 +73,19 @@ enum OrderStatus {
 }
 ```
 
-`protos/order_event.proto`:
+`protos/order_key.proto` (ключ сообщения; отдельный файл, чтобы в каждом сериализуемом файле message остался первым и единственным):
+
+```protobuf
+syntax = "proto3";
+package sandbox.orders.v1;
+option csharp_namespace = "Sandbox.Contracts";
+
+message OrderKey {
+  string order_id = 1;          // UUID — определяет партицию
+}
+```
+
+`protos/order_event.proto` (значение сообщения):
 
 ```protobuf
 syntax = "proto3";
@@ -96,10 +108,12 @@ message OrderEvent {
 Одно и то же дерево `protos/` используется дважды: codegen в C# и как format schemas в ClickHouse. Импорт должен корректно разрешаться в трёх местах:
 
 1. **C# codegen (Grpc.Tools)**: в `Sandbox.Contracts.csproj` задаётся `ProtoRoot="protos"`, компилируются оба файла — относительный путь в `import "common/money.proto"` разрешается от ProtoRoot.
-2. **Schema Registry**: `ProtobufSerializer` при `AutoRegisterSchemas = true` рекурсивно регистрирует импортируемые схемы как schema references — `common/money.proto` становится отдельным subject, на который ссылается `orders-value`. Ставим `SkipKnownTypes = true`, чтобы не регистрировать well-known types Google. Проверка: `GET :8081/subjects` показывает оба subject, `GET :8081/subjects/orders-value/versions/latest` содержит блок `references`.
+2. **Schema Registry**: `ProtobufSerializer` при `AutoRegisterSchemas = true` рекурсивно регистрирует импортируемые схемы как schema references — `common/money.proto` становится отдельным subject, на который ссылается `orders-value`; схема ключа регистрируется как subject `orders-key`. Ставим `SkipKnownTypes = true`, чтобы не регистрировать well-known types Google. Проверка: `GET :8081/subjects` показывает три subject (`orders-key`, `orders-value`, схема-reference), `GET :8081/subjects/orders-value/versions/latest` содержит блок `references`.
 3. **ClickHouse**: импорты в format schema разрешаются относительно каталога `/var/lib/clickhouse/format_schemas`, поэтому монтируем всё дерево `protos/` с сохранением относительных путей (`format_schemas/order_event.proto`, `format_schemas/common/money.proto`). В `kafka_schema` указывается только главный файл — импортированный подтянется сам.
 
 На конверт Confluent (`skip_bytes = 6`) импорты не влияют: message-indexes считаются по top-level message-ам главного файла, а `OrderEvent` в нём остаётся первым и единственным (типы из импортов в индексацию не входят).
+
+Protobuf-ключ на ClickHouse не влияет: Kafka engine парсит только value сообщения, ключ доступен лишь как сырые байты через виртуальную колонку `_key` (в нашем пайплайне не используется — `order_id` есть в самом value). Ключ нужен для детерминированного партиционирования и как демонстрация типизированного контракта key+value.
 
 ## DDL ClickHouse (docker-entrypoint-initdb.d)
 
@@ -191,7 +205,7 @@ ORDER BY minute DESC, category;
 
 Срезы:
 
-- **`Features/PublishOrders`**: каждые ~500 мс генерирует `OrderEvent` (случайная категория/сумма) и публикует в топик `orders` через `IProducer<string, OrderEvent>` с `ProtobufSerializer<OrderEvent>` (`AutoRegisterSchemas = true` — схема и её references сами попадают в Schema Registry при первом сообщении). Внутри среза: `PublishOrdersWorker` (BackgroundService), `OrderEventFactory` (генерация демо-данных), `PublishOrdersOptions`, `PublishOrdersSlice.AddPublishOrders(...)` — extension-метод регистрации.
+- **`Features/PublishOrders`**: каждые ~500 мс генерирует `OrderEvent` (случайная категория/сумма) и публикует в топик `orders` через `IProducer<OrderKey, OrderEvent>` — и ключ, и значение сериализуются `ProtobufSerializer<T>` (`AutoRegisterSchemas = true` — обе схемы и references сами попадают в Schema Registry при первом сообщении). Внутри среза: `PublishOrdersWorker` (BackgroundService), `OrderEventFactory` (генерация демо-данных), `PublishOrdersOptions`, `PublishOrdersSlice.AddPublishOrders(...)` — extension-метод регистрации.
 - **`Features/ReadAggregates`**: каждые ~5 с выполняет запрос к `orders_agg_1m` через `ClickHouse.Client` (HTTP :8123) и пишет свод в лог. Внутри среза: `ReadAggregatesWorker`, `OrderAggregateRow` (модель строки результата), `ReadAggregatesOptions`, `ReadAggregatesSlice.AddReadAggregates(...)`.
 
 Правила организации:
@@ -208,7 +222,8 @@ ORDER BY minute DESC, category;
 src/
   Sandbox.Contracts/        # Grpc.Tools codegen, ProtoRoot=protos
     protos/
-      order_event.proto     # главный файл, import "common/money.proto"
+      order_event.proto     # value: главный файл, import "common/money.proto"
+      order_key.proto       # key: protobuf-ключ сообщения
       common/money.proto    # кастомные общие типы (Money, OrderStatus)
   Sandbox.App/
     Features/
@@ -263,7 +278,7 @@ NuGet-зависимости (все MIT/Apache-2.0, активно поддер
 
 1. **Каркас и контракты**: solution, `Sandbox.Contracts` с деревом `protos/` (главный файл + импортируемый `common/money.proto`) и codegen через ProtoRoot; синхронизация дерева `protos/` в `docker/clickhouse/format_schemas` (copy-скрипт или msbuild target), чтобы импорты разрешались одинаково.
 2. **Инфраструктура**: docker-compose с kafka (KRaft), schema-registry, clickhouse + init-SQL и format schema; healthcheck-и. Smoke: `docker compose up`, вручную произвести сообщение `kcat`-ом невозможно (protobuf) — проверяем просто готовность сервисов.
-3. **Срез PublishOrders**: каркас `Sandbox.App` (composition root, `Common/` с фабриками подключений), срез `PublishOrders` + Dockerfile; проверка — в SR зарегистрированы оба subject (главная схема и импортируемая), у `orders-value` заполнен блок `references` (`GET :8081/subjects`, `GET :8081/subjects/orders-value/versions/latest`), сообщения в топике (kafka-ui).
+3. **Срез PublishOrders**: каркас `Sandbox.App` (composition root, `Common/` с фабриками подключений), срез `PublishOrders` + Dockerfile; проверка — в SR зарегистрированы subjects `orders-key`, `orders-value` и импортируемая схема, у `orders-value` заполнен блок `references` (`GET :8081/subjects`, `GET :8081/subjects/orders-value/versions/latest`), сообщения в топике (kafka-ui).
 4. **Пайплайн ClickHouse**: убедиться, что `orders` наполняется и `orders_agg_1m` растёт; при ошибках парсинга смотреть `system.kafka_consumers` / лог clickhouse. Здесь же валидируется решение `skip_bytes = 6`; при провале — переключение на план Б.
 5. **Срез ReadAggregates**: worker чтения агрегатов, вывод свода в лог.
 6. **Полировка**: README с инструкцией запуска и проверочными запросами, `.env` с версиями образов, e2e-прогон с нуля (`docker compose down -v && up`).
@@ -282,4 +297,4 @@ NuGet-зависимости (все MIT/Apache-2.0, активно поддер
 - `docker compose up -d --build` с чистого состояния поднимает весь стенд без ручных действий.
 - В логах `sandbox-app` видно и публикацию событий, и периодический вывод поминутных агрегатов по категориям.
 - `SELECT count() FROM orders` растёт; суммы в `orders_agg_1m` (через GROUP BY) сходятся с `orders`.
-- В Schema Registry зарегистрированы схема `orders-value` и импортируемая `common/money.proto`, связь между ними видна в `references`.
+- В Schema Registry зарегистрированы схемы `orders-key`, `orders-value` и импортируемая `common/money.proto`; связь value-схемы с импортом видна в `references`.
