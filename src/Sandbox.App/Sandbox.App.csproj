@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UserSecretsId>dotnet-Sandbox.App-1dc92241-e459-4423-8bea-880693ca227c</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Confluent.Kafka" Version="2.15.0" />
+    <PackageReference Include="Confluent.SchemaRegistry" Version="2.15.0" />
+    <PackageReference Include="Confluent.SchemaRegistry.Serdes.Protobuf" Version="2.15.0" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.11" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Sandbox.Contracts\Sandbox.Contracts.csproj" />
+  </ItemGroup>
+</Project>
