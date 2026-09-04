@@ -73,6 +73,24 @@ services:
           --topic orders --partitions 1 --replication-factor 1
     restart: "no"
 
+  sandbox-app:
+    build: .
+    container_name: sandbox-app
+    depends_on:
+      kafka:
+        condition: service_healthy
+      schema-registry:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    environment:
+      Kafka__BootstrapServers: kafka:9092
+      Kafka__SchemaRegistryUrl: http://schema-registry:8081
+      PublishOrders__Topic: orders
+      PublishOrders__IntervalMs: 500
+
   kafka-ui:
     image: ${KAFKA_UI_IMAGE}
     container_name: kafka-ui
