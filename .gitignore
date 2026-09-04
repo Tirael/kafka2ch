@@ -60,3 +60,5 @@ nunit-*.xml
 .idea/
 *.slnx
 *.DotSettings.user
+
+.ai
