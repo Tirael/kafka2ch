@@ -10,12 +10,12 @@ public sealed class DenormalizationPlannerTests
     {
         // Arrange
         // Act
-        var columns = _sut.MapMessage(OptionalFieldsMessage.Descriptor, _defaults, new Dictionary<string, FieldOverrideConfig>());
+        var columns = _sut.MapMessage(OptionalFieldsMessage.Descriptor, _defaults, MappingTestSupport.EmptyOverrides);
 
         // Assert
         columns.Should().BeEquivalentTo([
-            new ClickHouseColumn("nickname", "Nullable(String)", "proto optional", "nickname", MappingStrategy.Optional),
-            new ClickHouseColumn("bonus_points", "Nullable(Int32)", "proto optional", "bonus_points", MappingStrategy.Optional)
+            ClickHouseColumn.Create("nickname", "Nullable(String)", MappingStrategy.Optional, "proto optional"),
+            ClickHouseColumn.Create("bonus_points", "Nullable(Int32)", MappingStrategy.Optional, "proto optional")
         ]);
     }
 
@@ -23,7 +23,7 @@ public sealed class DenormalizationPlannerTests
     public void GivenMapFieldsMessage_WhenMapped_ThenUsesMapType()
     {
         // Act
-        var columns = _sut.MapMessage(MapFieldsMessage.Descriptor, _defaults, new Dictionary<string, FieldOverrideConfig>());
+        var columns = _sut.MapMessage(MapFieldsMessage.Descriptor, _defaults, MappingTestSupport.EmptyOverrides);
 
         // Assert
         columns.Single().Type.Should().Be("Map(String, String)");
@@ -33,10 +33,10 @@ public sealed class DenormalizationPlannerTests
     public void GivenOneofMessage_WhenMapped_ThenCreatesBranchAndPresenceColumns()
     {
         // Act
-        var columns = _sut.MapMessage(OneofMessage.Descriptor, _defaults, new Dictionary<string, FieldOverrideConfig>());
+        var columns = _sut.MapMessage(OneofMessage.Descriptor, _defaults, MappingTestSupport.EmptyOverrides);
 
         // Assert
-        columns.Select(column => (column.Name, column.Type)).Should().BeEquivalentTo([
+        MappingTestSupport.NameAndTypes(columns).Should().BeEquivalentTo([
             ("text", "Nullable(String)"),
             ("number", "Nullable(Int32)"),
             ("payload", "Enum8('absent' = 0, 'text' = 1, 'number' = 2)")
@@ -47,10 +47,10 @@ public sealed class DenormalizationPlannerTests
     public void GivenTimestampFieldsMessage_WhenMapped_ThenFlattensTimestampFields()
     {
         // Act
-        var columns = _sut.MapMessage(TimestampFieldsMessage.Descriptor, _defaults, new Dictionary<string, FieldOverrideConfig>());
+        var columns = _sut.MapMessage(TimestampFieldsMessage.Descriptor, _defaults, MappingTestSupport.EmptyOverrides);
 
         // Assert
-        columns.Select(column => (column.Name, column.Type)).Should().BeEquivalentTo([
+        MappingTestSupport.NameAndTypes(columns).Should().BeEquivalentTo([
             ("created_at.seconds", "Int64"),
             ("created_at.nanos", "Int32")
         ]);
@@ -60,7 +60,7 @@ public sealed class DenormalizationPlannerTests
     public void GivenRepeatedEnumMessage_WhenMapped_ThenUsesArrayEnum8()
     {
         // Act
-        var columns = _sut.MapMessage(RepeatedEnumMessage.Descriptor, _defaults, new Dictionary<string, FieldOverrideConfig>());
+        var columns = _sut.MapMessage(RepeatedEnumMessage.Descriptor, _defaults, MappingTestSupport.EmptyOverrides);
 
         // Assert
         columns.Single().Type.Should().Be(

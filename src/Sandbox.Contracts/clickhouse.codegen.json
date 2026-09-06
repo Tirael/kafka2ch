@@ -26,12 +26,36 @@
       "fieldOverrides": {
         "category": { "type": "LowCardinality(String)" },
         "status": { "enum8": true },
-        "tags": { "type": "Array(LowCardinality(String))" }
+        "tags": { "type": "Array(LowCardinality(String))" },
+        "status_history": { "enum8": true }
+      }
+    },
+    {
+      "messageType": "Sandbox.Contracts.ShipmentEvent, Sandbox.Contracts",
+      "tableName": "shipments_queue",
+      "protoFile": "shipment_event",
+      "messageName": "ShipmentEvent",
+      "outputPath": "../../docker/clickhouse/init/02_shipments_queue.sql",
+      "kafka": {
+        "brokerList": "kafka:9092",
+        "topic": "shipments",
+        "groupName": "clickhouse-shipments",
+        "skipBytes": 6,
+        "numConsumers": 1,
+        "flattenNested": false,
+        "protobufOneofPresence": true,
+        "protobufFlattenGoogleWrappers": true
+      },
+      "fieldOverrides": {
+        "status": { "enum8": true },
+        "status_history": { "enum8": true },
+        "destination.country": { "type": "LowCardinality(String)" },
+        "destination.city": { "type": "LowCardinality(String)" }
       }
     }
   ],
   "pipeline": {
-    "outputPath": "../../docker/clickhouse/init/02_orders_pipeline.sql",
+    "outputPath": "../../docker/clickhouse/init/03_pipeline.sql",
     "mergeTreeTables": [
       {
         "tableName": "orders",
@@ -43,7 +67,21 @@
           { "name": "amount", "type": "Float64" },
           { "name": "quantity", "type": "UInt32" },
           { "name": "status", "type": "LowCardinality(String)" },
+          { "name": "payment", "type": "LowCardinality(String)" },
           { "name": "event_time", "type": "DateTime64(3)" }
+        ]
+      },
+      {
+        "tableName": "shipments",
+        "orderBy": "(shipped_at, shipment_id)",
+        "columns": [
+          { "name": "shipment_id", "type": "String" },
+          { "name": "order_id", "type": "String" },
+          { "name": "status", "type": "LowCardinality(String)" },
+          { "name": "country", "type": "LowCardinality(String)" },
+          { "name": "city", "type": "LowCardinality(String)" },
+          { "name": "delivery_outcome", "type": "LowCardinality(String)" },
+          { "name": "shipped_at", "type": "DateTime64(3)" }
         ]
       }
     ],
@@ -59,10 +97,33 @@
           { "source": "price.amount", "target": "amount" },
           { "source": "quantity", "target": "quantity" },
           { "source": "status", "target": "status", "expression": "toString(status)" },
-          { "source": "event_time_unix_ms", "target": "event_time", "expression": "fromUnixTimestamp64Milli(event_time_unix_ms)" }
+          { "source": "payment", "target": "payment", "expression": "toString(payment)" },
+          {
+            "source": "event_time.seconds",
+            "target": "event_time",
+            "expression": "toDateTime64(event_time.seconds + event_time.nanos / 1000000000.0, 3)"
+          }
+        ]
+      },
+      {
+        "name": "shipments_mv",
+        "targetTable": "shipments",
+        "sourceTable": "shipments_queue",
+        "columns": [
+          { "source": "shipment_id", "target": "shipment_id" },
+          { "source": "order_id", "target": "order_id" },
+          { "source": "status", "target": "status", "expression": "toString(status)" },
+          { "source": "destination.country", "target": "country" },
+          { "source": "destination.city", "target": "city" },
+          { "source": "delivery_outcome", "target": "delivery_outcome", "expression": "toString(delivery_outcome)" },
+          {
+            "source": "shipped_at.seconds",
+            "target": "shipped_at",
+            "expression": "toDateTime64(shipped_at.seconds + shipped_at.nanos / 1000000000.0, 3)"
+          }
         ]
       }
     ],
-    "trailingSql": "CREATE TABLE orders_agg_1m\n(\n    minute        DateTime,\n    category      LowCardinality(String),\n    orders_count  UInt64,\n    total_amount  Float64,\n    total_qty     UInt64\n)\nENGINE = SummingMergeTree\nORDER BY (minute, category);\n\nCREATE MATERIALIZED VIEW orders_agg_mv TO orders_agg_1m AS\nSELECT\n    toStartOfMinute(event_time) AS minute,\n    category,\n    count()                     AS orders_count,\n    sum(amount)                 AS total_amount,\n    sum(quantity)               AS total_qty\nFROM orders\nGROUP BY minute, category;\n"
+    "trailingSql": "CREATE TABLE orders_agg_1m\n(\n    minute        DateTime,\n    category      LowCardinality(String),\n    orders_count  UInt64,\n    total_amount  Float64,\n    total_qty     UInt64\n)\nENGINE = SummingMergeTree\nORDER BY (minute, category);\n\nCREATE MATERIALIZED VIEW orders_agg_mv TO orders_agg_1m AS\nSELECT\n    toStartOfMinute(event_time) AS minute,\n    category,\n    count()                     AS orders_count,\n    sum(amount)                 AS total_amount,\n    sum(quantity)               AS total_qty\nFROM orders\nGROUP BY minute, category;\n\nCREATE TABLE shipments_agg_1m\n(\n    minute           DateTime,\n    status           LowCardinality(String),\n    shipments_count  UInt64\n)\nENGINE = SummingMergeTree\nORDER BY (minute, status);\n\nCREATE MATERIALIZED VIEW shipments_agg_mv TO shipments_agg_1m AS\nSELECT\n    toStartOfMinute(shipped_at) AS minute,\n    status,\n    count()                     AS shipments_count\nFROM shipments\nGROUP BY minute, status;\n"
   }
 }

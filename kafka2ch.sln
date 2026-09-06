@@ -20,7 +20,8 @@ EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "init", "init", "{C5D6E7F8-9012-3456-789A-BCDEF0123456}"
 	ProjectSection(SolutionItems) = preProject
 		docker\clickhouse\init\01_orders_queue.sql = docker\clickhouse\init\01_orders_queue.sql
-		docker\clickhouse\init\02_orders_pipeline.sql = docker\clickhouse\init\02_orders_pipeline.sql
+		docker\clickhouse\init\02_shipments_queue.sql = docker\clickhouse\init\02_shipments_queue.sql
+		docker\clickhouse\init\03_pipeline.sql = docker\clickhouse\init\03_pipeline.sql
 	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "format_schemas", "format_schemas", "{D6E7F890-1234-5678-9ABC-DEF012345678}"

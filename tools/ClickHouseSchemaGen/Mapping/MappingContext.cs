@@ -11,15 +11,8 @@ public sealed record MappingContext
     public FieldOverrideConfig? GetOverride(string columnPath) =>
         FieldOverrides.GetValueOrDefault(columnPath);
 
-    public MappingStrategy? GetOverrideStrategy(string columnPath)
-    {
-        var strategyName = GetOverride(columnPath)?.Strategy;
-        if (strategyName is null)
-            return null;
-
-        if (Enum.TryParse<MappingStrategy>(strategyName, ignoreCase: true, out var parsed))
-            return parsed;
-
-        return null;
-    }
+    public MappingStrategy? GetOverrideStrategy(string columnPath) =>
+        Enum.TryParse<MappingStrategy>(GetOverride(columnPath)?.Strategy, ignoreCase: true, out var parsed)
+            ? parsed
+            : null;
 }

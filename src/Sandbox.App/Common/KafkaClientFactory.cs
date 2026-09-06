@@ -7,7 +7,9 @@ public sealed class KafkaClientFactory(IOptions<KafkaOptions> options)
     public CachedSchemaRegistryClient CreateSchemaRegistryClient() =>
         new(new SchemaRegistryConfig { Url = _options.SchemaRegistryUrl });
 
-    public IProducer<OrderKey, OrderEvent> CreateProducer(ISchemaRegistryClient schemaRegistry)
+    public IProducer<TKey, TValue> CreateProducer<TKey, TValue>(ISchemaRegistryClient schemaRegistry)
+        where TKey : class, IMessage<TKey>, new()
+        where TValue : class, IMessage<TValue>, new()
     {
         var serializerConfig = new ProtobufSerializerConfig
         {
@@ -15,12 +17,12 @@ public sealed class KafkaClientFactory(IOptions<KafkaOptions> options)
             SkipKnownTypes = true
         };
 
-        return new ProducerBuilder<OrderKey, OrderEvent>(new ProducerConfig
+        return new ProducerBuilder<TKey, TValue>(new ProducerConfig
         {
             BootstrapServers = _options.BootstrapServers
         })
-            .SetKeySerializer(new ProtobufSerializer<OrderKey>(schemaRegistry, serializerConfig))
-            .SetValueSerializer(new ProtobufSerializer<OrderEvent>(schemaRegistry, serializerConfig))
+            .SetKeySerializer(new ProtobufSerializer<TKey>(schemaRegistry, serializerConfig))
+            .SetValueSerializer(new ProtobufSerializer<TValue>(schemaRegistry, serializerConfig))
             .Build();
     }
 }

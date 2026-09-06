@@ -1,0 +1,29 @@
+syntax = "proto3";
+
+package sandbox.shipments.v1;
+
+import "common/address.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "shipment_types.proto";
+
+option csharp_namespace = "Sandbox.Contracts";
+
+message ShipmentEvent {
+  string shipment_id = 1;
+  string order_id = 2;
+  google.protobuf.Timestamp shipped_at = 3;
+  ShipmentStatus status = 4;
+  sandbox.common.v1.Address destination = 5;
+  repeated TrackingCheckpoint checkpoints = 6;
+  map<string, string> carrier_metadata = 7;
+  optional string instructions = 8;
+
+  oneof delivery_outcome {
+    DeliveredInfo delivered = 9;
+    FailedDelivery failed = 10;
+  }
+
+  google.protobuf.Int32Value priority = 11;
+  repeated ShipmentStatus status_history = 12;
+}

@@ -2,48 +2,30 @@ namespace ClickHouseSchemaGen.Mapping;
 
 public sealed class ScalarFieldStrategy : IFieldMappingStrategy
 {
-    public bool CanMap(FieldDescriptor field, MappingContext context) =>
-        !field.IsRepeated && !field.IsMap && field.FieldType != FieldType.Message;
+    public bool CanMap(FieldMappingRequest request) => request.Field.IsScalarField();
 
-    public IEnumerable<ClickHouseColumn> Map(FieldDescriptor field, string columnPath, MappingContext context)
+    public IEnumerable<ClickHouseColumn> Map(FieldMappingRequest request)
     {
-        var strategy = ResolveStrategy(field, context);
+        var strategy = ResolveStrategy(request);
 
-        yield return new ClickHouseColumn(
-            columnPath,
-            ClickHouseTypeResolver.ResolveScalar(field, columnPath, context),
-            ResolveComment(field.FieldType, strategy),
-            columnPath,
-            strategy);
+        return
+        [
+            ClickHouseColumn.Create(
+                request.ColumnPath,
+                ClickHouseTypeResolver.ResolveScalar(request),
+                strategy,
+                ResolveComment(request.Field.FieldType, strategy))
+        ];
     }
 
-    private static MappingStrategy ResolveStrategy(FieldDescriptor field, MappingContext context)
-    {
-        if (field.FieldType == FieldType.Enum)
-            return MappingStrategy.Direct;
+    private static MappingStrategy ResolveStrategy(FieldMappingRequest request) =>
+        IsOptionalScalar(request) ? MappingStrategy.Optional : MappingStrategy.Direct;
 
-        if (IsOptionalScalar(field, context))
-            return MappingStrategy.Optional;
+    private static bool IsOptionalScalar(FieldMappingRequest request) =>
+        FieldPresence.IsProtoOptional(request);
 
-        return MappingStrategy.Direct;
-    }
-
-    private static bool IsOptionalScalar(FieldDescriptor field, MappingContext context)
-    {
-        if (field.ContainingOneof?.IsSynthetic == true)
-            return true;
-
-        return field.HasPresence && context.Defaults.OptionalAsNullable;
-    }
-
-    private static string? ResolveComment(FieldType fieldType, MappingStrategy strategy)
-    {
-        if (fieldType == FieldType.Enum)
-            return "proto enum";
-
-        if (strategy == MappingStrategy.Optional)
-            return "proto optional";
-
-        return null;
-    }
+    private static string? ResolveComment(FieldType fieldType, MappingStrategy strategy) =>
+        fieldType == FieldType.Enum ? "proto enum"
+        : strategy == MappingStrategy.Optional ? "proto optional"
+        : null;
 }

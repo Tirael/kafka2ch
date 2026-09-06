@@ -31,7 +31,8 @@ internal static class OrdersQueueTestConfig
         {
             ["category"] = new() { Type = "LowCardinality(String)" },
             ["status"] = new() { Enum8 = true },
-            ["tags"] = new() { Type = "Array(LowCardinality(String))" }
+            ["tags"] = new() { Type = "Array(LowCardinality(String))" },
+            ["status_history"] = new() { Enum8 = true }
         }
     };
 }

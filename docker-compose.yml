@@ -74,6 +74,9 @@ services:
         kafka-topics --bootstrap-server kafka:9092 \
           --create --if-not-exists \
           --topic orders --partitions 1 --replication-factor 1
+        kafka-topics --bootstrap-server kafka:9092 \
+          --create --if-not-exists \
+          --topic shipments --partitions 1 --replication-factor 1
     restart: "no"
 
   sandbox-app:
@@ -93,6 +96,8 @@ services:
       Kafka__SchemaRegistryUrl: http://schema-registry:8081
       PublishOrders__Topic: orders
       PublishOrders__IntervalMs: 500
+      PublishShipments__Topic: shipments
+      PublishShipments__IntervalMs: 750
       ClickHouse__Host: clickhouse
       ClickHouse__Port: 8123
       ClickHouse__Database: default

@@ -2,7 +2,7 @@ namespace ClickHouseSchemaGen.Tests.Unit;
 
 public sealed class ClickHouseSchemaGeneratorTests
 {
-    private readonly ClickHouseSchemaGenerator _sut = new(new DenormalizationPlanner());
+    private readonly ClickHouseSchemaGenerator _sut = SchemaGeneratorFactory.Create();
 
     [Fact]
     public void GivenOrdersQueueConfig_WhenGenerateKafkaTableSql_ThenMatchesCommittedInitSqlShape()
@@ -31,7 +31,7 @@ public sealed class ClickHouseSchemaGeneratorTests
 
         var configJson = File.ReadAllText(configPath)
             .Replace("../../docker/clickhouse/init/01_orders_queue.sql", "generated_queue.sql")
-            .Replace("../../docker/clickhouse/init/02_orders_pipeline.sql", "generated_pipeline.sql");
+            .Replace("../../docker/clickhouse/init/03_pipeline.sql", "generated_pipeline.sql");
         File.WriteAllText(configPath, configJson);
 
         var queuePath = Path.Combine(outputDirectory, "generated_queue.sql");

@@ -1,25 +1,33 @@
 syntax = "proto3";
+
 package sandbox.orders.v1;
 
 import "common/money.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "order_types.proto";
 
 option csharp_namespace = "Sandbox.Contracts";
-
-message LineItem {
-  string sku = 1;
-  uint32 qty = 2;
-  double unit_price = 3;
-}
 
 message OrderEvent {
   string order_id = 1;
   string category = 2;
   sandbox.common.v1.Money price = 3;
   uint32 quantity = 4;
-  int64 event_time_unix_ms = 5;
+  google.protobuf.Timestamp event_time = 5;
   sandbox.common.v1.OrderStatus status = 6;
   repeated string tags = 7;
   repeated LineItem items = 8;
   map<string, string> metadata = 9;
   optional string note = 10;
+
+  oneof payment {
+    CardPayment card = 11;
+    CashPayment cash = 12;
+    WalletPayment wallet = 13;
+  }
+
+  google.protobuf.StringValue promo_code = 14;
+  repeated sandbox.common.v1.OrderStatus status_history = 15;
+  optional int32 loyalty_points = 16;
 }

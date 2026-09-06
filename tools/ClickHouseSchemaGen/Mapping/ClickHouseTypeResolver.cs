@@ -2,20 +2,14 @@ namespace ClickHouseSchemaGen.Mapping;
 
 public static class ClickHouseTypeResolver
 {
-    public static string ResolveScalar(
-        FieldDescriptor field,
-        string columnPath,
-        MappingContext context,
-        bool forceNullable = false)
+    public static string ResolveScalar(FieldMappingRequest request)
     {
-        var fieldOverride = context.GetOverride(columnPath);
-        if (!string.IsNullOrWhiteSpace(fieldOverride?.Type))
-            return fieldOverride.Type;
+        var fieldOverride = request.Context.GetOverride(request.ColumnPath);
+        var baseType = ResolveBaseType(request.Field, request.ColumnPath, fieldOverride, request.Context.Defaults);
 
-        var baseType = ResolveBaseType(field, columnPath, fieldOverride, context.Defaults);
-        return ShouldBeNullable(field, context, fieldOverride, forceNullable)
+        return request.OverrideType ?? (ShouldBeNullable(request, fieldOverride)
             ? $"Nullable({baseType})"
-            : baseType;
+            : baseType);
     }
 
     public static string ResolveEnum(
@@ -23,13 +17,11 @@ public static class ClickHouseTypeResolver
         FieldOverrideConfig? fieldOverride,
         CodegenDefaults defaults)
     {
-        if (fieldOverride?.Enum8 == true)
-            return BuildEnum("Enum8", enumDescriptor);
+        var enumType = fieldOverride?.Enum8 == true || enumDescriptor.Values.Count <= defaults.EnumMaxValuesForEnum8
+            ? "Enum8"
+            : "Enum16";
 
-        if (enumDescriptor.Values.Count <= defaults.EnumMaxValuesForEnum8)
-            return BuildEnum("Enum8", enumDescriptor);
-
-        return BuildEnum("Enum16", enumDescriptor);
+        return BuildEnum(enumType, enumDescriptor);
     }
 
     private static string ResolveBaseType(
@@ -52,33 +44,14 @@ public static class ClickHouseTypeResolver
                 $"Unsupported protobuf field type {field.FieldType} for {columnPath}")
         };
 
-    private static bool ShouldBeNullable(
-        FieldDescriptor field,
-        MappingContext context,
-        FieldOverrideConfig? fieldOverride,
-        bool forceNullable)
-    {
-        if (forceNullable)
-            return true;
+    private static bool ShouldBeNullable(FieldMappingRequest request, FieldOverrideConfig? fieldOverride) =>
+        request.ForceNullable
+        || fieldOverride?.Nullable == true
+        || (request.Context.Defaults.OptionalAsNullable
+            && (FieldPresence.HasSyntheticOneof(request.Field)
+                || FieldPresence.HasExplicitPresence(request.Field)));
 
-        if (fieldOverride?.Nullable == true)
-            return true;
-
-        if (!context.Defaults.OptionalAsNullable)
-            return false;
-
-        if (field.ContainingOneof?.IsSynthetic == true)
-            return true;
-
-        return field.HasPresence && field.ContainingOneof is null;
-    }
-
-    private static string BuildEnum(string enumType, EnumDescriptor enumDescriptor)
-    {
-        var values = enumDescriptor.Values
-            .Select(value => $"'{value.Name}' = {value.Number}")
-            .ToArray();
-
-        return $"{enumType}({string.Join(", ", values)})";
-    }
+    private static string BuildEnum(string enumType, EnumDescriptor enumDescriptor) =>
+        $"{enumType}({ClickHouseEnumFormatter.JoinValues(
+            enumDescriptor.Values.Select(value => (value.Name, value.Number)))})";
 }

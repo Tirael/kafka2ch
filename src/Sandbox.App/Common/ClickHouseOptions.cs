@@ -18,12 +18,11 @@ public sealed class ClickHouseOptions
     {
         get
         {
-            if (string.IsNullOrEmpty(Password))
-            {
-                return $"Host={Host};Port={Port};Username={Username};Database={Database}";
-            }
+            var connection = $"Host={Host};Port={Port};Username={Username};";
+            if (!string.IsNullOrEmpty(Password))
+                connection += $"Password={Password};";
 
-            return $"Host={Host};Port={Port};Username={Username};Password={Password};Database={Database}";
+            return connection + $"Database={Database}";
         }
     }
 }

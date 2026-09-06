@@ -8,12 +8,7 @@ public static class MergeTreeTableGenerator
             .AppendLine($"CREATE TABLE {config.TableName}")
             .AppendLine("(");
 
-        for (var i = 0; i < config.Columns.Count; i++)
-        {
-            var column = config.Columns[i];
-            var comma = i < config.Columns.Count - 1 ? "," : string.Empty;
-            builder.AppendLine(SqlColumnFormatter.FormatColumnLine(column.Name, column.Type, comment: null, comma));
-        }
+        SqlScriptWriter.AppendColumnDefinitions(builder, config.Columns);
 
         return builder
             .AppendLine(")")

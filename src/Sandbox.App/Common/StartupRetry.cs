@@ -2,44 +2,20 @@ namespace Sandbox.App.Common;
 
 public static class StartupRetry
 {
-    public static T Execute<T>(
-        Func<T> action,
-        ILogger logger,
-        TimeProvider timeProvider,
-        CancellationToken cancellationToken = default)
+    public static T Execute<T>(Func<T> action, RetryContext context) =>
+        ExecuteAsync(() => Task.FromResult(action()), context).GetAwaiter().GetResult();
+
+    public static Task<T> ExecuteAsync<T>(Func<Task<T>> action, RetryContext context) =>
+        RetryLoop(action, context);
+
+    private static async Task<T> RetryLoop<T>(Func<Task<T>> action, RetryContext context)
     {
         var delay = TimeSpan.FromSeconds(1);
         var maxDelay = TimeSpan.FromSeconds(30);
 
         while (true)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            try
-            {
-                return action();
-            }
-            catch (Exception ex)
-            {
-                logger.LogWarning(ex, "Startup failed, retrying in {Delay}", delay);
-                Task.Delay(delay, timeProvider, cancellationToken).GetAwaiter().GetResult();
-                delay = NextDelay(delay, maxDelay);
-            }
-        }
-    }
-
-    public static async Task<T> ExecuteAsync<T>(
-        Func<Task<T>> action,
-        ILogger logger,
-        TimeProvider timeProvider,
-        CancellationToken cancellationToken = default)
-    {
-        var delay = TimeSpan.FromSeconds(1);
-        var maxDelay = TimeSpan.FromSeconds(30);
-
-        while (true)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
+            context.CancellationToken.ThrowIfCancellationRequested();
 
             try
             {
@@ -47,8 +23,8 @@ public static class StartupRetry
             }
             catch (Exception ex)
             {
-                logger.LogWarning(ex, "Startup failed, retrying in {Delay}", delay);
-                await Task.Delay(delay, timeProvider, cancellationToken);
+                context.Logger.LogWarning(ex, "Startup failed, retrying in {Delay}", delay);
+                await Task.Delay(delay, context.TimeProvider, context.CancellationToken);
                 delay = NextDelay(delay, maxDelay);
             }
         }

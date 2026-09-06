@@ -16,29 +16,18 @@ public static class WellKnownTypeRegistry
     public static bool IsAny(MessageDescriptor descriptor) =>
         descriptor.FullName == "google.protobuf.Any";
 
-    public static bool IsWrapper(MessageDescriptor descriptor)
-    {
-        if (!descriptor.FullName.StartsWith(GoogleProtobufPrefix, StringComparison.Ordinal))
-            return false;
-
-        return descriptor.Name.EndsWith("Value", StringComparison.Ordinal);
-    }
+    public static bool IsWrapper(MessageDescriptor descriptor) =>
+        descriptor.FullName.StartsWith(GoogleProtobufPrefix, StringComparison.Ordinal)
+        && descriptor.Name.EndsWith("Value", StringComparison.Ordinal);
 
     public static bool ShouldFlattenWellKnownMessage(MessageDescriptor descriptor) =>
         IsTimestamp(descriptor) || IsDuration(descriptor);
 
-    public static string? MapMessageType(MessageDescriptor descriptor)
-    {
-        if (ShouldFlattenWellKnownMessage(descriptor))
-            return null;
-
-        return descriptor.FullName switch
-        {
-            _ when IsWrapper(descriptor) => MapWrapperType(descriptor),
-            _ when IsStruct(descriptor) || IsAny(descriptor) => "String",
-            _ => null
-        };
-    }
+    public static string? MapMessageType(MessageDescriptor descriptor) =>
+        ShouldFlattenWellKnownMessage(descriptor) ? null
+        : IsWrapper(descriptor) ? MapWrapperType(descriptor)
+        : IsStruct(descriptor) || IsAny(descriptor) ? "String"
+        : null;
 
     private static string MapWrapperType(MessageDescriptor descriptor) =>
         descriptor.Name switch
@@ -50,8 +39,7 @@ public static class WellKnownTypeRegistry
             "Int32Value" => "Nullable(Int32)",
             "UInt32Value" => "Nullable(UInt32)",
             "BoolValue" => "Nullable(UInt8)",
-            "StringValue" => "Nullable(String)",
-            "BytesValue" => "Nullable(String)",
+            "StringValue" or "BytesValue" => "Nullable(String)",
             _ => "Nullable(String)"
         };
 }

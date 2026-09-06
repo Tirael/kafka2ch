@@ -59,60 +59,90 @@ public sealed class DenormalizationPlanner
         string columnPath,
         MappingContext context)
     {
-        if (context.GetOverrideStrategy(columnPath) == MappingStrategy.JsonFallback)
-        {
-            var type = context.GetOverride(columnPath)?.Type ?? "String";
-            yield return new ClickHouseColumn(columnPath, type, "json fallback", columnPath, MappingStrategy.JsonFallback);
-            yield break;
-        }
+        var request = new FieldMappingRequest(field, columnPath, context);
 
-        var strategy = _strategies.FirstOrDefault(candidate => candidate.CanMap(field, context))
-            ?? throw new NotSupportedException($"No mapping strategy for field '{columnPath}'.");
-
-        foreach (var column in strategy.Map(field, columnPath, context))
-            yield return column;
+        return TryCreateJsonFallbackColumns(columnPath, context, MappingStrategy.JsonFallback, "json fallback")
+            ?? MapWithStrategy(request, $"field '{columnPath}'");
     }
 
-    private static IEnumerable<ClickHouseColumn> MapOneof(OneofDescriptor oneof, MappingContext context)
+    private IEnumerable<ClickHouseColumn> MapOneofBranch(
+        FieldDescriptor branch,
+        string oneofName,
+        MappingContext context)
+    {
+        var request = new FieldMappingRequest(branch, branch.Name, context).WithForceNullable();
+
+        return TryCreateJsonFallbackColumns(branch.Name, context, MappingStrategy.Oneof, $"oneof {oneofName}")
+            ?? MapWithStrategy(
+                request,
+                $"oneof branch '{branch.Name}'",
+                column => column with
+                {
+                    Strategy = MappingStrategy.Oneof,
+                    Comment = column.Comment ?? $"oneof {oneofName}"
+                });
+    }
+
+    private static IEnumerable<ClickHouseColumn>? TryCreateJsonFallbackColumns(
+        string columnPath,
+        MappingContext context,
+        MappingStrategy strategy,
+        string comment) =>
+        context.GetOverrideStrategy(columnPath) == MappingStrategy.JsonFallback
+            ? [ClickHouseColumn.Create(
+                columnPath,
+                context.GetOverride(columnPath)?.Type ?? "String",
+                strategy,
+                comment)]
+            : null;
+
+    private IEnumerable<ClickHouseColumn> MapWithStrategy(
+        FieldMappingRequest request,
+        string errorContext,
+        Func<ClickHouseColumn, ClickHouseColumn>? transform = null)
+    {
+        var strategy = _strategies.FirstOrDefault(candidate => candidate.CanMap(request))
+            ?? throw new NotSupportedException($"No mapping strategy for {errorContext}.");
+
+        var columns = strategy.Map(request);
+        return transform is null ? columns : columns.Select(transform);
+    }
+
+    private IEnumerable<ClickHouseColumn> MapOneof(OneofDescriptor oneof, MappingContext context)
     {
         if (!context.Defaults.OneofPresence)
             throw new NotSupportedException(
                 $"oneof '{oneof.Name}' requires defaults.oneofPresence=true for ClickHouse ProtobufSingle.");
 
+        List<ClickHouseColumn> columns = [];
+
         foreach (var branch in oneof.Fields)
-        {
-            var branchType = ClickHouseTypeResolver.ResolveScalar(branch, branch.Name, context, forceNullable: true);
-            yield return new ClickHouseColumn(
-                branch.Name,
-                branchType,
-                $"oneof {oneof.Name}",
-                branch.Name,
-                MappingStrategy.Oneof);
-        }
+            columns.AddRange(MapOneofBranch(branch, oneof.Name, context));
 
-        var presenceEnum = string.Join(
-            ", ",
-            ["'absent' = 0", .. oneof.Fields.Select(branch => $"'{branch.Name}' = {branch.FieldNumber}")]);
+        var presenceEnum = ClickHouseEnumFormatter.JoinValues(
+            [("absent", 0), .. oneof.Fields.Select(branch => (branch.Name, branch.FieldNumber))]);
 
-        yield return new ClickHouseColumn(
+        columns.Add(ClickHouseColumn.Create(
             oneof.Name,
             $"Enum8({presenceEnum})",
-            "oneof presence",
-            oneof.Name,
-            MappingStrategy.Oneof);
+            MappingStrategy.Oneof,
+            "oneof presence"));
+
+        return columns;
     }
 
     internal static string BuildNestedType(IReadOnlyList<ClickHouseColumn> innerColumns) =>
-        $"Nested({string.Join(", ", innerColumns.Select(column => $"{column.Name} {column.Type}"))})";
+        BuildCompositeType("Nested", innerColumns);
 
     internal static string BuildTupleType(IReadOnlyList<ClickHouseColumn> innerColumns) =>
-        $"Tuple({string.Join(", ", innerColumns.Select(column => $"{column.Name} {column.Type}"))})";
+        BuildCompositeType("Tuple", innerColumns);
 
-    private static bool IsRealOneofField(FieldDescriptor field)
-    {
-        if (field.ContainingOneof is null)
-            return false;
+    private static string BuildCompositeType(string keyword, IReadOnlyList<ClickHouseColumn> innerColumns) =>
+        $"{keyword}({string.Join(", ", innerColumns.Select(column => $"{SanitizeCompositeColumnName(column.Name)} {column.Type}"))})";
 
-        return !field.ContainingOneof.IsSynthetic;
-    }
+    private static string SanitizeCompositeColumnName(string name) =>
+        name.Replace('.', '_');
+
+    private static bool IsRealOneofField(FieldDescriptor field) =>
+        field.ContainingOneof is not null && !field.ContainingOneof.IsSynthetic;
 }

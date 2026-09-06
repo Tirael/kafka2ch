@@ -38,12 +38,22 @@ public sealed class GeneratedSchemaClickHouseIntegrationTests : IAsyncLifetime
             "price.currency",
             "price.amount",
             "quantity",
-            "event_time_unix_ms",
+            "event_time.seconds",
+            "event_time.nanos",
             "status",
             "tags",
             "items",
             "metadata",
-            "note"
+            "note",
+            "card.last4",
+            "card.network",
+            "cash.received",
+            "wallet.provider",
+            "wallet.wallet_id",
+            "payment",
+            "promo_code",
+            "status_history",
+            "loyalty_points"
         ], options => options.WithStrictOrdering());
         columns.Single(column => column.Name == "items").Type.Should().StartWith("Nested(");
         columns.Single(column => column.Name == "metadata").Type.Should().Be("Map(String, String)");
@@ -60,7 +70,9 @@ public sealed class GeneratedSchemaClickHouseIntegrationTests : IAsyncLifetime
             ProtoToClickHouseMapper.ResolveDescriptor(config.MessageType),
             OrdersQueueTestConfig.Defaults,
             config.FieldOverrides);
-        var columnDefinitions = string.Join(",\n    ", columns.Select(BuildColumnDefinition));
+        var columnDefinitions = string.Join(
+            ",\n    ",
+            columns.Select(column => SqlColumnFormatter.FormatBareDefinition(column.Name, column.Type)));
 
         var createTableSql = $"""
             CREATE TABLE order_events_ingest
@@ -69,7 +81,7 @@ public sealed class GeneratedSchemaClickHouseIntegrationTests : IAsyncLifetime
             )
             ENGINE = MergeTree
             ORDER BY order_id
-            SETTINGS flatten_nested = 0
+            SETTINGS flatten_nested = 0, input_format_protobuf_oneof_presence = 1, input_format_protobuf_flatten_google_wrappers = 1
             """;
 
         var execResult = await _clickHouse.ExecScriptAsync(createTableSql);
@@ -81,18 +93,30 @@ public sealed class GeneratedSchemaClickHouseIntegrationTests : IAsyncLifetime
             Category = "books",
             Price = new Money { Currency = "USD", Amount = 19.99 },
             Quantity = 2,
-            EventTimeUnixMs = 1_700_000_000_000,
+            EventTime = Google.Protobuf.WellKnownTypes.Timestamp.FromDateTimeOffset(
+                DateTimeOffset.FromUnixTimeMilliseconds(1_700_000_000_000)),
             Status = OrderStatus.Paid,
-            Note = "integration-note"
+            Note = "integration-note",
+            Card = new CardPayment { Last4 = "4242", Network = "visa" },
+            PromoCode = "PROMO-42",
+            LoyaltyPoints = 100
         };
         orderEvent.Tags.AddRange(["promo", "vip"]);
-        orderEvent.Items.Add(new LineItem { Sku = "SKU-42", Qty = 3, UnitPrice = 9.99 });
+        orderEvent.Items.Add(new LineItem
+        {
+            Sku = "SKU-42",
+            Qty = 3,
+            UnitPrice = 9.99,
+            LineStatus = OrderStatus.Paid
+        });
         orderEvent.Metadata["source"] = "integration-test";
+        orderEvent.StatusHistory.Add(OrderStatus.Created);
+        orderEvent.StatusHistory.Add(OrderStatus.Paid);
 
         using var payload = new MemoryStream();
         orderEvent.WriteTo(payload);
         var insertQuery =
-            "INSERT INTO order_events_ingest SETTINGS format_schema='order_event:OrderEvent' FORMAT ProtobufSingle";
+            "INSERT INTO order_events_ingest SETTINGS format_schema='order_event:OrderEvent', input_format_protobuf_oneof_presence=1, input_format_protobuf_flatten_google_wrappers=1 FORMAT ProtobufSingle";
 
         // Act
         await InsertProtobufAsync(insertQuery, payload.ToArray());
@@ -107,12 +131,15 @@ public sealed class GeneratedSchemaClickHouseIntegrationTests : IAsyncLifetime
                 `price.currency`,
                 `price.amount`,
                 quantity,
-                event_time_unix_ms,
+                `event_time.seconds`,
                 toString(status) AS status,
                 tags,
                 items.sku,
                 metadata['source'],
-                note
+                note,
+                `card.last4`,
+                toString(payment) AS payment,
+                promo_code
             FROM order_events_ingest
             WHERE order_id = 'ord-integration-1'
             """;
@@ -126,12 +153,15 @@ public sealed class GeneratedSchemaClickHouseIntegrationTests : IAsyncLifetime
         reader.GetString(2).Should().Be("USD");
         reader.GetDouble(3).Should().Be(19.99);
         reader.GetFieldValue<uint>(4).Should().Be(2u);
-        reader.GetInt64(5).Should().Be(1_700_000_000_000);
+        reader.GetInt64(5).Should().Be(1_700_000_000);
         reader.GetString(6).Should().Be("ORDER_STATUS_PAID");
         reader.GetFieldValue<string[]>(7).Should().BeEquivalentTo(["promo", "vip"]);
         reader.GetFieldValue<string[]>(8).Should().BeEquivalentTo(["SKU-42"]);
         reader.GetString(9).Should().Be("integration-test");
         reader.GetString(10).Should().Be("integration-note");
+        reader.GetString(11).Should().Be("4242");
+        reader.GetString(12).Should().Be("card");
+        reader.GetString(13).Should().Be("PROMO-42");
     }
 
     [Fact]
@@ -208,11 +238,10 @@ public sealed class GeneratedSchemaClickHouseIntegrationTests : IAsyncLifetime
         string tableName,
         string settings = "")
     {
-        var columns = new DenormalizationPlanner().MapMessage(
-            descriptor,
-            OrdersQueueTestConfig.Defaults,
-            new Dictionary<string, FieldOverrideConfig>());
-        var columnDefinitions = string.Join(",\n    ", columns.Select(BuildColumnDefinition));
+        var columns = MappingTestSupport.MapFixture(descriptor);
+        var columnDefinitions = string.Join(
+            ",\n    ",
+            columns.Select(column => SqlColumnFormatter.FormatBareDefinition(column.Name, column.Type)));
         var createTableSql = $"""
             CREATE TABLE {tableName}
             (
@@ -226,9 +255,6 @@ public sealed class GeneratedSchemaClickHouseIntegrationTests : IAsyncLifetime
         var execResult = await _clickHouse.ExecScriptAsync(createTableSql);
         execResult.ExitCode.Should().Be(0, execResult.Stderr);
     }
-
-    private static string BuildColumnDefinition(ClickHouseColumn column) =>
-        $"{SqlColumnFormatter.FormatColumnName(column.Name)} {column.Type}";
 
     private async Task InsertProtobufAsync(string query, byte[] payload)
     {

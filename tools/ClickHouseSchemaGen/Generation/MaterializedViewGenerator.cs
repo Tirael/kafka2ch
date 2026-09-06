@@ -11,9 +11,8 @@ public static class MaterializedViewGenerator
         for (var i = 0; i < config.Columns.Count; i++)
         {
             var mapping = config.Columns[i];
-            var expression = ResolveExpression(mapping);
             var comma = i < config.Columns.Count - 1 ? "," : string.Empty;
-            builder.AppendLine($"    {expression,-28} AS {mapping.Target}{comma}");
+            builder.AppendLine($"    {ResolveExpression(mapping),-28} AS {mapping.Target}{comma}");
         }
 
         return builder
@@ -22,11 +21,8 @@ public static class MaterializedViewGenerator
             .ToString();
     }
 
-    private static string ResolveExpression(PipelineColumnMapping mapping)
-    {
-        if (!string.IsNullOrWhiteSpace(mapping.Expression))
-            return mapping.Expression;
-
-        return SqlColumnFormatter.FormatColumnName(mapping.Source);
-    }
+    private static string ResolveExpression(PipelineColumnMapping mapping) =>
+        !string.IsNullOrWhiteSpace(mapping.Expression)
+            ? mapping.Expression
+            : SqlColumnFormatter.FormatColumnName(mapping.Source);
 }

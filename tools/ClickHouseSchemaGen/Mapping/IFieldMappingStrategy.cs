@@ -2,7 +2,7 @@ namespace ClickHouseSchemaGen.Mapping;
 
 public interface IFieldMappingStrategy
 {
-    bool CanMap(FieldDescriptor field, MappingContext context);
+    bool CanMap(FieldMappingRequest request);
 
-    IEnumerable<ClickHouseColumn> Map(FieldDescriptor field, string columnPath, MappingContext context);
+    IEnumerable<ClickHouseColumn> Map(FieldMappingRequest request);
 }

@@ -7,11 +7,11 @@ internal static class DictionaryExtensions
         IEnumerable<KeyValuePair<TKey, TValue>>? source)
         where TKey : notnull
     {
-        if (source is null)
-            return target;
-
-        foreach (var (key, value) in source)
-            target[key] = value;
+        if (source is not null)
+        {
+            foreach (var (key, value) in source)
+                target[key] = value;
+        }
 
         return target;
     }
