@@ -1,0 +1,32 @@
+syntax = "proto3";
+
+package sandbox.shipments.v1;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option csharp_namespace = "Sandbox.Contracts";
+
+enum ShipmentStatus {
+  SHIPMENT_STATUS_UNSPECIFIED = 0;
+  SHIPMENT_STATUS_CREATED = 1;
+  SHIPMENT_STATUS_IN_TRANSIT = 2;
+  SHIPMENT_STATUS_DELIVERED = 3;
+  SHIPMENT_STATUS_FAILED = 4;
+}
+
+message TrackingCheckpoint {
+  google.protobuf.Timestamp recorded_at = 1;
+  string location = 2;
+  ShipmentStatus status = 3;
+}
+
+message DeliveredInfo {
+  google.protobuf.Timestamp delivered_at = 1;
+  string signed_by = 2;
+}
+
+message FailedDelivery {
+  string reason = 1;
+  google.protobuf.Int32Value retry_count = 2;
+}

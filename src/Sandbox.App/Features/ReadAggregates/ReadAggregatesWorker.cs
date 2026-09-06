@@ -1,27 +1,12 @@
-using ClickHouse.Client.ADO;
-using Microsoft.Extensions.Options;
-using Sandbox.App.Common;
-
 namespace Sandbox.App.Features.ReadAggregates;
 
-public sealed class ReadAggregatesWorker : BackgroundService
+public sealed class ReadAggregatesWorker(
+    ClickHouseClientFactory connectionFactory,
+    IOptions<ReadAggregatesOptions> options,
+    TimeProvider timeProvider,
+    ILogger<ReadAggregatesWorker> logger) : BackgroundService
 {
-    private readonly ClickHouseClientFactory _connectionFactory;
-    private readonly ReadAggregatesOptions _options;
-    private readonly TimeProvider _timeProvider;
-    private readonly ILogger<ReadAggregatesWorker> _logger;
-
-    public ReadAggregatesWorker(
-        ClickHouseClientFactory connectionFactory,
-        IOptions<ReadAggregatesOptions> options,
-        TimeProvider timeProvider,
-        ILogger<ReadAggregatesWorker> logger)
-    {
-        _connectionFactory = connectionFactory;
-        _options = options.Value;
-        _timeProvider = timeProvider;
-        _logger = logger;
-    }
+    private readonly ReadAggregatesOptions _options = options.Value;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -29,48 +14,70 @@ public sealed class ReadAggregatesWorker : BackgroundService
         {
             try
             {
-                var rows = await StartupRetry.ExecuteAsync(
+                var (orders, shipments) = await StartupRetry.ExecuteAsync(
                     () => QueryAggregatesAsync(stoppingToken),
-                    _logger,
-                    _timeProvider,
-                    stoppingToken);
+                    new RetryContext(logger, timeProvider, stoppingToken));
 
-                if (rows.Count == 0)
-                {
-                    _logger.LogInformation(
-                        "No aggregates in the last {WindowMinutes} minutes",
-                        _options.WindowMinutes);
-                }
-                else
-                {
-                    foreach (var row in rows)
-                    {
-                        _logger.LogInformation(
-                            "Aggregate {Minute:u} {Category}: orders={OrdersCount} amount={TotalAmount:F2} qty={TotalQty}",
-                            row.Minute,
-                            row.Category,
-                            row.OrdersCount,
-                            row.TotalAmount,
-                            row.TotalQty);
-                    }
-                }
+                LogAggregates(
+                    orders,
+                    "No order aggregates in the last {WindowMinutes} minutes",
+                    row => logger.LogInformation(
+                        "Order aggregate {Minute:u} {Category}: orders={OrdersCount} amount={TotalAmount:F2} qty={TotalQty}",
+                        row.Minute,
+                        row.Category,
+                        row.OrdersCount,
+                        row.TotalAmount,
+                        row.TotalQty));
+                LogAggregates(
+                    shipments,
+                    "No shipment aggregates in the last {WindowMinutes} minutes",
+                    row => logger.LogInformation(
+                        "Shipment aggregate {Minute:u} {Status}: shipments={ShipmentsCount}",
+                        row.Minute,
+                        row.Status,
+                        row.ShipmentsCount));
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to read aggregates from ClickHouse");
+                logger.LogError(ex, "Failed to read aggregates from ClickHouse");
             }
 
-            await Task.Delay(TimeSpan.FromMilliseconds(_options.IntervalMs), _timeProvider, stoppingToken);
+            await Task.Delay(TimeSpan.FromMilliseconds(_options.IntervalMs), timeProvider, stoppingToken);
         }
     }
 
-    private async Task<IReadOnlyList<OrderAggregateRow>> QueryAggregatesAsync(CancellationToken cancellationToken)
+    private void LogAggregates<T>(
+        IReadOnlyList<T> rows,
+        string emptyMessage,
+        Action<T> logRow)
     {
-        await using var connection = _connectionFactory.CreateConnection();
+        if (rows.Count == 0)
+        {
+            logger.LogInformation(emptyMessage, _options.WindowMinutes);
+            return;
+        }
+
+        foreach (var row in rows)
+            logRow(row);
+    }
+
+    private async Task<(IReadOnlyList<OrderAggregateRow> Orders, IReadOnlyList<ShipmentAggregateRow> Shipments)>
+        QueryAggregatesAsync(CancellationToken cancellationToken)
+    {
+        await using var connection = connectionFactory.CreateConnection();
         await connection.OpenAsync(cancellationToken);
 
-        await using var command = connection.CreateCommand();
-        command.CommandText = $"""
+        var orders = await QueryOrderAggregatesAsync(connection, cancellationToken);
+        var shipments = await QueryShipmentAggregatesAsync(connection, cancellationToken);
+        return (orders, shipments);
+    }
+
+    private Task<IReadOnlyList<OrderAggregateRow>> QueryOrderAggregatesAsync(
+        ClickHouseConnection connection,
+        CancellationToken cancellationToken) =>
+        QueryAggregatesAsync(
+            connection,
+            $"""
             SELECT minute, category,
                    sum(orders_count) AS orders_count,
                    sum(total_amount) AS total_amount,
@@ -79,20 +86,48 @@ public sealed class ReadAggregatesWorker : BackgroundService
             WHERE minute >= now() - INTERVAL {_options.WindowMinutes} MINUTE
             GROUP BY minute, category
             ORDER BY minute DESC, category
-            """;
-
-        var rows = new List<OrderAggregateRow>();
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-
-        while (await reader.ReadAsync(cancellationToken))
-        {
-            rows.Add(new OrderAggregateRow(
+            """,
+            reader => new OrderAggregateRow(
                 reader.GetDateTime(0),
                 reader.GetString(1),
                 Convert.ToUInt64(reader.GetValue(2)),
                 reader.GetDouble(3),
-                Convert.ToUInt64(reader.GetValue(4))));
-        }
+                Convert.ToUInt64(reader.GetValue(4))),
+            cancellationToken);
+
+    private Task<IReadOnlyList<ShipmentAggregateRow>> QueryShipmentAggregatesAsync(
+        ClickHouseConnection connection,
+        CancellationToken cancellationToken) =>
+        QueryAggregatesAsync(
+            connection,
+            $"""
+            SELECT minute, status,
+                   sum(shipments_count) AS shipments_count
+            FROM shipments_agg_1m
+            WHERE minute >= now() - INTERVAL {_options.WindowMinutes} MINUTE
+            GROUP BY minute, status
+            ORDER BY minute DESC, status
+            """,
+            reader => new ShipmentAggregateRow(
+                reader.GetDateTime(0),
+                reader.GetString(1),
+                Convert.ToUInt64(reader.GetValue(2))),
+            cancellationToken);
+
+    private static async Task<IReadOnlyList<T>> QueryAggregatesAsync<T>(
+        ClickHouseConnection connection,
+        string commandText,
+        Func<System.Data.Common.DbDataReader, T> mapRow,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = commandText;
+
+        List<T> rows = [];
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+        while (await reader.ReadAsync(cancellationToken))
+            rows.Add(mapRow(reader));
 
         return rows;
     }

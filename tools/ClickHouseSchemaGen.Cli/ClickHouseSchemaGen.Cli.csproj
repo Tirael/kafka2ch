@@ -10,7 +10,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Google.Protobuf" Version="3.29.3" />
+    <PackageReference Include="Google.Protobuf" Version="3.36.1" />
     <ProjectReference Include="..\ClickHouseSchemaGen\ClickHouseSchemaGen.csproj" />
     <ProjectReference Include="..\..\src\Sandbox.Contracts\Sandbox.Contracts.csproj" />
   </ItemGroup>

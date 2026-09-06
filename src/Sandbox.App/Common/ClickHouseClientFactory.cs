@@ -1,6 +1,3 @@
-using ClickHouse.Client.ADO;
-using Microsoft.Extensions.Options;
-
 namespace Sandbox.App.Common;
 
 public sealed class ClickHouseClientFactory(IOptions<ClickHouseOptions> options)

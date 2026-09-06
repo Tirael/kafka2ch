@@ -1,5 +1,3 @@
-using Microsoft.Extensions.DependencyInjection;
-
 namespace Sandbox.App.Features.PublishOrders;
 
 public static class PublishOrdersSlice

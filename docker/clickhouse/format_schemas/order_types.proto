@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+package sandbox.orders.v1;
+
+import "common/money.proto";
+
+option csharp_namespace = "Sandbox.Contracts";
+
+message LineItem {
+  string sku = 1;
+  uint32 qty = 2;
+  double unit_price = 3;
+  sandbox.common.v1.OrderStatus line_status = 4;
+}
+
+message CardPayment {
+  string last4 = 1;
+  string network = 2;
+}
+
+message CashPayment {
+  double received = 1;
+}
+
+message WalletPayment {
+  string provider = 1;
+  string wallet_id = 2;
+}

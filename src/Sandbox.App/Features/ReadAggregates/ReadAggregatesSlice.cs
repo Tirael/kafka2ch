@@ -1,5 +1,3 @@
-using Microsoft.Extensions.DependencyInjection;
-
 namespace Sandbox.App.Features.ReadAggregates;
 
 public static class ReadAggregatesSlice

@@ -1,2 +1,17 @@
 global using AwesomeAssertions;
+global using ClickHouse.Client.ADO;
+global using ClickHouseSchemaGen;
+global using ClickHouseSchemaGen.Generation;
+global using ClickHouseSchemaGen.Mapping;
+global using ClickHouseSchemaGen.Models;
+global using ClickHouseSchemaGen.Tests.Support;
+global using Google.Protobuf;
+global using Google.Protobuf.Reflection;
+global using Google.Protobuf.WellKnownTypes;
+global using Sandbox.Contracts;
+global using Sandbox.Contracts.Common;
+global using Sandbox.Contracts.TestFixtures;
+global using System.Net.Http.Headers;
+global using System.Text;
+global using Testcontainers.ClickHouse;
 global using Xunit;

@@ -1,0 +1,12 @@
+syntax = "proto3";
+
+package sandbox.common.v1;
+
+option csharp_namespace = "Sandbox.Contracts.Common";
+
+message Address {
+  string country = 1;
+  string city = 2;
+  string street = 3;
+  string postal_code = 4;
+}

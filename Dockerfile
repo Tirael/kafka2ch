@@ -7,7 +7,7 @@ COPY src/Sandbox.App/Sandbox.App.csproj src/Sandbox.App/
 RUN dotnet restore src/Sandbox.App/Sandbox.App.csproj
 
 COPY src/ src/
-RUN dotnet publish src/Sandbox.App/Sandbox.App.csproj -c Release -o /app/publish --no-restore
+RUN dotnet publish src/Sandbox.App/Sandbox.App.csproj -c Release -o /app/publish --no-restore -p:SkipClickHouseCodegen=true
 
 FROM --platform=linux/amd64 mcr.microsoft.com/dotnet/runtime:8.0 AS runtime
 WORKDIR /app

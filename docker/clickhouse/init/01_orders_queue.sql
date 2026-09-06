@@ -4,12 +4,25 @@ CREATE TABLE orders_queue
 (
     order_id             String,
     category             LowCardinality(String),
-    `price.currency`     String,
-    `price.amount`       Float64,
+    `price.currency`     String,  -- nested message
+    `price.amount`       Float64,  -- nested message
     quantity             UInt32,
-    event_time_unix_ms   Int64,
+    `event_time.seconds` Int64,  -- nested message
+    `event_time.nanos`   Int32,  -- nested message
     status               Enum8('ORDER_STATUS_UNSPECIFIED' = 0, 'ORDER_STATUS_CREATED' = 1, 'ORDER_STATUS_PAID' = 2),  -- proto enum
-    tags                 Array(LowCardinality(String))  -- proto repeated
+    tags                 Array(LowCardinality(String)),  -- proto repeated
+    items                Nested(sku String, qty UInt32, unit_price Float64, line_status Enum8('ORDER_STATUS_UNSPECIFIED' = 0, 'ORDER_STATUS_CREATED' = 1, 'ORDER_STATUS_PAID' = 2)),  -- proto repeated message
+    metadata             Map(String, String),  -- proto map
+    note                 Nullable(String),  -- proto optional
+    `card.last4`         String,  -- nested message
+    `card.network`       String,  -- nested message
+    `cash.received`      Float64,  -- nested message
+    `wallet.provider`    String,  -- nested message
+    `wallet.wallet_id`   String,  -- nested message
+    payment              Enum8('absent' = 0, 'card' = 11, 'cash' = 12, 'wallet' = 13),  -- oneof presence
+    promo_code           Nullable(String),  -- well-known type
+    status_history       Array(Enum8('ORDER_STATUS_UNSPECIFIED' = 0, 'ORDER_STATUS_CREATED' = 1, 'ORDER_STATUS_PAID' = 2)),  -- proto repeated
+    loyalty_points       Nullable(Int32)  -- proto optional
 )
 ENGINE = Kafka
 SETTINGS
@@ -19,4 +32,8 @@ SETTINGS
     kafka_format = 'ProtobufSingle',
     kafka_schema = 'order_event:OrderEvent',
     kafka_schema_registry_skip_bytes = 6,
-    kafka_num_consumers = 1;
+    kafka_num_consumers = 1,
+    flatten_nested = 0,
+    input_format_protobuf_oneof_presence = 1,
+    input_format_protobuf_flatten_google_wrappers = 1;
+
