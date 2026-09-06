@@ -11,7 +11,9 @@ public static class CommonSlice
     public static IServiceCollection AddCommon(this IServiceCollection services, IConfiguration configuration)
     {
         services.Configure<KafkaOptions>(configuration.GetSection(KafkaOptions.SectionName));
+        services.Configure<ClickHouseOptions>(configuration.GetSection(ClickHouseOptions.SectionName));
         services.AddSingleton<KafkaClientFactory>();
+        services.AddSingleton<ClickHouseClientFactory>();
 
         services.AddSingleton<ISchemaRegistryClient>(sp =>
         {
