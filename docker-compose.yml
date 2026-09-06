@@ -90,6 +90,11 @@ services:
       Kafka__SchemaRegistryUrl: http://schema-registry:8081
       PublishOrders__Topic: orders
       PublishOrders__IntervalMs: 500
+      ClickHouse__Host: clickhouse
+      ClickHouse__Port: 8123
+      ClickHouse__Database: default
+      ReadAggregates__IntervalMs: 5000
+      ReadAggregates__WindowMinutes: 10
 
   kafka-ui:
     image: ${KAFKA_UI_IMAGE}
