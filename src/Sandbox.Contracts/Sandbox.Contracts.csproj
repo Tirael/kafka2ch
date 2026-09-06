@@ -24,4 +24,9 @@
     <Copy SourceFiles="@(ProtoSchema)" DestinationFiles="@(ProtoSchema->'$(MSBuildProjectDirectory)/../../docker/clickhouse/format_schemas/%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
   </Target>
 
+  <Target Name="GenerateClickHouseDdl" AfterTargets="SyncProtoSchemas" Condition="'$(SkipClickHouseCodegen)' != 'true'">
+    <MSBuild Projects="$(MSBuildProjectDirectory)/../../tools/ClickHouseSchemaGen.Cli/ClickHouseSchemaGen.Cli.csproj" Targets="Build" Properties="Configuration=$(Configuration);SkipClickHouseCodegen=true" />
+    <Exec WorkingDirectory="$(MSBuildProjectDirectory)/../../tools/ClickHouseSchemaGen.Cli/bin/$(Configuration)/net8.0" Command="dotnet ClickHouseSchemaGen.Cli.dll --config &quot;$(MSBuildProjectDirectory)/clickhouse.codegen.json&quot;" />
+  </Target>
+
 </Project>

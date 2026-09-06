@@ -7,6 +7,7 @@ public static class OrderEventFactory
 {
     private static readonly string[] Categories = ["electronics", "books", "food"];
     private static readonly string[] Currencies = ["USD", "EUR", "RUB"];
+    private static readonly string[] Tags = ["promo", "vip", "new", "sale"];
     private static readonly OrderStatus[] Statuses =
     [
         OrderStatus.Created,
@@ -30,6 +31,10 @@ public static class OrderEventFactory
             EventTimeUnixMs = now.ToUnixTimeMilliseconds(),
             Status = Statuses[Random.Shared.Next(Statuses.Length)]
         };
+
+        var tagCount = Random.Shared.Next(0, 3);
+        for (var i = 0; i < tagCount; i++)
+            orderEvent.Tags.Add(Tags[Random.Shared.Next(Tags.Length)]);
 
         return (key, orderEvent);
     }

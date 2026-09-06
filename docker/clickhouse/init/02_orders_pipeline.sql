@@ -1,25 +1,3 @@
-CREATE TABLE orders_queue
-(
-    order_id            String,
-    category            LowCardinality(String),
-    -- вложенный message Money из common/money.proto маппится на колонки с точкой
-    `price.currency`    String,
-    `price.amount`      Float64,
-    quantity            UInt32,
-    event_time_unix_ms  Int64,
-    -- proto enum маппится по именам значений; fallback при ошибке парсинга — Int32 + toString() в MV
-    status              Enum8('ORDER_STATUS_UNSPECIFIED' = 0, 'ORDER_STATUS_CREATED' = 1, 'ORDER_STATUS_PAID' = 2)
-)
-ENGINE = Kafka
-SETTINGS
-    kafka_broker_list = 'kafka:9092',
-    kafka_topic_list = 'orders',
-    kafka_group_name = 'clickhouse-orders',
-    kafka_format = 'ProtobufSingle',
-    kafka_schema = 'order_event:OrderEvent',
-    kafka_schema_registry_skip_bytes = 6,
-    kafka_num_consumers = 1;
-
 CREATE TABLE orders
 (
     order_id   String,
