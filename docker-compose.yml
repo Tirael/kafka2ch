@@ -49,6 +49,9 @@ services:
     ports:
       - "8123:8123"
       - "9000:9000"
+    environment:
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
     volumes:
       - ./docker/clickhouse/init:/docker-entrypoint-initdb.d
       - ./docker/clickhouse/format_schemas:/var/lib/clickhouse/format_schemas
@@ -93,6 +96,8 @@ services:
       ClickHouse__Host: clickhouse
       ClickHouse__Port: 8123
       ClickHouse__Database: default
+      ClickHouse__Username: default
+      ClickHouse__Password: ${CLICKHOUSE_PASSWORD}
       ReadAggregates__IntervalMs: 5000
       ReadAggregates__WindowMinutes: 10
 

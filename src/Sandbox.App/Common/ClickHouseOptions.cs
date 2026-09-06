@@ -10,5 +10,12 @@ public sealed class ClickHouseOptions
 
     public string Database { get; set; } = "default";
 
-    public string ConnectionString => $"Host={Host};Port={Port};Database={Database}";
+    public string Username { get; set; } = "default";
+
+    public string Password { get; set; } = "";
+
+    public string ConnectionString =>
+        string.IsNullOrEmpty(Password)
+            ? $"Host={Host};Port={Port};Username={Username};Database={Database}"
+            : $"Host={Host};Port={Port};Username={Username};Password={Password};Database={Database}";
 }
