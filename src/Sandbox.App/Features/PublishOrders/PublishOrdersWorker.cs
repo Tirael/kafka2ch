@@ -1,5 +1,3 @@
-using Confluent.Kafka;
-
 namespace Sandbox.App.Features.PublishOrders;
 
 public sealed class PublishOrdersWorker(

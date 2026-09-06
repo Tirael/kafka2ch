@@ -1,17 +1,8 @@
-using System.Net.Http.Headers;
-using System.Text;
-using ClickHouse.Client.ADO;
-using Google.Protobuf;
-using Google.Protobuf.WellKnownTypes;
-using Sandbox.Contracts.Common;
-using Testcontainers.ClickHouse;
-
 namespace ClickHouseSchemaGen.Tests.Integration;
 
 public sealed class GeneratedSchemaClickHouseIntegrationTests : IAsyncLifetime
 {
-    private readonly ClickHouseContainer _clickHouse = new ClickHouseBuilder()
-        .WithImage("clickhouse/clickhouse-server:25.11")
+    private readonly ClickHouseContainer _clickHouse = new ClickHouseBuilder("clickhouse/clickhouse-server:25.11")
         .WithBindMount(RepoPaths.FormatSchemasDirectory, "/var/lib/clickhouse/format_schemas")
         .Build();
 

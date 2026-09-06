@@ -1,7 +1,3 @@
-using Confluent.Kafka;
-using Confluent.SchemaRegistry;
-using Confluent.SchemaRegistry.Serdes;
-
 namespace Sandbox.App.Common;
 
 public sealed class KafkaClientFactory(IOptions<KafkaOptions> options)

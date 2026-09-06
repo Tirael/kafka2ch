@@ -1,5 +1,3 @@
-using ClickHouseSchemaGen.Mapping;
-
 namespace ClickHouseSchemaGen;
 
 public sealed class ProtoToClickHouseMapper(DenormalizationPlanner planner)

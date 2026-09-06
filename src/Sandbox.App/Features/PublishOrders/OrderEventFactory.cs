@@ -1,5 +1,3 @@
-using Sandbox.Contracts.Common;
-
 namespace Sandbox.App.Features.PublishOrders;
 
 public static class OrderEventFactory

@@ -1,6 +1,3 @@
-using ClickHouse.Client.ADO;
-using Sandbox.App.Common;
-
 namespace Sandbox.App.Features.ReadAggregates;
 
 public sealed class ReadAggregatesWorker(

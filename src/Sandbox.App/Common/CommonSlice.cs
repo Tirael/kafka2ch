@@ -1,6 +1,3 @@
-using Confluent.Kafka;
-using Confluent.SchemaRegistry;
-
 namespace Sandbox.App.Common;
 
 public static class CommonSlice

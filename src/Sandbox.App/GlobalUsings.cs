@@ -1,3 +1,11 @@
+global using ClickHouse.Client.ADO;
+global using Confluent.Kafka;
+global using Confluent.SchemaRegistry;
+global using Confluent.SchemaRegistry.Serdes;
 global using Microsoft.Extensions.DependencyInjection;
 global using Microsoft.Extensions.Options;
+global using Sandbox.App.Common;
 global using Sandbox.Contracts;
+global using Sandbox.Contracts.Common;
+global using Sandbox.App.Features.PublishOrders;
+global using Sandbox.App.Features.ReadAggregates;
