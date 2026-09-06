@@ -24,12 +24,11 @@ public sealed class DenormalizationPlanner
 
         foreach (var field in descriptor.Fields.InDeclarationOrder())
         {
-            if (field.ContainingOneof is not null && !field.ContainingOneof.IsSynthetic)
+            if (IsRealOneofField(field))
             {
-                if (!processedOneofs.Add(field.ContainingOneof))
-                    continue;
+                if (processedOneofs.Add(field.ContainingOneof!))
+                    columns.AddRange(MapOneof(field.ContainingOneof!, context));
 
-                columns.AddRange(MapOneof(field.ContainingOneof, context));
                 continue;
             }
 
@@ -108,4 +107,12 @@ public sealed class DenormalizationPlanner
 
     internal static string BuildTupleType(IReadOnlyList<ClickHouseColumn> innerColumns) =>
         $"Tuple({string.Join(", ", innerColumns.Select(column => $"{column.Name} {column.Type}"))})";
+
+    private static bool IsRealOneofField(FieldDescriptor field)
+    {
+        if (field.ContainingOneof is null)
+            return false;
+
+        return !field.ContainingOneof.IsSynthetic;
+    }
 }

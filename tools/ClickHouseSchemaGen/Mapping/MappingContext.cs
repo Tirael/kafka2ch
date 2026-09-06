@@ -9,14 +9,17 @@ public sealed record MappingContext
     public int Depth { get; init; }
 
     public FieldOverrideConfig? GetOverride(string columnPath) =>
-        FieldOverrides.TryGetValue(columnPath, out var fieldOverride) ? fieldOverride : null;
+        FieldOverrides.GetValueOrDefault(columnPath);
 
     public MappingStrategy? GetOverrideStrategy(string columnPath)
     {
-        var strategy = GetOverride(columnPath)?.Strategy;
-        return strategy is not null
-            && Enum.TryParse<MappingStrategy>(strategy, ignoreCase: true, out var parsed)
-            ? parsed
-            : null;
+        var strategyName = GetOverride(columnPath)?.Strategy;
+        if (strategyName is null)
+            return null;
+
+        if (Enum.TryParse<MappingStrategy>(strategyName, ignoreCase: true, out var parsed))
+            return parsed;
+
+        return null;
     }
 }

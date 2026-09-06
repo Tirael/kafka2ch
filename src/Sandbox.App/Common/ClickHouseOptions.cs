@@ -14,8 +14,16 @@ public sealed class ClickHouseOptions
 
     public string Password { get; set; } = "";
 
-    public string ConnectionString =>
-        string.IsNullOrEmpty(Password)
-            ? $"Host={Host};Port={Port};Username={Username};Database={Database}"
-            : $"Host={Host};Port={Port};Username={Username};Password={Password};Database={Database}";
+    public string ConnectionString
+    {
+        get
+        {
+            if (string.IsNullOrEmpty(Password))
+            {
+                return $"Host={Host};Port={Port};Username={Username};Database={Database}";
+            }
+
+            return $"Host={Host};Port={Port};Username={Username};Password={Password};Database={Database}";
+        }
+    }
 }

@@ -12,7 +12,32 @@ public static class ClickHouseTypeResolver
         if (!string.IsNullOrWhiteSpace(fieldOverride?.Type))
             return fieldOverride.Type;
 
-        var baseType = field.FieldType switch
+        var baseType = ResolveBaseType(field, columnPath, fieldOverride, context.Defaults);
+        return ShouldBeNullable(field, context, fieldOverride, forceNullable)
+            ? $"Nullable({baseType})"
+            : baseType;
+    }
+
+    public static string ResolveEnum(
+        EnumDescriptor enumDescriptor,
+        FieldOverrideConfig? fieldOverride,
+        CodegenDefaults defaults)
+    {
+        if (fieldOverride?.Enum8 == true)
+            return BuildEnum("Enum8", enumDescriptor);
+
+        if (enumDescriptor.Values.Count <= defaults.EnumMaxValuesForEnum8)
+            return BuildEnum("Enum8", enumDescriptor);
+
+        return BuildEnum("Enum16", enumDescriptor);
+    }
+
+    private static string ResolveBaseType(
+        FieldDescriptor field,
+        string columnPath,
+        FieldOverrideConfig? fieldOverride,
+        CodegenDefaults defaults) =>
+        field.FieldType switch
         {
             FieldType.String or FieldType.Bytes => "String",
             FieldType.Int32 or FieldType.SInt32 or FieldType.SFixed32 => "Int32",
@@ -22,28 +47,30 @@ public static class ClickHouseTypeResolver
             FieldType.Float => "Float32",
             FieldType.Double => "Float64",
             FieldType.Bool => "UInt8",
-            FieldType.Enum => ResolveEnum(field.EnumType, fieldOverride, context.Defaults),
+            FieldType.Enum => ResolveEnum(field.EnumType, fieldOverride, defaults),
             _ => throw new NotSupportedException(
                 $"Unsupported protobuf field type {field.FieldType} for {columnPath}")
         };
 
-        var shouldNullable = forceNullable
-            || fieldOverride?.Nullable == true
-            || (context.Defaults.OptionalAsNullable && field.HasPresence && field.ContainingOneof is null)
-            || (context.Defaults.OptionalAsNullable && field.ContainingOneof?.IsSynthetic == true);
-
-        return shouldNullable ? $"Nullable({baseType})" : baseType;
-    }
-
-    public static string ResolveEnum(
-        EnumDescriptor enumDescriptor,
+    private static bool ShouldBeNullable(
+        FieldDescriptor field,
+        MappingContext context,
         FieldOverrideConfig? fieldOverride,
-        CodegenDefaults defaults)
+        bool forceNullable)
     {
-        if (fieldOverride?.Enum8 == true || enumDescriptor.Values.Count <= defaults.EnumMaxValuesForEnum8)
-            return BuildEnum("Enum8", enumDescriptor);
+        if (forceNullable)
+            return true;
 
-        return BuildEnum("Enum16", enumDescriptor);
+        if (fieldOverride?.Nullable == true)
+            return true;
+
+        if (!context.Defaults.OptionalAsNullable)
+            return false;
+
+        if (field.ContainingOneof?.IsSynthetic == true)
+            return true;
+
+        return field.HasPresence && field.ContainingOneof is null;
     }
 
     private static string BuildEnum(string enumType, EnumDescriptor enumDescriptor)

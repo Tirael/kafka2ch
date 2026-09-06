@@ -8,7 +8,10 @@ public static class SqlColumnFormatter
     public static string FormatColumnLine(string name, string type, string? comment, string commaSuffix)
     {
         var formattedName = FormatColumnName(name);
-        var commentSuffix = string.IsNullOrWhiteSpace(comment) ? string.Empty : $"  -- {comment}";
+        var commentSuffix = BuildCommentSuffix(comment);
         return $"    {formattedName,-20} {type}{commaSuffix}{commentSuffix}";
     }
+
+    private static string BuildCommentSuffix(string? comment) =>
+        string.IsNullOrWhiteSpace(comment) ? string.Empty : $"  -- {comment}";
 }

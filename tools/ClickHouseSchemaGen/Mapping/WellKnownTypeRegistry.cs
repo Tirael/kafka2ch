@@ -16,9 +16,13 @@ public static class WellKnownTypeRegistry
     public static bool IsAny(MessageDescriptor descriptor) =>
         descriptor.FullName == "google.protobuf.Any";
 
-    public static bool IsWrapper(MessageDescriptor descriptor) =>
-        descriptor.FullName.StartsWith(GoogleProtobufPrefix, StringComparison.Ordinal)
-        && descriptor.Name.EndsWith("Value", StringComparison.Ordinal);
+    public static bool IsWrapper(MessageDescriptor descriptor)
+    {
+        if (!descriptor.FullName.StartsWith(GoogleProtobufPrefix, StringComparison.Ordinal))
+            return false;
+
+        return descriptor.Name.EndsWith("Value", StringComparison.Ordinal);
+    }
 
     public static bool ShouldFlattenWellKnownMessage(MessageDescriptor descriptor) =>
         IsTimestamp(descriptor) || IsDuration(descriptor);

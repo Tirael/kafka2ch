@@ -50,7 +50,11 @@ public static class KafkaTableGenerator
     private static bool IsOneofPresenceColumn(ClickHouseColumn column) =>
         column.Comment == "oneof presence";
 
-    private static bool RequiresFlattenNested(IReadOnlyList<ClickHouseColumn> columns, KafkaTableConfig config) =>
-        !config.Kafka.FlattenNested
-        && columns.Any(column => column.Type.StartsWith("Nested(", StringComparison.Ordinal));
+    private static bool RequiresFlattenNested(IReadOnlyList<ClickHouseColumn> columns, KafkaTableConfig config)
+    {
+        if (config.Kafka.FlattenNested)
+            return false;
+
+        return columns.Any(column => column.Type.StartsWith("Nested(", StringComparison.Ordinal));
+    }
 }
