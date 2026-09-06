@@ -1,16 +1,12 @@
 using Confluent.Kafka;
 using Confluent.SchemaRegistry;
 using Confluent.SchemaRegistry.Serdes;
-using Microsoft.Extensions.Options;
-using Sandbox.Contracts;
 
 namespace Sandbox.App.Common;
 
-public sealed class KafkaClientFactory
+public sealed class KafkaClientFactory(IOptions<KafkaOptions> options)
 {
-    private readonly KafkaOptions _options;
-
-    public KafkaClientFactory(IOptions<KafkaOptions> options) => _options = options.Value;
+    private readonly KafkaOptions _options = options.Value;
 
     public CachedSchemaRegistryClient CreateSchemaRegistryClient() =>
         new(new SchemaRegistryConfig { Url = _options.SchemaRegistryUrl });

@@ -1,27 +1,15 @@
 using ClickHouse.Client.ADO;
-using Microsoft.Extensions.Options;
 using Sandbox.App.Common;
 
 namespace Sandbox.App.Features.ReadAggregates;
 
-public sealed class ReadAggregatesWorker : BackgroundService
+public sealed class ReadAggregatesWorker(
+    ClickHouseClientFactory connectionFactory,
+    IOptions<ReadAggregatesOptions> options,
+    TimeProvider timeProvider,
+    ILogger<ReadAggregatesWorker> logger) : BackgroundService
 {
-    private readonly ClickHouseClientFactory _connectionFactory;
-    private readonly ReadAggregatesOptions _options;
-    private readonly TimeProvider _timeProvider;
-    private readonly ILogger<ReadAggregatesWorker> _logger;
-
-    public ReadAggregatesWorker(
-        ClickHouseClientFactory connectionFactory,
-        IOptions<ReadAggregatesOptions> options,
-        TimeProvider timeProvider,
-        ILogger<ReadAggregatesWorker> logger)
-    {
-        _connectionFactory = connectionFactory;
-        _options = options.Value;
-        _timeProvider = timeProvider;
-        _logger = logger;
-    }
+    private readonly ReadAggregatesOptions _options = options.Value;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -31,13 +19,13 @@ public sealed class ReadAggregatesWorker : BackgroundService
             {
                 var rows = await StartupRetry.ExecuteAsync(
                     () => QueryAggregatesAsync(stoppingToken),
-                    _logger,
-                    _timeProvider,
+                    logger,
+                    timeProvider,
                     stoppingToken);
 
                 if (rows.Count == 0)
                 {
-                    _logger.LogInformation(
+                    logger.LogInformation(
                         "No aggregates in the last {WindowMinutes} minutes",
                         _options.WindowMinutes);
                 }
@@ -45,7 +33,7 @@ public sealed class ReadAggregatesWorker : BackgroundService
                 {
                     foreach (var row in rows)
                     {
-                        _logger.LogInformation(
+                        logger.LogInformation(
                             "Aggregate {Minute:u} {Category}: orders={OrdersCount} amount={TotalAmount:F2} qty={TotalQty}",
                             row.Minute,
                             row.Category,
@@ -57,16 +45,16 @@ public sealed class ReadAggregatesWorker : BackgroundService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to read aggregates from ClickHouse");
+                logger.LogError(ex, "Failed to read aggregates from ClickHouse");
             }
 
-            await Task.Delay(TimeSpan.FromMilliseconds(_options.IntervalMs), _timeProvider, stoppingToken);
+            await Task.Delay(TimeSpan.FromMilliseconds(_options.IntervalMs), timeProvider, stoppingToken);
         }
     }
 
     private async Task<IReadOnlyList<OrderAggregateRow>> QueryAggregatesAsync(CancellationToken cancellationToken)
     {
-        await using var connection = _connectionFactory.CreateConnection();
+        await using var connection = connectionFactory.CreateConnection();
         await connection.OpenAsync(cancellationToken);
 
         await using var command = connection.CreateCommand();
@@ -81,7 +69,7 @@ public sealed class ReadAggregatesWorker : BackgroundService
             ORDER BY minute DESC, category
             """;
 
-        var rows = new List<OrderAggregateRow>();
+        List<OrderAggregateRow> rows = [];
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
 
         while (await reader.ReadAsync(cancellationToken))

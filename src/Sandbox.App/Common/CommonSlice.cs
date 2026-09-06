@@ -1,8 +1,5 @@
 using Confluent.Kafka;
 using Confluent.SchemaRegistry;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
-using Sandbox.Contracts;
 
 namespace Sandbox.App.Common;
 

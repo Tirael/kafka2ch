@@ -118,53 +118,59 @@ Protobuf-ключ на ClickHouse не влияет: Kafka engine парсит �
 
 ## DDL ClickHouse (docker-entrypoint-initdb.d)
 
+Init SQL **генерируется** инструментом `ClickHouseSchemaGen` при сборке `Sandbox.Contracts`:
+
+| Файл | Источник | Содержимое |
+|---|---|---|
+| `docker/clickhouse/init/01_orders_queue.sql` | generated из `clickhouse.codegen.json` | Kafka engine `orders_queue` |
+| `docker/clickhouse/init/02_orders_pipeline.sql` | generated (MV + MergeTree) + `trailingSql` | `orders`, `orders_mv`, агрегаты |
+
+Конфиг: [`src/Sandbox.Contracts/clickhouse.codegen.json`](src/Sandbox.Contracts/clickhouse.codegen.json). Ручное редактирование `01_orders_queue.sql` не требуется — достаточно `dotnet build src/Sandbox.Contracts`.
+
+Пример сгенерированной Kafka-таблицы (актуально после этапа 7):
+
 ```sql
 CREATE TABLE orders_queue
 (
-    order_id            String,
-    category            LowCardinality(String),
-    -- вложенный message Money из common/money.proto маппится на колонки с точкой
-    `price.currency`    String,
-    `price.amount`      Float64,
-    quantity            UInt32,
-    event_time_unix_ms  Int64,
-    -- proto enum маппится по именам значений; fallback при ошибке парсинга — Int32 + toString() в MV
-    status              Enum8('ORDER_STATUS_UNSPECIFIED' = 0, 'ORDER_STATUS_CREATED' = 1, 'ORDER_STATUS_PAID' = 2)
+    order_id             String,
+    category             LowCardinality(String),
+    `price.currency`     String,
+    `price.amount`       Float64,
+    quantity             UInt32,
+    event_time_unix_ms   Int64,
+    status               Enum8('ORDER_STATUS_UNSPECIFIED' = 0, ...),
+    tags                 Array(LowCardinality(String)),
+    items                Nested(sku String, qty UInt32, unit_price Float64),
+    metadata             Map(String, String),
+    note                 Nullable(String)
 )
 ENGINE = Kafka
 SETTINGS
-    kafka_broker_list = 'kafka:9092',
-    kafka_topic_list = 'orders',
-    kafka_group_name = 'clickhouse-orders',
     kafka_format = 'ProtobufSingle',
-    kafka_schema = 'order_event.proto:sandbox.orders.v1.OrderEvent',
+    kafka_schema = 'order_event:OrderEvent',
     kafka_schema_registry_skip_bytes = 6,
-    kafka_num_consumers = 1;
+    flatten_nested = 0;
+```
 
-CREATE TABLE orders
-(
-    order_id   String,
-    category   LowCardinality(String),
-    currency   LowCardinality(String),
-    amount     Float64,
-    quantity   UInt32,
-    status     LowCardinality(String),
-    event_time DateTime64(3)
-)
-ENGINE = MergeTree
-ORDER BY (event_time, order_id);
+MergeTree + MV (фрагмент `02_orders_pipeline.sql`):
 
+```sql
+CREATE TABLE orders (...);
 CREATE MATERIALIZED VIEW orders_mv TO orders AS
 SELECT
     order_id,
     category,
-    `price.currency`            AS currency,
-    `price.amount`              AS amount,
+    `price.currency` AS currency,
+    `price.amount` AS amount,
     quantity,
-    toString(status)            AS status,
+    toString(status) AS status,
     fromUnixTimestamp64Milli(event_time_unix_ms) AS event_time
 FROM orders_queue;
+```
 
+Полный пример legacy-DDL (до codegen) для справки по агрегатам:
+
+```sql
 CREATE TABLE orders_agg_1m
 (
     minute        DateTime,
@@ -200,6 +206,38 @@ GROUP BY minute, category
 ORDER BY minute DESC, category;
 ```
 
+## ClickHouseSchemaGen (proto3 → ClickHouse)
+
+Универсальный транслятор: [`tools/ClickHouseSchemaGen/`](tools/ClickHouseSchemaGen/) + CLI + MSBuild target `GenerateClickHouseDdl` (после `SyncProtoSchemas`).
+
+```
+protos/**/*.proto → Grpc.Tools → MessageDescriptor
+                                      ↓
+                         DenormalizationPlanner (+ clickhouse.codegen.json)
+                                      ↓
+                    01_orders_queue.sql + 02_orders_pipeline.sql
+```
+
+### Proto3 → ClickHouse mapping (default)
+
+| Proto3 | ClickHouse | Стратегия |
+|---|---|---|
+| scalar | `String` / `Int32` / … | Direct |
+| `optional T` | `Nullable(T)` | Optional (в т.ч. synthetic oneof proto3) |
+| `enum` | `Enum8` / `Enum16` | Enum (auto Enum16 если >127 значений) |
+| nested `message` | `` `parent.field` `` flat cols | Flatten |
+| `repeated` scalar/enum | `Array(T)` | Repeat |
+| `repeated` message | `Nested(...)` | Nested (`flatten_nested = 0`) |
+| `map<K,V>` | `Map(K,V)` | Map |
+| `oneof` | branch cols + `{oneofName} Enum8` | Oneof (`input_format_protobuf_oneof_presence = 1`) |
+| `google.protobuf.Timestamp` | `` `field.seconds` ``, `` `field.nanos` `` | Flatten WKT |
+| `google.protobuf.*Value` | `Nullable(T)` | Wrapper |
+| `Struct` / `Any` | `String` (JSON fallback) | JsonFallback (override) |
+
+Overrides в `clickhouse.codegen.json`: `defaults` (maxFlattenDepth, repeatedMessageStrategy, …) + `fieldOverrides` per field.
+
+Тесты: [`tests/ClickHouseSchemaGen.Tests/`](tests/ClickHouseSchemaGen.Tests/) — xUnit + AwesomeAssertions + Testcontainers (15 tests).
+
 ## Sandbox-приложение (.NET 8, vertical slice architecture)
 
 Один worker-хост (`Microsoft.NET.Sdk.Worker`), код организован по вертикальным срезам: каждая фича — самодостаточный каталог со своим worker-ом, моделями, опциями конфигурации и регистрацией DI. Технических слоёв (Services/Repositories/Infrastructure-проектов) нет.
@@ -221,37 +259,27 @@ ORDER BY minute DESC, category;
 
 ```
 src/
-  Sandbox.Contracts/        # Grpc.Tools codegen, ProtoRoot=protos, SyncProtoSchemas target
+  Sandbox.Contracts/
     protos/
-      order_event.proto     # value: главный файл, import "common/money.proto"
-      order_key.proto       # key: protobuf-ключ сообщения
-      common/money.proto    # кастомные общие типы (Money, OrderStatus)
+      order_event.proto       # value (+ LineItem, map, optional, repeated)
+      order_key.proto
+      mapping_fixtures.proto  # тестовые сообщения для codegen
+      common/money.proto
+    clickhouse.codegen.json
   Sandbox.App/
-    Features/
-      PublishOrders/
-        PublishOrdersWorker.cs
-        OrderEventFactory.cs
-        PublishOrdersOptions.cs
-        PublishOrdersSlice.cs        # DI-регистрация среза
-      ReadAggregates/
-        ReadAggregatesWorker.cs
-        OrderAggregateRow.cs
-        ReadAggregatesOptions.cs
-        ReadAggregatesSlice.cs
-    Common/
-      KafkaClientFactory.cs
-      ClickHouseConnectionFactory.cs
-      StartupRetry.cs
-      CommonSlice.cs
-    Program.cs              # composition root
-    appsettings.json
+    Features/...
+tools/
+  ClickHouseSchemaGen/        # DenormalizationPlanner, strategies, generators
+  ClickHouseSchemaGen.Cli/
+tests/
+  ClickHouseSchemaGen.Tests/
 docker/
-  clickhouse/init/01_schema.sql
-  clickhouse/format_schemas/           # копия всего дерева protos/
-    order_event.proto                  # (относительные пути сохраняются,
-    common/money.proto                 #  иначе import не разрешится)
+  clickhouse/init/
+    01_orders_queue.sql       # generated
+    02_orders_pipeline.sql    # generated (orders + orders_mv) + trailing agg SQL
+  clickhouse/format_schemas/  # SyncProtoSchemas + google/protobuf/timestamp.proto
 docker-compose.yml
-Dockerfile                  # multi-stage build Sandbox.App
+Dockerfile
 README.md
 ```
 
@@ -335,6 +363,7 @@ kafka-init:
    Здесь же валидируется `skip_bytes = 6` и маппинг nested/enum; при провале enum — fallback `status Int32` + `toString()` в MV; при провале envelope — переключение на план Б.
 5. **Срез ReadAggregates**: worker чтения агрегатов, вывод свода в лог.
 6. **Полировка**: README с инструкцией запуска, проверочными запросами и зафиксированным именем reference-subject в SR; `.env` с версиями образов (CH >= 26.6, cp-kafka 7.8.x); e2e-прогон с нуля (`docker compose down -v && up`).
+7. **ClickHouseSchemaGen (универсальный proto3→ClickHouse)**: `DenormalizationPlanner` + strategies (optional, map, nested, oneof, WKT); MSBuild codegen; split init SQL; unit + Testcontainers integration tests; расширенный `OrderEvent` (`repeated LineItem`, `map metadata`, `optional note`); partial MV codegen в `02_orders_pipeline.sql`.
 
 ## Риски
 
@@ -345,7 +374,11 @@ kafka-init:
 - **Версия ClickHouse**: `kafka_schema_registry_skip_bytes` появился в **25.11**; pin на конкретный патч в `.env` (рекомендуется 26.x); старые кэши образов (< 26.6) не подойдут.
 - **Kafka advertised listeners в Docker**: без dual-listener конфигурации клиенты внутри compose-сети получают `localhost` из metadata и падают — см. раздел «Kafka listeners».
 - **ClickHouse init одноразовый**: `/docker-entrypoint-initdb.d` только при пустом volume; для пересоздания схемы нужен `docker compose down -v`.
-- **Drift protos**: без MSBuild target `SyncProtoSchemas` C# codegen и ClickHouse format schemas разойдутся.
+- **Drift protos**: без MSBuild target `SyncProtoSchemas` C# codegen и ClickHouse format schemas разойдутся; `GenerateClickHouseDdl` регенерирует Kafka DDL из тех же descriptor-ов.
+- **Enum8 overflow**: при эволюции enum >127 значений — auto Enum16 или override; требует перегенерации DDL.
+- **Nested array length mismatch**: optional поля во вложенных repeated message могут давать ragged arrays (CH #6936) — документировать workaround.
+- **oneof vs proto3 optional**: synthetic oneof для `optional` обрабатывается как `Nullable`, не как oneof; настоящий oneof требует `input_format_protobuf_oneof_presence`.
+- **maxFlattenDepth**: глубокий flatten → explosion колонок; при превышении — `Tuple` или `Nested`.
 - **Отставание видимости агрегатов**: Kafka engine флашит блоками (по `kafka_max_block_size`/таймауту ~стрим-флаш); в демо задержка в секунды — норма, отражаем в README.
 - **Порядок старта контейнеров**: закрывается healthcheck-ами + `kafka-init` + ретраями в приложении.
 
@@ -355,3 +388,4 @@ kafka-init:
 - В логах `sandbox-app` видно и публикацию событий, и периодический вывод поминутных агрегатов по категориям.
 - `SELECT count() FROM orders` растёт; суммы в `orders_agg_1m` (через GROUP BY) сходятся с `orders`.
 - В Schema Registry зарегистрированы схемы `orders-key`, `orders-value` и reference-схема импорта (фактическое имя subject задокументировано в README); связь value-схемы с импортом видна в `references`.
+- `dotnet test tests/ClickHouseSchemaGen.Tests` — все тесты green (Docker для integration); `dotnet build src/Sandbox.Contracts` регенерирует init SQL без ручных правок.

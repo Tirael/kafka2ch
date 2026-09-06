@@ -5,6 +5,12 @@ import "common/money.proto";
 
 option csharp_namespace = "Sandbox.Contracts";
 
+message LineItem {
+  string sku = 1;
+  uint32 qty = 2;
+  double unit_price = 3;
+}
+
 message OrderEvent {
   string order_id = 1;
   string category = 2;
@@ -13,4 +19,7 @@ message OrderEvent {
   int64 event_time_unix_ms = 5;
   sandbox.common.v1.OrderStatus status = 6;
   repeated string tags = 7;
+  repeated LineItem items = 8;
+  map<string, string> metadata = 9;
+  optional string note = 10;
 }

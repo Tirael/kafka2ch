@@ -1,0 +1,36 @@
+syntax = "proto3";
+package sandbox.test.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option csharp_namespace = "Sandbox.Contracts.TestFixtures";
+
+message OneofMessage {
+  oneof payload {
+    string text = 1;
+    int32 number = 2;
+  }
+}
+
+message OptionalFieldsMessage {
+  optional string nickname = 1;
+  optional int32 bonus_points = 2;
+}
+
+message MapFieldsMessage {
+  map<string, string> labels = 1;
+}
+
+message TimestampFieldsMessage {
+  google.protobuf.Timestamp created_at = 1;
+}
+
+message RepeatedEnumMessage {
+  repeated SampleStatus statuses = 1;
+}
+
+enum SampleStatus {
+  SAMPLE_STATUS_UNSPECIFIED = 0;
+  SAMPLE_STATUS_ACTIVE = 1;
+  SAMPLE_STATUS_ARCHIVED = 2;
+}

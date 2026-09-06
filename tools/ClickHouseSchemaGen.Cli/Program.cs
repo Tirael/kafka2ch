@@ -1,6 +1,4 @@
-﻿using ClickHouseSchemaGen;
-
-if (args.Length == 0 || args.Contains("--help") || args.Contains("-h"))
+﻿if (args.Length == 0 || args.Contains("--help") || args.Contains("-h"))
 {
     Console.WriteLine("Usage: ClickHouseSchemaGen.Cli --config <path-to-clickhouse.codegen.json>");
     return args.Length == 0 ? 1 : 0;
@@ -14,7 +12,6 @@ if (configIndex < 0 || configIndex + 1 >= args.Length)
 }
 
 var configPath = args[configIndex + 1];
-var generator = new ClickHouseSchemaGenerator(new ProtoToClickHouseMapper(), new KafkaTableGenerator());
-generator.GenerateFromConfigFile(configPath);
+new ClickHouseSchemaGenerator(new DenormalizationPlanner()).GenerateFromConfigFile(configPath);
 Console.WriteLine($"Generated ClickHouse DDL from '{configPath}'.");
 return 0;

@@ -1,2 +1,10 @@
 global using AwesomeAssertions;
+global using ClickHouseSchemaGen;
+global using ClickHouseSchemaGen.Generation;
+global using ClickHouseSchemaGen.Mapping;
+global using ClickHouseSchemaGen.Models;
+global using ClickHouseSchemaGen.Tests.Support;
+global using Google.Protobuf.Reflection;
+global using Sandbox.Contracts;
+global using Sandbox.Contracts.TestFixtures;
 global using Xunit;

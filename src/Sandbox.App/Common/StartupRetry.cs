@@ -23,7 +23,7 @@ public static class StartupRetry
             {
                 logger.LogWarning(ex, "Startup failed, retrying in {Delay}", delay);
                 Task.Delay(delay, timeProvider, cancellationToken).GetAwaiter().GetResult();
-                delay = TimeSpan.FromMilliseconds(Math.Min(delay.TotalMilliseconds * 2, maxDelay.TotalMilliseconds));
+                delay = NextDelay(delay, maxDelay);
             }
         }
     }
@@ -49,8 +49,11 @@ public static class StartupRetry
             {
                 logger.LogWarning(ex, "Startup failed, retrying in {Delay}", delay);
                 await Task.Delay(delay, timeProvider, cancellationToken);
-                delay = TimeSpan.FromMilliseconds(Math.Min(delay.TotalMilliseconds * 2, maxDelay.TotalMilliseconds));
+                delay = NextDelay(delay, maxDelay);
             }
         }
     }
+
+    private static TimeSpan NextDelay(TimeSpan current, TimeSpan maxDelay) =>
+        TimeSpan.FromMilliseconds(Math.Min(current.TotalMilliseconds * 2, maxDelay.TotalMilliseconds));
 }

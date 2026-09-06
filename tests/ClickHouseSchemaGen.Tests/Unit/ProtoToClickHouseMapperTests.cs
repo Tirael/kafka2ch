@@ -1,8 +1,3 @@
-using ClickHouseSchemaGen;
-using ClickHouseSchemaGen.Models;
-using ClickHouseSchemaGen.Tests.Support;
-using Sandbox.Contracts;
-
 namespace ClickHouseSchemaGen.Tests.Unit;
 
 public sealed class ProtoToClickHouseMapperTests
@@ -13,10 +8,13 @@ public sealed class ProtoToClickHouseMapperTests
     public void GivenOrderEventDescriptor_WhenMapped_ThenColumnsMatchExpectedSchema()
     {
         // Arrange
-        var overrides = OrdersQueueTestConfig.Create().FieldOverrides;
+        var config = OrdersQueueTestConfig.Create();
 
         // Act
-        var columns = _sut.MapMessage(OrderEvent.Descriptor, overrides);
+        var columns = _sut.MapMessage(
+            OrderEvent.Descriptor,
+            OrdersQueueTestConfig.Defaults,
+            config.FieldOverrides);
 
         // Assert
         columns.Select(column => (column.Name, column.Type)).Should().BeEquivalentTo([
@@ -27,7 +25,10 @@ public sealed class ProtoToClickHouseMapperTests
             ("quantity", "UInt32"),
             ("event_time_unix_ms", "Int64"),
             ("status", "Enum8('ORDER_STATUS_UNSPECIFIED' = 0, 'ORDER_STATUS_CREATED' = 1, 'ORDER_STATUS_PAID' = 2)"),
-            ("tags", "Array(LowCardinality(String))")
+            ("tags", "Array(LowCardinality(String))"),
+            ("items", "Nested(sku String, qty UInt32, unit_price Float64)"),
+            ("metadata", "Map(String, String)"),
+            ("note", "Nullable(String)")
         ], options => options.WithStrictOrdering());
     }
 
@@ -38,7 +39,10 @@ public sealed class ProtoToClickHouseMapperTests
         var tagsField = OrderEvent.Descriptor.Fields.InDeclarationOrder().Single(field => field.Name == "tags");
 
         // Act
-        var columns = _sut.MapMessage(OrderEvent.Descriptor, overrides: new Dictionary<string, FieldOverrideConfig>());
+        var columns = _sut.MapMessage(
+            OrderEvent.Descriptor,
+            OrdersQueueTestConfig.Defaults,
+            overrides: new Dictionary<string, FieldOverrideConfig>());
 
         // Assert
         tagsField.IsRepeated.Should().BeTrue();

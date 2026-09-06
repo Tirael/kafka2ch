@@ -1,12 +1,8 @@
-using ClickHouseSchemaGen;
-using ClickHouseSchemaGen.Tests.Support;
-
 namespace ClickHouseSchemaGen.Tests.Unit;
 
 public sealed class ClickHouseSchemaGeneratorTests
 {
-    private readonly ClickHouseSchemaGenerator _sut =
-        new(new ProtoToClickHouseMapper(), new KafkaTableGenerator());
+    private readonly ClickHouseSchemaGenerator _sut = new(new DenormalizationPlanner());
 
     [Fact]
     public void GivenOrdersQueueConfig_WhenGenerateKafkaTableSql_ThenMatchesCommittedInitSqlShape()
@@ -15,17 +11,17 @@ public sealed class ClickHouseSchemaGeneratorTests
         var config = OrdersQueueTestConfig.Create();
 
         // Act
-        var sql = _sut.GenerateKafkaTableSql(config);
+        var sql = _sut.GenerateKafkaTableSql(config, OrdersQueueTestConfig.Defaults);
 
         // Assert
         sql.Should().Contain("CREATE TABLE orders_queue");
-        sql.Should().Contain("tags                 Array(LowCardinality(String))");
         sql.Should().Contain("ENGINE = Kafka");
-        sql.Should().EndWith("kafka_num_consumers = 1;\n");
+        sql.Should().Contain("kafka_num_consumers = 1");
+        sql.TrimEnd().Should().EndWith(";");
     }
 
     [Fact]
-    public void GivenCodegenConfigFile_WhenGenerateFromConfigFile_ThenWritesOrdersQueueSql()
+    public void GivenCodegenConfigFile_WhenGenerateFromConfigFile_ThenWritesOrdersQueueAndPipelineSql()
     {
         // Arrange
         var outputDirectory = Path.Combine(Path.GetTempPath(), $"clickhouse-schema-gen-{Guid.NewGuid():N}");
@@ -34,10 +30,12 @@ public sealed class ClickHouseSchemaGeneratorTests
         File.Copy(RepoPaths.CodegenConfigPath, configPath);
 
         var configJson = File.ReadAllText(configPath)
-            .Replace("../../docker/clickhouse/init/01_orders_queue.sql", "generated.sql");
+            .Replace("../../docker/clickhouse/init/01_orders_queue.sql", "generated_queue.sql")
+            .Replace("../../docker/clickhouse/init/02_orders_pipeline.sql", "generated_pipeline.sql");
         File.WriteAllText(configPath, configJson);
 
-        var outputPath = Path.Combine(outputDirectory, "generated.sql");
+        var queuePath = Path.Combine(outputDirectory, "generated_queue.sql");
+        var pipelinePath = Path.Combine(outputDirectory, "generated_pipeline.sql");
 
         try
         {
@@ -45,8 +43,11 @@ public sealed class ClickHouseSchemaGeneratorTests
             _sut.GenerateFromConfigFile(configPath);
 
             // Assert
-            File.Exists(outputPath).Should().BeTrue();
-            File.ReadAllText(outputPath).Should().Contain("CREATE TABLE orders_queue");
+            File.Exists(queuePath).Should().BeTrue();
+            File.Exists(pipelinePath).Should().BeTrue();
+            File.ReadAllText(queuePath).Should().Contain("CREATE TABLE orders_queue");
+            File.ReadAllText(pipelinePath).Should().Contain("CREATE MATERIALIZED VIEW orders_mv");
+            File.ReadAllText(pipelinePath).Should().Contain("CREATE TABLE orders_agg_1m");
         }
         finally
         {

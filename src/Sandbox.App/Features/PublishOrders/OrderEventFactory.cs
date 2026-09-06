@@ -1,4 +1,3 @@
-using Sandbox.Contracts;
 using Sandbox.Contracts.Common;
 
 namespace Sandbox.App.Features.PublishOrders;
@@ -8,6 +7,8 @@ public static class OrderEventFactory
     private static readonly string[] Categories = ["electronics", "books", "food"];
     private static readonly string[] Currencies = ["USD", "EUR", "RUB"];
     private static readonly string[] Tags = ["promo", "vip", "new", "sale"];
+    private static readonly string[] Skus = ["SKU-100", "SKU-200", "SKU-300"];
+    private static readonly string[] MetadataKeys = ["source", "campaign", "channel"];
     private static readonly OrderStatus[] Statuses =
     [
         OrderStatus.Created,
@@ -35,6 +36,23 @@ public static class OrderEventFactory
         var tagCount = Random.Shared.Next(0, 3);
         for (var i = 0; i < tagCount; i++)
             orderEvent.Tags.Add(Tags[Random.Shared.Next(Tags.Length)]);
+
+        var itemCount = Random.Shared.Next(1, 3);
+        for (var i = 0; i < itemCount; i++)
+        {
+            orderEvent.Items.Add(new LineItem
+            {
+                Sku = Skus[Random.Shared.Next(Skus.Length)],
+                Qty = (uint)Random.Shared.Next(1, 5),
+                UnitPrice = Random.Shared.NextDouble() * 100
+            });
+        }
+
+        orderEvent.Metadata["source"] = "sandbox-app";
+        orderEvent.Metadata[MetadataKeys[Random.Shared.Next(MetadataKeys.Length)]] = "demo";
+
+        if (Random.Shared.Next(0, 2) == 0)
+            orderEvent.Note = "generated-by-sandbox";
 
         return (key, orderEvent);
     }

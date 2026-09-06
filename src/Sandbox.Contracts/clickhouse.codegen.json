@@ -1,4 +1,11 @@
 {
+  "defaults": {
+    "maxFlattenDepth": 3,
+    "repeatedMessageStrategy": "nested",
+    "optionalAsNullable": true,
+    "oneofPresence": true,
+    "enumMaxValuesForEnum8": 127
+  },
   "kafkaTables": [
     {
       "messageType": "Sandbox.Contracts.OrderEvent, Sandbox.Contracts",
@@ -11,7 +18,10 @@
         "topic": "orders",
         "groupName": "clickhouse-orders",
         "skipBytes": 6,
-        "numConsumers": 1
+        "numConsumers": 1,
+        "flattenNested": false,
+        "protobufOneofPresence": true,
+        "protobufFlattenGoogleWrappers": true
       },
       "fieldOverrides": {
         "category": { "type": "LowCardinality(String)" },
@@ -19,5 +29,40 @@
         "tags": { "type": "Array(LowCardinality(String))" }
       }
     }
-  ]
+  ],
+  "pipeline": {
+    "outputPath": "../../docker/clickhouse/init/02_orders_pipeline.sql",
+    "mergeTreeTables": [
+      {
+        "tableName": "orders",
+        "orderBy": "(event_time, order_id)",
+        "columns": [
+          { "name": "order_id", "type": "String" },
+          { "name": "category", "type": "LowCardinality(String)" },
+          { "name": "currency", "type": "LowCardinality(String)" },
+          { "name": "amount", "type": "Float64" },
+          { "name": "quantity", "type": "UInt32" },
+          { "name": "status", "type": "LowCardinality(String)" },
+          { "name": "event_time", "type": "DateTime64(3)" }
+        ]
+      }
+    ],
+    "materializedViews": [
+      {
+        "name": "orders_mv",
+        "targetTable": "orders",
+        "sourceTable": "orders_queue",
+        "columns": [
+          { "source": "order_id", "target": "order_id" },
+          { "source": "category", "target": "category" },
+          { "source": "price.currency", "target": "currency" },
+          { "source": "price.amount", "target": "amount" },
+          { "source": "quantity", "target": "quantity" },
+          { "source": "status", "target": "status", "expression": "toString(status)" },
+          { "source": "event_time_unix_ms", "target": "event_time", "expression": "fromUnixTimestamp64Milli(event_time_unix_ms)" }
+        ]
+      }
+    ],
+    "trailingSql": "CREATE TABLE orders_agg_1m\n(\n    minute        DateTime,\n    category      LowCardinality(String),\n    orders_count  UInt64,\n    total_amount  Float64,\n    total_qty     UInt64\n)\nENGINE = SummingMergeTree\nORDER BY (minute, category);\n\nCREATE MATERIALIZED VIEW orders_agg_mv TO orders_agg_1m AS\nSELECT\n    toStartOfMinute(event_time) AS minute,\n    category,\n    count()                     AS orders_count,\n    sum(amount)                 AS total_amount,\n    sum(quantity)               AS total_qty\nFROM orders\nGROUP BY minute, category;\n"
+  }
 }
