@@ -1,0 +1,18 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>ClickHouseSchemaGen.Cli</RootNamespace>
+    <SkipClickHouseCodegen>true</SkipClickHouseCodegen>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Google.Protobuf" Version="3.29.3" />
+    <ProjectReference Include="..\ClickHouseSchemaGen\ClickHouseSchemaGen.csproj" />
+    <ProjectReference Include="..\..\src\Sandbox.Contracts\Sandbox.Contracts.csproj" />
+  </ItemGroup>
+
+</Project>

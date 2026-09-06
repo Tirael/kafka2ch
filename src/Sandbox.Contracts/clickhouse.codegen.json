@@ -1,0 +1,23 @@
+{
+  "kafkaTables": [
+    {
+      "messageType": "Sandbox.Contracts.OrderEvent, Sandbox.Contracts",
+      "tableName": "orders_queue",
+      "protoFile": "order_event",
+      "messageName": "OrderEvent",
+      "outputPath": "../../docker/clickhouse/init/01_orders_queue.sql",
+      "kafka": {
+        "brokerList": "kafka:9092",
+        "topic": "orders",
+        "groupName": "clickhouse-orders",
+        "skipBytes": 6,
+        "numConsumers": 1
+      },
+      "fieldOverrides": {
+        "category": { "type": "LowCardinality(String)" },
+        "status": { "enum8": true },
+        "tags": { "type": "Array(LowCardinality(String))" }
+      }
+    }
+  ]
+}
