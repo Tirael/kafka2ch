@@ -12,6 +12,19 @@ if (configIndex < 0 || configIndex + 1 >= args.Length)
 }
 
 var configPath = args[configIndex + 1];
-new ClickHouseSchemaGenerator(new DenormalizationPlanner()).GenerateFromConfigFile(configPath);
+
+try
+{
+    new ClickHouseSchemaGenerator(new DenormalizationPlanner()).GenerateFromConfigFile(configPath);
+}
+catch (ValidationException exception)
+{
+    Console.Error.WriteLine($"Invalid codegen config '{configPath}':");
+    foreach (var error in exception.Errors)
+        Console.Error.WriteLine($"  {error.PropertyName}: {error.ErrorMessage}");
+
+    return 1;
+}
+
 Console.WriteLine($"Generated ClickHouse DDL from '{configPath}'.");
 return 0;
