@@ -1,7 +1,12 @@
+using ClickHouseSchemaGen.Validation;
+
 namespace ClickHouseSchemaGen;
 
-public sealed class ClickHouseSchemaGenerator(DenormalizationPlanner planner)
+public sealed class ClickHouseSchemaGenerator(
+    DenormalizationPlanner planner,
+    CodegenConfigValidator? configValidator = null)
 {
+    private readonly CodegenConfigValidator _configValidator = configValidator ?? new();
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNameCaseInsensitive = true,
@@ -32,6 +37,8 @@ public sealed class ClickHouseSchemaGenerator(DenormalizationPlanner planner)
 
         var config = JsonSerializer.Deserialize<CodegenConfig>(File.ReadAllText(configPath), JsonOptions)
             ?? throw new InvalidOperationException($"Config file '{configPath}' is empty or invalid.");
+
+        _configValidator.ValidateAndThrow(config);
 
         foreach (var table in config.KafkaTables)
             WriteGeneratedSql(configDirectory, table.OutputPath, GenerateKafkaTableSql(table, config.Defaults, config));

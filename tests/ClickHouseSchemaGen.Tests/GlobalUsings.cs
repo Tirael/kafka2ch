@@ -4,6 +4,7 @@ global using ClickHouseSchemaGen;
 global using ClickHouseSchemaGen.Generation;
 global using ClickHouseSchemaGen.Mapping;
 global using ClickHouseSchemaGen.Models;
+global using ClickHouseSchemaGen.Validation;
 global using ClickHouseSchemaGen.Tests.Support;
 global using Google.Protobuf;
 global using Google.Protobuf.Reflection;
