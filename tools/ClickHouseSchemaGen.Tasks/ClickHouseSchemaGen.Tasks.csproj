@@ -94,9 +94,11 @@ public class GenerateClickHouseDdlFromAssemblies : Task
     <Copy SourceFiles="@(_CodegenShadowFiles)" DestinationFolder="$(_CodegenShadowDir)" SkipUnchangedFiles="false" />
 
     <GenerateClickHouseDdlFromAssemblies AssembliesDirectory="$(_CodegenShadowDir)" ConfigPath="$(ClickHouseCodegenConfig)" />
-
-    <!-- Best-effort cleanup; locked leftovers stay under obj/ and do not block bin/ copies. -->
-    <RemoveDir Directories="$(_CodegenShadowDir)" ContinueOnError="true" />
+    <!--
+      Do not RemoveDir the shadow copy here: Assembly.LoadFrom keeps DLLs locked in the
+      MSBuild/.NET Host node until the process exits (MSB3231). Unique dirs under obj/
+      are removed by `dotnet clean` / deleting obj.
+    -->
   </Target>
 
 </Project>
