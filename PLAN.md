@@ -210,7 +210,7 @@ ORDER BY minute DESC, category;
 
 Универсальный транслятор: [`tools/ClickHouseSchemaGen/`](tools/ClickHouseSchemaGen/) + CLI + MSBuild Task [`tools/ClickHouseSchemaGen.Tasks/`](tools/ClickHouseSchemaGen.Tasks/) (target `GenerateClickHouseDdl` после `SyncProtoSchemas`).
 
-Codegen выполняется **in-process** внутри MSBuild (`RoslynCodeTaskFactory` + shadow-copy сборок под `obj/`), без `<Exec>dotnet …Cli.dll</Exec>` (AppLocker/GPO → MSB3073) и без `UsingTask` на `bin/*.dll` (иначе .NET Host держит файл → MSB3027). Запасной выход: `dotnet build -p:SkipClickHouseCodegen=true`. CLI: `dotnet exec tools/ClickHouseSchemaGen.Cli/bin/.../ClickHouseSchemaGen.Cli.dll --config ...`.
+Codegen выполняется **in-process** внутри MSBuild (`RoslynCodeTaskFactory` + shadow-copy сборок под `obj/codegen-shadow/`), без `<Exec>dotnet …Cli.dll</Exec>` (AppLocker/GPO → MSB3073) и без `UsingTask` на `bin/*.dll` (иначе .NET Host держит файл → MSB3027). Shadow-каталоги не удаляются в конце target (LoadFrom держит DLL → MSB3231); их убирает `dotnet clean`. Запасной выход: `dotnet build -p:SkipClickHouseCodegen=true`. CLI: `dotnet exec tools/ClickHouseSchemaGen.Cli/bin/.../ClickHouseSchemaGen.Cli.dll --config ...`.
 
 ```
 protos/**/*.proto → Grpc.Tools → MessageDescriptor
