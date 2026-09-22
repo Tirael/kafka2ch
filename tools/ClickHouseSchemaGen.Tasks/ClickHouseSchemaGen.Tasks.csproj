@@ -6,15 +6,10 @@
     <Nullable>enable</Nullable>
     <RootNamespace>ClickHouseSchemaGen.Tasks</RootNamespace>
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
-    <!-- Avoid AppLocker/SRP hits on a generated apphost when the assembly is probed as a tool. -->
     <UseAppHost>false</UseAppHost>
     <SkipClickHouseCodegen>true</SkipClickHouseCodegen>
+    <ProduceReferenceAssembly>false</ProduceReferenceAssembly>
   </PropertyGroup>
-
-  <ItemGroup>
-    <PackageReference Include="Microsoft.Build.Framework" Version="17.11.48" PrivateAssets="all" />
-    <PackageReference Include="Microsoft.Build.Utilities.Core" Version="17.11.48" PrivateAssets="all" />
-  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\ClickHouseSchemaGen\ClickHouseSchemaGen.csproj" />
@@ -22,19 +17,86 @@
   </ItemGroup>
 
   <!--
-    In-process codegen target for closed / AppLocker environments.
-    Invoked via a second MSBuild evaluation after Build so UsingTask can load $(TargetPath).
+    RoslynCodeTaskFactory runs inside MSBuild (AppLocker-safe: no new process).
+    Assemblies are loaded from a unique shadow copy under obj/, so bin/ is never
+    locked by the MSBuild/.NET Host node across incremental builds (MSB3027).
   -->
-  <UsingTask TaskName="ClickHouseSchemaGen.Tasks.GenerateClickHouseDdlTask"
-             AssemblyFile="$(MSBuildProjectDirectory)\bin\$(Configuration)\$(TargetFramework)\ClickHouseSchemaGen.Tasks.dll"
-             Condition="Exists('$(MSBuildProjectDirectory)\bin\$(Configuration)\$(TargetFramework)\ClickHouseSchemaGen.Tasks.dll')" />
+  <UsingTask TaskName="GenerateClickHouseDdlFromAssemblies"
+             TaskFactory="RoslynCodeTaskFactory"
+             AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll">
+    <ParameterGroup>
+      <AssembliesDirectory ParameterType="System.String" Required="true" />
+      <ConfigPath ParameterType="System.String" Required="true" />
+    </ParameterGroup>
+    <Task>
+      <Code Type="Class" Language="cs"><![CDATA[
+using System;
+using System.IO;
+using System.Reflection;
+using Microsoft.Build.Framework;
+using Microsoft.Build.Utilities;
+
+public class GenerateClickHouseDdlFromAssemblies : Task
+{
+    [Required]
+    public string AssembliesDirectory { get; set; }
+
+    [Required]
+    public string ConfigPath { get; set; }
+
+    public override bool Execute()
+    {
+        try
+        {
+            Assembly.LoadFrom(Path.Combine(AssembliesDirectory, "Sandbox.Contracts.dll"));
+            var generatorAssembly = Assembly.LoadFrom(Path.Combine(AssembliesDirectory, "ClickHouseSchemaGen.dll"));
+
+            var plannerType = generatorAssembly.GetType("ClickHouseSchemaGen.Mapping.DenormalizationPlanner", throwOnError: true);
+            var generatorType = generatorAssembly.GetType("ClickHouseSchemaGen.ClickHouseSchemaGenerator", throwOnError: true);
+            var planner = Activator.CreateInstance(plannerType);
+            var generator = Activator.CreateInstance(generatorType, planner, null);
+            generatorType.GetMethod("GenerateFromConfigFile").Invoke(generator, new object[] { ConfigPath });
+
+            Log.LogMessage(MessageImportance.High, "Generated ClickHouse DDL from '{0}'.", ConfigPath);
+            return true;
+        }
+        catch (Exception exception)
+        {
+            var failure = exception is TargetInvocationException tie && tie.InnerException != null
+                ? tie.InnerException
+                : exception;
+            Log.LogErrorFromException(failure, showStackTrace: true);
+            return false;
+        }
+    }
+}
+]]></Code>
+    </Task>
+  </UsingTask>
 
   <Target Name="GenerateClickHouseDdl">
     <Error Condition="'$(ClickHouseCodegenConfig)' == ''"
            Text="Property ClickHouseCodegenConfig is required (path to clickhouse.codegen.json)." />
-    <Error Condition="!Exists('$(MSBuildProjectDirectory)\bin\$(Configuration)\$(TargetFramework)\ClickHouseSchemaGen.Tasks.dll')"
-           Text="ClickHouseSchemaGen.Tasks.dll is missing. Build this project before running GenerateClickHouseDdl." />
-    <GenerateClickHouseDdlTask ConfigPath="$(ClickHouseCodegenConfig)" />
+    <Error Condition="!Exists('$(TargetDir)ClickHouseSchemaGen.dll')"
+           Text="ClickHouseSchemaGen.dll is missing under $(TargetDir). Build this project before running GenerateClickHouseDdl." />
+    <Error Condition="!Exists('$(TargetDir)Sandbox.Contracts.dll')"
+           Text="Sandbox.Contracts.dll is missing under $(TargetDir). Build this project before running GenerateClickHouseDdl." />
+
+    <PropertyGroup>
+      <_CodegenShadowDir>$([System.IO.Path]::Combine($(IntermediateOutputPath), 'codegen-shadow', $([System.Guid]::NewGuid().ToString('N'))))</_CodegenShadowDir>
+    </PropertyGroup>
+    <ItemGroup>
+      <_CodegenShadowFiles Include="$(TargetDir)*.dll" />
+      <_CodegenShadowFiles Include="$(TargetDir)*.json" />
+    </ItemGroup>
+
+    <MakeDir Directories="$(_CodegenShadowDir)" />
+    <Copy SourceFiles="@(_CodegenShadowFiles)" DestinationFolder="$(_CodegenShadowDir)" SkipUnchangedFiles="false" />
+
+    <GenerateClickHouseDdlFromAssemblies AssembliesDirectory="$(_CodegenShadowDir)" ConfigPath="$(ClickHouseCodegenConfig)" />
+
+    <!-- Best-effort cleanup; locked leftovers stay under obj/ and do not block bin/ copies. -->
+    <RemoveDir Directories="$(_CodegenShadowDir)" ContinueOnError="true" />
   </Target>
 
 </Project>

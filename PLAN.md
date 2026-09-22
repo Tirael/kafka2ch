@@ -210,7 +210,7 @@ ORDER BY minute DESC, category;
 
 Универсальный транслятор: [`tools/ClickHouseSchemaGen/`](tools/ClickHouseSchemaGen/) + CLI + MSBuild Task [`tools/ClickHouseSchemaGen.Tasks/`](tools/ClickHouseSchemaGen.Tasks/) (target `GenerateClickHouseDdl` после `SyncProtoSchemas`).
 
-Codegen выполняется **in-process** внутри MSBuild (`GenerateClickHouseDdlTask`), без `<Exec>dotnet …Cli.dll</Exec>` — иначе в закрытом контуре AppLocker/GPO блокирует локально собранный процесс («Эта программа заблокирована групповой политикой», MSB3073). Запасной выход: `dotnet build -p:SkipClickHouseCodegen=true` (уже закоммиченные `docker/clickhouse/init/*.sql` не трогаются). CLI остаётся для ручного запуска: `dotnet exec tools/ClickHouseSchemaGen.Cli/bin/.../ClickHouseSchemaGen.Cli.dll --config ...`.
+Codegen выполняется **in-process** внутри MSBuild (`RoslynCodeTaskFactory` + shadow-copy сборок под `obj/`), без `<Exec>dotnet …Cli.dll</Exec>` (AppLocker/GPO → MSB3073) и без `UsingTask` на `bin/*.dll` (иначе .NET Host держит файл → MSB3027). Запасной выход: `dotnet build -p:SkipClickHouseCodegen=true`. CLI: `dotnet exec tools/ClickHouseSchemaGen.Cli/bin/.../ClickHouseSchemaGen.Cli.dll --config ...`.
 
 ```
 protos/**/*.proto → Grpc.Tools → MessageDescriptor
@@ -272,7 +272,7 @@ src/
     Features/...
 tools/
   ClickHouseSchemaGen/        # DenormalizationPlanner, strategies, generators
-  ClickHouseSchemaGen.Tasks/  # in-process MSBuild codegen (closed contour / AppLocker)
+  ClickHouseSchemaGen.Tasks/  # shadow-copy + RoslynCodeTaskFactory codegen (AppLocker / no bin lock)
   ClickHouseSchemaGen.Cli/
 tests/
   ClickHouseSchemaGen.Tests/

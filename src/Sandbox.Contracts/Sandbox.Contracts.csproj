@@ -25,21 +25,17 @@
   </Target>
 
   <!--
-    Codegen runs in-process via ClickHouseSchemaGen.Tasks (MSBuild Task), not via
-    <Exec>dotnet …Cli.dll</Exec>. Spawning a locally built process is blocked by
-    AppLocker/Group Policy in closed contours ("Эта программа заблокирована групповой политикой").
+    Codegen runs in-process (RoslynCodeTaskFactory + shadow-copied assemblies), not via
+    <Exec>dotnet …Cli.dll</Exec> (AppLocker) and not via UsingTask on bin/*.dll (MSB3027 lock).
 
     Escape hatch: dotnet build -p:SkipClickHouseCodegen=true
-    (committed docker/clickhouse/init/*.sql stay as-is).
   -->
   <Target Name="GenerateClickHouseDdl" AfterTargets="SyncProtoSchemas" Condition="'$(SkipClickHouseCodegen)' != 'true'">
     <PropertyGroup>
       <_ClickHouseSchemaGenTasksProject>$(MSBuildProjectDirectory)/../../tools/ClickHouseSchemaGen.Tasks/ClickHouseSchemaGen.Tasks.csproj</_ClickHouseSchemaGenTasksProject>
       <_ClickHouseCodegenConfig>$(MSBuildProjectDirectory)/clickhouse.codegen.json</_ClickHouseCodegenConfig>
     </PropertyGroup>
-    <!-- Build task assembly first (SkipClickHouseCodegen breaks the Contracts↔Tasks cycle). -->
     <MSBuild Projects="$(_ClickHouseSchemaGenTasksProject)" Targets="Restore;Build" Properties="Configuration=$(Configuration);SkipClickHouseCodegen=true" />
-    <!-- Fresh evaluation so UsingTask can bind to the newly built DLL; runs codegen in-process. -->
     <MSBuild Projects="$(_ClickHouseSchemaGenTasksProject)" Targets="GenerateClickHouseDdl" Properties="Configuration=$(Configuration);SkipClickHouseCodegen=true;ClickHouseCodegenConfig=$(_ClickHouseCodegenConfig)" />
   </Target>
 
