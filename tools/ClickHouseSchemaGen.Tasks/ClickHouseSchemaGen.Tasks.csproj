@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>ClickHouseSchemaGen.Tasks</RootNamespace>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <!-- Avoid AppLocker/SRP hits on a generated apphost when the assembly is probed as a tool. -->
+    <UseAppHost>false</UseAppHost>
+    <SkipClickHouseCodegen>true</SkipClickHouseCodegen>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Build.Framework" Version="17.11.48" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.Build.Utilities.Core" Version="17.11.48" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ClickHouseSchemaGen\ClickHouseSchemaGen.csproj" />
+    <ProjectReference Include="..\..\src\Sandbox.Contracts\Sandbox.Contracts.csproj" />
+  </ItemGroup>
+
+  <!--
+    In-process codegen target for closed / AppLocker environments.
+    Invoked via a second MSBuild evaluation after Build so UsingTask can load $(TargetPath).
+  -->
+  <UsingTask TaskName="ClickHouseSchemaGen.Tasks.GenerateClickHouseDdlTask"
+             AssemblyFile="$(MSBuildProjectDirectory)\bin\$(Configuration)\$(TargetFramework)\ClickHouseSchemaGen.Tasks.dll"
+             Condition="Exists('$(MSBuildProjectDirectory)\bin\$(Configuration)\$(TargetFramework)\ClickHouseSchemaGen.Tasks.dll')" />
+
+  <Target Name="GenerateClickHouseDdl">
+    <Error Condition="'$(ClickHouseCodegenConfig)' == ''"
+           Text="Property ClickHouseCodegenConfig is required (path to clickhouse.codegen.json)." />
+    <Error Condition="!Exists('$(MSBuildProjectDirectory)\bin\$(Configuration)\$(TargetFramework)\ClickHouseSchemaGen.Tasks.dll')"
+           Text="ClickHouseSchemaGen.Tasks.dll is missing. Build this project before running GenerateClickHouseDdl." />
+    <GenerateClickHouseDdlTask ConfigPath="$(ClickHouseCodegenConfig)" />
+  </Target>
+
+</Project>

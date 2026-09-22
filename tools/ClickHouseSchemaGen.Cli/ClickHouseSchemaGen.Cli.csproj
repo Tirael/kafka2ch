@@ -7,6 +7,8 @@
     <Nullable>enable</Nullable>
     <RootNamespace>ClickHouseSchemaGen.Cli</RootNamespace>
     <SkipClickHouseCodegen>true</SkipClickHouseCodegen>
+    <!-- Apphost .exe under bin/ is frequently blocked by AppLocker in closed contours; prefer `dotnet exec`. -->
+    <UseAppHost>false</UseAppHost>
   </PropertyGroup>
 
   <ItemGroup>
