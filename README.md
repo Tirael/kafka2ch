@@ -197,6 +197,7 @@ dotnet build src/Sandbox.Contracts
 - `docker/clickhouse/init/01_orders_queue.sql`, `02_shipments_queue.sql`, `03_pipeline.sql`
 
 Конфиг codegen: `src/Sandbox.Contracts/clickhouse.codegen.json`.  
+Инструкция по заполнению: [`src/Sandbox.Contracts/clickhouse.codegen.md`](src/Sandbox.Contracts/clickhouse.codegen.md).  
 Пропуск codegen при сборке приложения в Docker: `-p:SkipClickHouseCodegen=true` (уже в `Dockerfile`).
 
 Тесты генератора схем (нужен Docker для integration):
