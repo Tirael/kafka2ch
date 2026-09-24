@@ -92,6 +92,8 @@ public sealed class MergeTreeTableConfig
 
     public required string OrderBy { get; set; }
 
+    public string? Ttl { get; set; }
+
     public List<PipelineColumnConfig> Columns { get; set; } = [];
 }
 

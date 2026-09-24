@@ -109,6 +109,9 @@ internal sealed class MergeTreeTableConfigValidator : AbstractValidator<MergeTre
             .Must(ValidationRules.IsSqlIdentifier)
             .WithMessage("Must be a valid ClickHouse identifier.");
         RuleFor(table => table.OrderBy).NotEmpty();
+        RuleFor(table => table.Ttl)
+            .Must(ttl => ttl is null || !string.IsNullOrWhiteSpace(ttl))
+            .WithMessage("TTL expression must not be blank when provided.");
         RuleFor(table => table.Columns).NotEmpty();
         RuleForEach(table => table.Columns).SetValidator(new PipelineColumnConfigValidator());
     }

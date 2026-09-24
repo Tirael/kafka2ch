@@ -196,7 +196,30 @@ Overrides на корне конфига и в таблице **мержатся
 |---|---|
 | `tableName` | Имя MergeTree-таблицы |
 | `orderBy` | Выражение `ORDER BY`, например `"(event_time, order_id)"` |
+| `ttl` | Опционально. Выражение table-level `TTL`, например `"event_time + INTERVAL 90 DAY"` |
 | `columns` | Непустой список `{ "name", "type" }` |
+
+Пример с TTL:
+
+```json
+{
+  "tableName": "orders",
+  "orderBy": "(event_time, order_id)",
+  "ttl": "event_time + INTERVAL 90 DAY",
+  "columns": [
+    { "name": "order_id", "type": "String" },
+    { "name": "event_time", "type": "DateTime64(3)" }
+  ]
+}
+```
+
+Сгенерированный фрагмент:
+
+```sql
+ENGINE = MergeTree
+ORDER BY (event_time, order_id)
+TTL event_time + INTERVAL 90 DAY;
+```
 
 ### `materializedViews[]`
 
