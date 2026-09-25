@@ -10,10 +10,20 @@ public static class MergeTreeTableGenerator
 
         SqlScriptWriter.AppendColumnDefinitions(builder, config.Columns);
 
-        return builder
+        builder
             .AppendLine(")")
             .AppendLine("ENGINE = MergeTree")
-            .AppendLine($"ORDER BY {config.OrderBy};")
+            .Append($"ORDER BY {config.OrderBy}");
+
+        if (!string.IsNullOrWhiteSpace(config.Ttl))
+        {
+            builder
+                .AppendLine()
+                .Append($"TTL {config.Ttl.Trim()}");
+        }
+
+        return builder
+            .AppendLine(";")
             .AppendLine()
             .ToString();
     }

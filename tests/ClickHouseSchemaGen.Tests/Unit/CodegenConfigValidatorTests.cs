@@ -81,6 +81,30 @@ public sealed class CodegenConfigValidatorTests
             error.ErrorMessage == "Must be a valid mapping strategy name.");
     }
 
+    [Fact]
+    public void GivenMergeTreeTableWithTtl_WhenValidate_ThenSucceeds()
+    {
+        var config = CreateValidConfig();
+        config.Pipeline!.MergeTreeTables[0].Ttl = "event_time + INTERVAL 90 DAY";
+
+        var result = _sut.Validate(config);
+
+        result.IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public void GivenMergeTreeTableWithBlankTtl_WhenValidate_ThenFails()
+    {
+        var config = CreateValidConfig();
+        config.Pipeline!.MergeTreeTables[0].Ttl = "   ";
+
+        var result = _sut.Validate(config);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(error =>
+            error.ErrorMessage == "TTL expression must not be blank when provided.");
+    }
+
     private static CodegenConfig CreateValidConfig() => new()
     {
         Defaults = OrdersQueueTestConfig.Defaults,
