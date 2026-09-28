@@ -74,6 +74,7 @@
       {
         "tableName": "shipments",
         "orderBy": "(shipped_at, shipment_id)",
+        "ttl": "shipped_at + INTERVAL 1 DAY",
         "columns": [
           { "name": "shipment_id", "type": "String" },
           { "name": "order_id", "type": "String" },
