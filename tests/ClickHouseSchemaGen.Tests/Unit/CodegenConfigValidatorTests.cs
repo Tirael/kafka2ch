@@ -93,6 +93,41 @@ public sealed class CodegenConfigValidatorTests
     }
 
     [Fact]
+    public void GivenValidKeyMessage_WhenValidate_ThenSucceeds()
+    {
+        var config = CreateValidConfig();
+        config.KafkaTables[0].Key = new KeyMessageConfig
+        {
+            MessageType = "Sandbox.Contracts.OrderKey, Sandbox.Contracts",
+            ProtoFile = "order_key",
+            MessageName = "OrderKey",
+            SkipBytes = 6
+        };
+
+        var result = _sut.Validate(config);
+
+        result.IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public void GivenKeyProtoFileWithExtension_WhenValidate_ThenFails()
+    {
+        var config = CreateValidConfig();
+        config.KafkaTables[0].Key = new KeyMessageConfig
+        {
+            MessageType = "Sandbox.Contracts.OrderKey, Sandbox.Contracts",
+            ProtoFile = "order_key.proto",
+            MessageName = "OrderKey"
+        };
+
+        var result = _sut.Validate(config);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(error =>
+            error.ErrorMessage == "Must be a proto file name without path or extension.");
+    }
+
+    [Fact]
     public void GivenMergeTreeTableWithBlankTtl_WhenValidate_ThenFails()
     {
         var config = CreateValidConfig();

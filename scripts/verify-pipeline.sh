@@ -21,6 +21,11 @@ echo "==> orders sample"
 docker exec clickhouse clickhouse-client --query "SELECT * FROM orders LIMIT 3"
 
 echo
+echo "==> parsed key and headers"
+docker exec clickhouse clickhouse-client --query "SELECT order_id, key_order_id, headers_name, headers_value FROM orders ORDER BY event_time DESC LIMIT 3"
+docker exec clickhouse clickhouse-client --query "SELECT shipment_id, key_shipment_id, headers_name, headers_value FROM shipments ORDER BY shipped_at DESC LIMIT 3"
+
+echo
 echo "==> orders_agg_1m aggregates"
 docker exec clickhouse clickhouse-client --query \
   "SELECT minute, category, sum(orders_count), sum(total_amount) FROM orders_agg_1m GROUP BY minute, category ORDER BY minute DESC LIMIT 5"

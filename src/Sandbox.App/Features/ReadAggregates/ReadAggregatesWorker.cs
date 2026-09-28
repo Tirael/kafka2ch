@@ -69,6 +69,7 @@ public sealed class ReadAggregatesWorker(
 
         var orders = await QueryOrderAggregatesAsync(connection, cancellationToken);
         var shipments = await QueryShipmentAggregatesAsync(connection, cancellationToken);
+        await LogStoredMessagesAsync(connection, cancellationToken);
         return (orders, shipments);
     }
 
@@ -113,6 +114,57 @@ public sealed class ReadAggregatesWorker(
                 reader.GetString(1),
                 Convert.ToUInt64(reader.GetValue(2))),
             cancellationToken);
+
+    private async Task LogStoredMessagesAsync(
+        ClickHouseConnection connection,
+        CancellationToken cancellationToken)
+    {
+        await LogLatestStoredMessageAsync(
+            connection,
+            """
+            SELECT order_id, key_order_id, toString(headers_name), toString(headers_value)
+            FROM orders
+            WHERE length(headers_name) > 0
+            ORDER BY event_time DESC
+            LIMIT 1
+            """,
+            reader => logger.LogInformation(
+                "Stored order {OrderId} key {KeyOrderId} headers {HeaderNames}={HeaderValues}",
+                reader.GetString(0),
+                reader.GetString(1),
+                reader.GetString(2),
+                reader.GetString(3)),
+            cancellationToken);
+        await LogLatestStoredMessageAsync(
+            connection,
+            """
+            SELECT shipment_id, key_shipment_id, toString(headers_name), toString(headers_value)
+            FROM shipments
+            WHERE length(headers_name) > 0
+            ORDER BY shipped_at DESC
+            LIMIT 1
+            """,
+            reader => logger.LogInformation(
+                "Stored shipment {ShipmentId} key {KeyShipmentId} headers {HeaderNames}={HeaderValues}",
+                reader.GetString(0),
+                reader.GetString(1),
+                reader.GetString(2),
+                reader.GetString(3)),
+            cancellationToken);
+    }
+
+    private static async Task LogLatestStoredMessageAsync(
+        ClickHouseConnection connection,
+        string commandText,
+        Action<System.Data.Common.DbDataReader> logRow,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = commandText;
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (await reader.ReadAsync(cancellationToken))
+            logRow(reader);
+    }
 
     private static async Task<IReadOnlyList<T>> QueryAggregatesAsync<T>(
         ClickHouseConnection connection,

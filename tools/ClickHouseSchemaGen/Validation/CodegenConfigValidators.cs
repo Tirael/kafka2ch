@@ -30,6 +30,23 @@ internal sealed class KafkaSettingsConfigValidator : AbstractValidator<KafkaSett
     }
 }
 
+internal sealed class KeyMessageConfigValidator : AbstractValidator<KeyMessageConfig>
+{
+    public KeyMessageConfigValidator()
+    {
+        RuleFor(key => key.MessageType).NotEmpty();
+        RuleFor(key => key.ProtoFile)
+            .NotEmpty()
+            .Must(ValidationRules.IsSqlIdentifier)
+            .WithMessage("Must be a proto file name without path or extension.");
+        RuleFor(key => key.MessageName)
+            .NotEmpty()
+            .Must(ValidationRules.IsSqlIdentifier)
+            .WithMessage("Must be a valid protobuf message name.");
+        RuleFor(key => key.SkipBytes).GreaterThanOrEqualTo(0);
+    }
+}
+
 internal sealed class FieldOverrideConfigValidator : AbstractValidator<FieldOverrideConfig>
 {
     public FieldOverrideConfigValidator()
@@ -63,6 +80,9 @@ internal sealed class KafkaTableConfigValidator : AbstractValidator<KafkaTableCo
             .WithMessage("Must be a valid protobuf message name.");
         RuleFor(table => table.OutputPath).NotEmpty();
         RuleFor(table => table.Kafka).SetValidator(new KafkaSettingsConfigValidator());
+        RuleFor(table => table.Key!)
+            .SetValidator(new KeyMessageConfigValidator())
+            .When(table => table.Key is not null);
 
         RuleForEach(table => table.FieldOverrides)
             .ChildRules(overrides =>

@@ -233,6 +233,46 @@ public sealed class GeneratedSchemaClickHouseIntegrationTests : IAsyncLifetime
         Convert.ToDateTime(createdAt).Should().Be(DateTime.Parse("2024-01-15T10:30:00Z").ToUniversalTime());
     }
 
+    [Fact]
+    public async Task GivenConfluentProtobufKey_WhenDecoded_ThenMatchesProtobufSingleParser()
+    {
+        var execResult = await _clickHouse.ExecScriptAsync(ProtobufKeyDecoder.CreateFunctionStatement());
+        execResult.ExitCode.Should().Be(0, execResult.Stderr);
+
+        foreach (var orderId in new[] { "abc", new string('x', 130), "7086cd58-eec4-4152-b2b4-1615dd3e7ca8" })
+        {
+            var payload = new OrderKey { OrderId = orderId }.ToByteArray();
+            var raw = new byte[6 + payload.Length];
+            payload.CopyTo(raw, 6);
+            var hex = Convert.ToHexString(raw);
+
+            await using var connection = new ClickHouseConnection(_clickHouse.GetConnectionString());
+            await connection.OpenAsync();
+
+            var decoded = await ScalarAsync(
+                connection,
+                $"SELECT sandbox_parse_proto_string(unhex('{hex}'), 6, 1)");
+            var parsed = await ScalarAsync(
+                connection,
+                $"""
+                SELECT order_id
+                FROM format(ProtobufSingle, 'order_id String', substring(unhex('{hex}'), 7))
+                SETTINGS format_schema = 'order_key.proto:OrderKey'
+                """);
+
+            decoded.Should().Be(orderId);
+            parsed.Should().Be(orderId);
+        }
+    }
+
+    private static async Task<string> ScalarAsync(ClickHouseConnection connection, string commandText)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = commandText;
+        var value = await command.ExecuteScalarAsync();
+        return value?.ToString() ?? string.Empty;
+    }
+
     private async Task CreateIngestTableAsync(
         MessageDescriptor descriptor,
         string tableName,

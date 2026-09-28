@@ -116,6 +116,19 @@ dotnet build src/Sandbox.Contracts
 | `protobufOneofPresence` | `true` | `input_format_protobuf_oneof_presence` |
 | `protobufFlattenGoogleWrappers` | `true` | Flatten google wrappers |
 
+### `key` (опционально)
+
+Protobuf-ключ Kafka. ClickHouse `ProtobufSingle` разбирает только value. Если секция задана, codegen добавляет в целевой MergeTree колонку `key_<field>` и выражение, которое пропускает Confluent-конверт (`skipBytes`, для Protobuf это 6) и читает единственное singular `string`-поле ключа по номеру из proto. Ключ из нескольких полей или не-string не поддерживается.
+
+Заголовки сообщения пишутся всегда, когда materialized view читает Kafka-таблицу: `headers_name Array(LowCardinality(String))` и `headers_value Array(String)` из `_headers.name` / `_headers.value`. Имена заголовков низкокардинальные, значения остаются обычным `String`.
+
+| Поле | Пример | Описание |
+|---|---|---|
+| `messageType` | `"Sandbox.Contracts.OrderKey, Sandbox.Contracts"` | CLR-тип ключа |
+| `protoFile` | `"order_key"` | Имя `.proto` без пути и расширения |
+| `messageName` | `"OrderKey"` | Имя message |
+| `skipBytes` | `6` | Байт конверта перед protobuf payload |
+
 Пример с `kafka` и overrides:
 
 ```json
@@ -258,7 +271,7 @@ TTL event_time + INTERVAL 90 DAY;
 
 1. Добавьте `.proto` в `protos/` и убедитесь, что message собирается в `Sandbox.Contracts`.
 2. Добавьте элемент в `kafkaTables` с `messageType`, `protoFile`, `messageName`, `tableName`, `outputPath`.
-3. Заполните `kafka.topic` / `groupName` (и при необходимости `skipBytes`).
+3. Заполните `kafka.topic` / `groupName` (и при необходимости `skipBytes`). Чтобы сохранить protobuf-ключ, добавьте `key`. Заголовки попадут в MergeTree сами, если есть MV на эту Kafka-таблицу.
 4. При необходимости задайте `fieldOverrides`.
 5. Если нужна аналитика — добавьте `mergeTreeTables` + `materializedViews` в `pipeline` (`sourceTable` / `targetTable` должны ссылаться на существующие имена).
 6. Выполните `dotnet build src/Sandbox.Contracts` и проверьте сгенерированный SQL.
