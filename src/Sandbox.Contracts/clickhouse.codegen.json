@@ -23,6 +23,12 @@
         "protobufOneofPresence": true,
         "protobufFlattenGoogleWrappers": true
       },
+      "key": {
+        "messageType": "Sandbox.Contracts.OrderKey, Sandbox.Contracts",
+        "protoFile": "order_key",
+        "messageName": "OrderKey",
+        "skipBytes": 6
+      },
       "fieldOverrides": {
         "category": { "type": "LowCardinality(String)" },
         "status": { "enum8": true },
@@ -45,6 +51,12 @@
         "flattenNested": false,
         "protobufOneofPresence": true,
         "protobufFlattenGoogleWrappers": true
+      },
+      "key": {
+        "messageType": "Sandbox.Contracts.ShipmentKey, Sandbox.Contracts",
+        "protoFile": "shipment_key",
+        "messageName": "ShipmentKey",
+        "skipBytes": 6
       },
       "fieldOverrides": {
         "status": { "enum8": true },

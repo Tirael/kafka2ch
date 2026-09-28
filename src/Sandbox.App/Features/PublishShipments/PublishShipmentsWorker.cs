@@ -19,7 +19,12 @@ public sealed class PublishShipmentsWorker(
             {
                 var result = await producer.ProduceAsync(
                     _options.Topic,
-                    new Message<ShipmentKey, ShipmentEvent> { Key = key, Value = shipmentEvent },
+                    new Message<ShipmentKey, ShipmentEvent>
+                    {
+                        Key = key,
+                        Value = shipmentEvent,
+                        Headers = KafkaMessageHeaders.ForEvent("shipment")
+                    },
                     stoppingToken);
 
                 logger.LogInformation(

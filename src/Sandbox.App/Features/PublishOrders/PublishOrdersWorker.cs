@@ -19,7 +19,12 @@ public sealed class PublishOrdersWorker(
             {
                 var result = await producer.ProduceAsync(
                     _options.Topic,
-                    new Message<OrderKey, OrderEvent> { Key = key, Value = orderEvent },
+                    new Message<OrderKey, OrderEvent>
+                    {
+                        Key = key,
+                        Value = orderEvent,
+                        Headers = KafkaMessageHeaders.ForEvent("order")
+                    },
                     stoppingToken);
 
                 logger.LogInformation(

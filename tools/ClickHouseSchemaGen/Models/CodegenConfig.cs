@@ -39,8 +39,21 @@ public sealed class KafkaTableConfig
 
     public KafkaSettingsConfig Kafka { get; set; } = new();
 
+    public KeyMessageConfig? Key { get; set; }
+
     public Dictionary<string, FieldOverrideConfig> FieldOverrides { get; set; } =
         new(StringComparer.OrdinalIgnoreCase);
+}
+
+public sealed class KeyMessageConfig
+{
+    public required string MessageType { get; set; }
+
+    public required string ProtoFile { get; set; }
+
+    public required string MessageName { get; set; }
+
+    public int SkipBytes { get; set; } = 6;
 }
 
 public sealed class KafkaSettingsConfig

@@ -116,6 +116,17 @@ dotnet build src/Sandbox.Contracts
 | `protobufOneofPresence` | `true` | `input_format_protobuf_oneof_presence` |
 | `protobufFlattenGoogleWrappers` | `true` | Flatten google wrappers |
 
+### `key` (опционально)
+
+Protobuf-ключ Kafka. ClickHouse `ProtobufSingle` разбирает только value. Ключ сохраняется отдельными колонками `key_<field>`: тот же пропуск Confluent-конверта (`skipBytes`, для Protobuf это 6) и номер поля из proto. Сейчас поддерживаются только одиночные `string`-поля. Заголовки сообщения пишутся в `headers_name` / `headers_value` у MergeTree, если MV читает эту Kafka-таблицу.
+
+| Поле | Пример | Описание |
+|---|---|---|
+| `messageType` | `"Sandbox.Contracts.OrderKey, Sandbox.Contracts"` | CLR-тип ключа |
+| `protoFile` | `"order_key"` | Имя `.proto` без расширения |
+| `messageName` | `"OrderKey"` | Имя message |
+| `skipBytes` | `6` | Байт конверта перед protobuf payload |
+
 Пример с `kafka` и overrides:
 
 ```json

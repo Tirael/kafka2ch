@@ -31,6 +31,7 @@ public sealed class ClickHouseSchemaGeneratorTests
 
         var configJson = File.ReadAllText(configPath)
             .Replace("../../docker/clickhouse/init/01_orders_queue.sql", "generated_queue.sql")
+            .Replace("../../docker/clickhouse/init/02_shipments_queue.sql", "generated_shipments_queue.sql")
             .Replace("../../docker/clickhouse/init/03_pipeline.sql", "generated_pipeline.sql");
         File.WriteAllText(configPath, configJson);
 
@@ -48,6 +49,13 @@ public sealed class ClickHouseSchemaGeneratorTests
             File.ReadAllText(queuePath).Should().Contain("CREATE TABLE orders_queue");
             File.ReadAllText(pipelinePath).Should().Contain("CREATE MATERIALIZED VIEW orders_mv");
             File.ReadAllText(pipelinePath).Should().Contain("CREATE TABLE orders_agg_1m");
+            File.ReadAllText(pipelinePath).Should().Contain("sandbox_parse_proto_string(_key, 6, 1)");
+            File.ReadAllText(pipelinePath).Should().Contain("key_order_id");
+            File.ReadAllText(pipelinePath).Should().Contain("key_shipment_id");
+            File.ReadAllText(pipelinePath).Should().Contain("_headers.name");
+            File.ReadAllText(pipelinePath).Should().Contain("AS headers_name");
+            File.ReadAllText(pipelinePath).Should().Contain("_headers.value");
+            File.ReadAllText(pipelinePath).Should().Contain("AS headers_value");
         }
         finally
         {

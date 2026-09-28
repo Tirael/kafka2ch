@@ -114,7 +114,7 @@ message OrderEvent {
 
 На конверт Confluent (`skip_bytes = 6`) импорты не влияют: message-indexes считаются по top-level message-ам главного файла, а `OrderEvent` в нём остаётся первым и единственным (типы из импортов в индексацию не входят).
 
-Protobuf-ключ на ClickHouse не влияет: Kafka engine парсит только value сообщения, ключ доступен лишь как сырые байты через виртуальную колонку `_key` (в нашем пайплайне не используется — `order_id` есть в самом value). Ключ нужен для детерминированного партиционирования и как демонстрация типизированного контракта key+value.
+Kafka engine парсит ProtobufSingle только value. Ключ остаётся сырыми байтами в `_key`; пайплайн декодирует его тем же пропуском Confluent-конверта (`skipBytes = 6`) и номером string-поля из key proto (`key_order_id` / `key_shipment_id`). Заголовки сообщения сохраняются из виртуальных колонок `_headers.name` и `_headers.value`.
 
 ## DDL ClickHouse (docker-entrypoint-initdb.d)
 

@@ -62,3 +62,6 @@ nunit-*.xml
 *.DotSettings.user
 
 .ai
+
+# ClickHouse protobuf schema cache written into the bind-mounted format schemas
+docker/clickhouse/format_schemas/__cache__/
