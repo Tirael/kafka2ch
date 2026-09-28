@@ -21,24 +21,24 @@ internal static class SqlScriptWriter
         AppendColumnDefinitions(
             builder,
             columns,
-            column => (column.Name, column.Type, column.Comment));
+            column => (column.Name, column.Type, column.Comment, column.AliasExpression));
 
     public static void AppendColumnDefinitions(StringBuilder builder, IReadOnlyList<PipelineColumnConfig> columns) =>
         AppendColumnDefinitions(
             builder,
             columns,
-            column => (column.Name, column.Type, Comment: (string?)null));
+            column => (column.Name, column.Type, Comment: (string?)null, AliasExpression: (string?)null));
 
     private static void AppendColumnDefinitions<T>(
         StringBuilder builder,
         IReadOnlyList<T> columns,
-        Func<T, (string Name, string Type, string? Comment)> selector)
+        Func<T, (string Name, string Type, string? Comment, string? AliasExpression)> selector)
     {
         for (var i = 0; i < columns.Count; i++)
         {
-            var (name, type, comment) = selector(columns[i]);
+            var (name, type, comment, aliasExpression) = selector(columns[i]);
             var comma = i < columns.Count - 1 ? "," : string.Empty;
-            builder.AppendLine(SqlColumnFormatter.FormatColumnLine(name, type, comment, comma));
+            builder.AppendLine(SqlColumnFormatter.FormatColumnLine(name, type, comment, comma, aliasExpression));
         }
     }
 }

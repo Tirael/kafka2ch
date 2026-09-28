@@ -133,9 +133,13 @@ Protobuf-ключ Kafka. ClickHouse `ProtobufSingle` разбирает толь
 | `uint64` / `fixed64` | `UInt64` |
 | `float` / `double` | `Float32` / `Float64` |
 
-Декодирование встроено в SQL materialized view — ClickHouse UDF (`CREATE FUNCTION`) не создаются. Один `string`-ключ читается компактным inline-выражением. Несколько полей или не-string типы: MV subquery считает `Map(field_number → bytes)` wire-сканером по `_key`, затем колонки `key_<field>` читают значения из этой map. Не поддерживаются `repeated`, `map` и nested `message`.
+Ключ и заголовки попадают уже в Kafka queue-таблицу (не в MV):
 
-Заголовки сообщения пишутся всегда, когда materialized view читает Kafka-таблицу: `headers_name Array(LowCardinality(String))` и `headers_value Array(String)` из `_headers.name` / `_headers.value`. Имена заголовков низкокардинальные, значения остаются обычным `String`.
+- колонки `_key`, `_headers.name`, `_headers.value` — метаданные сообщения;
+- `headers_name` / `headers_value` — `ALIAS` над заголовками (`headers_name` как `Array(LowCardinality(String))`);
+- `key_<field>` — `ALIAS`, декодирующие protobuf-ключ после Confluent envelope (`skipBytes`).
+
+Один `string`-ключ — компактный `ALIAS`. Несколько scalar-полей — `ALIAS` на wire-`Map` и поля из неё. ClickHouse UDF не создаются. Не поддерживаются `repeated`, `map` и nested `message`. Materialized view только копирует `key_*` / `headers_*` в MergeTree.
 
 | Поле | Пример | Описание |
 |---|---|---|

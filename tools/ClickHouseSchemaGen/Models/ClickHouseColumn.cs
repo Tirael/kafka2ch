@@ -10,19 +10,23 @@ public sealed record ClickHouseColumn
 
     public string? Comment { get; init; }
 
+    public string? AliasExpression { get; init; }
+
     public string SourceFieldPath { get; init; } = "";
 
     public static ClickHouseColumn Create(
         string name,
         string type,
         MappingStrategy strategy,
-        string? comment = null) =>
+        string? comment = null,
+        string? aliasExpression = null) =>
         new()
         {
             Name = name,
             Type = type,
             Strategy = strategy,
             Comment = comment,
+            AliasExpression = aliasExpression,
             SourceFieldPath = name
         };
 }

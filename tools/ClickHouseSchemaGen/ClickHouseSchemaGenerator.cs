@@ -21,7 +21,9 @@ public sealed class ClickHouseSchemaGenerator(
     {
         var descriptor = ProtoDescriptorResolver.ResolveDescriptor(config.MessageType);
         var overrides = MergeFieldOverrides(rootConfig?.FieldOverrides, config.FieldOverrides);
-        var columns = planner.MapMessage(descriptor, defaults, overrides);
+        var columns = planner.MapMessage(descriptor, defaults, overrides)
+            .Concat(KafkaQueueMetadataColumns.Create(config))
+            .ToList();
         return KafkaTableGenerator.Generate(config, columns);
     }
 
@@ -54,17 +56,17 @@ public sealed class ClickHouseSchemaGenerator(
         var pipeline = config.Pipeline
             ?? throw new InvalidOperationException("Pipeline config is required.");
         AppendHeaders(config);
-        var hasKeys = AppendKeys(config);
+        AppendKeys(config);
 
         var pipelineBuilder = new StringBuilder()
             .AppendLine(SqlScriptWriter.GeneratedHeader)
             .AppendLine();
 
-        if (hasKeys)
+        if (config.KafkaTables.Any(table => table.Key is not null))
         {
             pipelineBuilder
-                .AppendLine("-- Kafka ProtobufSingle parses the message value. Keys are decoded inline from `_key`")
-                .AppendLine("-- after skipping the Confluent envelope (skipBytes). No ClickHouse UDFs are created.")
+                .AppendLine("-- Kafka message key/headers are exposed on the Kafka queue table (`_key`, ALIAS key_*),")
+                .AppendLine("-- then copied into MergeTree by the materialized views below.")
                 .AppendLine();
         }
 
@@ -84,63 +86,27 @@ public sealed class ClickHouseSchemaGenerator(
     {
         foreach (var (view, _, target) in EnumerateKafkaProjections(config))
         {
-            AddProjectedColumn(
-                target,
-                view,
-                "headers_name",
-                "Array(LowCardinality(String))",
-                "_headers.name",
-                "CAST(_headers.name, 'Array(LowCardinality(String))')");
-            AddProjectedColumn(
-                target,
-                view,
-                "headers_value",
-                "Array(String)",
-                "_headers.value",
-                "_headers.value");
+            AddProjectedColumn(target, view, "headers_name", "Array(LowCardinality(String))", "headers_name");
+            AddProjectedColumn(target, view, "headers_value", "Array(String)", "headers_value");
         }
     }
 
-    private static bool AppendKeys(CodegenConfig config)
+    private static void AppendKeys(CodegenConfig config)
     {
-        var hasKeys = false;
-
         foreach (var (view, kafkaTable, target) in EnumerateKafkaProjections(config))
         {
             if (kafkaTable.Key is not { } key)
                 continue;
 
-            hasKeys = true;
             var fields = ProtobufKeyFieldMapper.MapFields(
                 ProtoDescriptorResolver.ResolveDescriptor(key.MessageType));
 
-            if (ProtobufKeyFieldMapper.IsSingleStringKey(fields))
-            {
-                AddProjectedColumn(
-                    target,
-                    view,
-                    $"key_{fields[0].Name}",
-                    fields[0].ClickHouseType,
-                    fields[0].Name,
-                    ProtobufKeyDecoder.SimpleStringFieldExpression(key.SkipBytes, fields[0].FieldNumber));
-                continue;
-            }
-
-            view.SourceFromSql = ProtobufKeyDecoder.KeyFieldsSourceFromSql(view.SourceTable, key.SkipBytes);
-
             foreach (var field in fields)
             {
-                AddProjectedColumn(
-                    target,
-                    view,
-                    $"key_{field.Name}",
-                    field.ClickHouseType,
-                    field.Name,
-                    field.TupleValueExpression);
+                var columnName = $"key_{field.Name}";
+                AddProjectedColumn(target, view, columnName, field.ClickHouseType, columnName);
             }
         }
-
-        return hasKeys;
     }
 
     private static IEnumerable<(MaterializedViewConfig View, KafkaTableConfig KafkaTable, MergeTreeTableConfig Target)>
@@ -169,8 +135,7 @@ public sealed class ClickHouseSchemaGenerator(
         MaterializedViewConfig view,
         string name,
         string type,
-        string source,
-        string expression)
+        string source)
     {
         if (target.Columns.Any(column => string.Equals(column.Name, name, StringComparison.OrdinalIgnoreCase))
             || view.Columns.Any(column => string.Equals(column.Target, name, StringComparison.OrdinalIgnoreCase)))
@@ -180,8 +145,7 @@ public sealed class ClickHouseSchemaGenerator(
         view.Columns.Add(new PipelineColumnMapping
         {
             Source = source,
-            Target = name,
-            Expression = expression
+            Target = name
         });
     }
 

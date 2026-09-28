@@ -21,7 +21,13 @@ CREATE TABLE shipments_queue
     `failed.retry_count` Nullable(Int32),  -- well-known type
     delivery_outcome     Enum8('absent' = 0, 'delivered' = 9, 'failed' = 10),  -- oneof presence
     priority             Nullable(Int32),  -- well-known type
-    status_history       Array(Enum8('SHIPMENT_STATUS_UNSPECIFIED' = 0, 'SHIPMENT_STATUS_CREATED' = 1, 'SHIPMENT_STATUS_IN_TRANSIT' = 2, 'SHIPMENT_STATUS_DELIVERED' = 3, 'SHIPMENT_STATUS_FAILED' = 4))  -- proto repeated
+    status_history       Array(Enum8('SHIPMENT_STATUS_UNSPECIFIED' = 0, 'SHIPMENT_STATUS_CREATED' = 1, 'SHIPMENT_STATUS_IN_TRANSIT' = 2, 'SHIPMENT_STATUS_DELIVERED' = 3, 'SHIPMENT_STATUS_FAILED' = 4)),  -- proto repeated
+    _key                 String,  -- kafka message key
+    `_headers.name`      Array(String),  -- kafka message headers
+    `_headers.value`     Array(String),  -- kafka message headers
+    headers_name         Array(LowCardinality(String)) ALIAS CAST(`_headers.name`, 'Array(LowCardinality(String))'),  -- kafka message headers
+    headers_value        Array(String) ALIAS `_headers.value`,  -- kafka message headers
+    key_shipment_id      String ALIAS if(length(_key) <= 6, '', if(reinterpretAsUInt8(substring(substring(_key, 6 + 1), 1, 1)) != bitOr(bitShiftLeft(1, 3), 2), '', if(reinterpretAsUInt8(substring(substring(_key, 6 + 1), 2, 1)) < 128, substring(substring(_key, 6 + 1), 3, reinterpretAsUInt8(substring(substring(_key, 6 + 1), 2, 1))), if(reinterpretAsUInt8(substring(substring(_key, 6 + 1), 3, 1)) >= 128, '', substring(substring(_key, 6 + 1), 4, bitOr(bitAnd(reinterpretAsUInt8(substring(substring(_key, 6 + 1), 2, 1)), 127), bitShiftLeft(reinterpretAsUInt8(substring(substring(_key, 6 + 1), 3, 1)), 7)))))))  -- decoded kafka key field
 )
 ENGINE = Kafka
 SETTINGS

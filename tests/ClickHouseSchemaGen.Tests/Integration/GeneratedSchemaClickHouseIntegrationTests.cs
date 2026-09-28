@@ -53,7 +53,11 @@ public sealed class GeneratedSchemaClickHouseIntegrationTests : IAsyncLifetime
             "payment",
             "promo_code",
             "status_history",
-            "loyalty_points"
+            "loyalty_points",
+            "_headers.name",
+            "_headers.value",
+            "headers_name",
+            "headers_value"
         ], options => options.WithStrictOrdering());
         columns.Single(column => column.Name == "items").Type.Should().StartWith("Nested(");
         columns.Single(column => column.Name == "metadata").Type.Should().Be("Map(String, String)");
@@ -242,13 +246,24 @@ public sealed class GeneratedSchemaClickHouseIntegrationTests : IAsyncLifetime
             var raw = new byte[6 + payload.Length];
             payload.CopyTo(raw, 6);
             var hex = Convert.ToHexString(raw);
-            var expression = ProtobufKeyDecoder.SimpleStringFieldExpression(6, 1)
-                .Replace("_key", $"unhex('{hex}')", StringComparison.Ordinal);
+            var alias = ProtobufKeyDecoder.SimpleStringFieldExpression(6, 1);
+
+            var execResult = await _clickHouse.ExecScriptAsync(
+                $"""
+                CREATE TABLE key_alias_src
+                (
+                    _key String,
+                    key_order_id String ALIAS {alias}
+                )
+                ENGINE = Memory;
+                INSERT INTO key_alias_src (_key) VALUES (unhex('{hex}'));
+                """);
+            execResult.ExitCode.Should().Be(0, execResult.Stderr);
 
             await using var connection = new ClickHouseConnection(_clickHouse.GetConnectionString());
             await connection.OpenAsync();
 
-            var decoded = await ScalarAsync(connection, $"SELECT {expression}");
+            var decoded = await ScalarAsync(connection, "SELECT key_order_id FROM key_alias_src");
             var parsed = await ScalarAsync(
                 connection,
                 $"""
@@ -259,13 +274,40 @@ public sealed class GeneratedSchemaClickHouseIntegrationTests : IAsyncLifetime
 
             decoded.Should().Be(orderId);
             parsed.Should().Be(orderId);
+            await _clickHouse.ExecScriptAsync("DROP TABLE IF EXISTS key_alias_src");
         }
     }
 
     [Fact]
     public async Task GivenMultiFieldConfluentKey_WhenDecoded_ThenMatchesFieldValues()
     {
-        var fields = ProtobufKeyFieldMapper.MapFields(MultiFieldKey.Descriptor);
+        var keyConfig = new KafkaTableConfig
+        {
+            MessageType = "Sandbox.Contracts.OrderEvent, Sandbox.Contracts",
+            TableName = "orders_queue",
+            ProtoFile = "order_event",
+            MessageName = "OrderEvent",
+            OutputPath = "ignored.sql",
+            Key = new KeyMessageConfig
+            {
+                MessageType = "Sandbox.Contracts.TestFixtures.MultiFieldKey, Sandbox.Contracts",
+                ProtoFile = "mapping_fixtures",
+                MessageName = "MultiFieldKey",
+                SkipBytes = 6
+            }
+        };
+        var metadataColumns = KafkaQueueMetadataColumns.Create(keyConfig)
+            .Where(column => column.Name is "_key"
+                || column.Name.StartsWith("key_", StringComparison.Ordinal)
+                || column.Name is "_sandbox_key_payload" or "_sandbox_key_fields")
+            .ToList();
+        var columnSql = string.Join(
+            ",\n    ",
+            metadataColumns.Select(column =>
+                string.IsNullOrWhiteSpace(column.AliasExpression)
+                    ? $"{SqlColumnFormatter.FormatColumnName(column.Name)} {column.Type}"
+                    : $"{SqlColumnFormatter.FormatColumnName(column.Name)} {column.Type} ALIAS {column.AliasExpression}"));
+
         var key = new MultiFieldKey
         {
             Id = "abc",
@@ -284,19 +326,25 @@ public sealed class GeneratedSchemaClickHouseIntegrationTests : IAsyncLifetime
         payload.CopyTo(raw, 6);
         var hex = Convert.ToHexString(raw);
 
-        var selectList = string.Join(",\n                ", fields.Select(field => field.TupleValueExpression));
-        var sql = $"""
-            SELECT
-                {selectList}
-            FROM
-            {ProtobufKeyDecoder.KeyFieldsSourceFromSql("src", 6)}
-            """
-            .Replace("FROM src", $"FROM (SELECT unhex('{hex}') AS _key) AS src", StringComparison.Ordinal);
+        var execResult = await _clickHouse.ExecScriptAsync(
+            $"""
+            CREATE TABLE multi_key_alias_src
+            (
+                {columnSql}
+            )
+            ENGINE = Memory;
+            INSERT INTO multi_key_alias_src (_key) VALUES (unhex('{hex}'));
+            """);
+        execResult.ExitCode.Should().Be(0, execResult.Stderr);
 
         await using var connection = new ClickHouseConnection(_clickHouse.GetConnectionString());
         await connection.OpenAsync();
         await using var command = connection.CreateCommand();
-        command.CommandText = sql;
+        command.CommandText = """
+            SELECT key_id, key_shard, key_active, key_revision, key_region,
+                   key_delta, key_score, key_token, key_weight, key_crc
+            FROM multi_key_alias_src
+            """;
         await using var reader = await command.ExecuteReaderAsync();
         (await reader.ReadAsync()).Should().BeTrue();
 

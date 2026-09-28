@@ -51,14 +51,16 @@ public sealed class ClickHouseSchemaGeneratorTests
             File.ReadAllText(queuePath).Should().Contain("CREATE TABLE orders_queue");
             File.ReadAllText(pipelinePath).Should().Contain("CREATE MATERIALIZED VIEW orders_mv");
             File.ReadAllText(pipelinePath).Should().Contain("CREATE TABLE orders_agg_1m");
+            File.ReadAllText(queuePath).Should().Contain("_key");
+            File.ReadAllText(queuePath).Should().Contain("key_order_id");
+            File.ReadAllText(queuePath).Should().Contain("ALIAS");
+            File.ReadAllText(queuePath).Should().Contain("headers_name");
             File.ReadAllText(pipelinePath).Should().Contain("key_order_id");
             File.ReadAllText(pipelinePath).Should().Contain("key_shipment_id");
-            File.ReadAllText(pipelinePath).Should().Contain("bitOr(bitShiftLeft(1, 3), 2)");
-            File.ReadAllText(pipelinePath).Should().NotContain("CREATE OR REPLACE FUNCTION");
-            File.ReadAllText(pipelinePath).Should().Contain("CAST(_headers.name, 'Array(LowCardinality(String))')");
             File.ReadAllText(pipelinePath).Should().Contain("AS headers_name");
-            File.ReadAllText(pipelinePath).Should().Contain("_headers.value");
             File.ReadAllText(pipelinePath).Should().Contain("AS headers_value");
+            File.ReadAllText(pipelinePath).Should().NotContain("CREATE OR REPLACE FUNCTION");
+            File.ReadAllText(pipelinePath).Should().NotContain("bitOr(bitShiftLeft(1, 3), 2)");
             File.ReadAllText(pipelinePath).Should().Contain("Array(LowCardinality(String))");
         }
         finally
@@ -140,17 +142,21 @@ public sealed class ClickHouseSchemaGeneratorTests
         {
             _sut.GenerateFromConfigFile(configPath);
 
+            var queueSql = File.ReadAllText(Path.Combine(outputDirectory, "generated_queue.sql"));
             var pipelineSql = File.ReadAllText(Path.Combine(outputDirectory, "generated_pipeline.sql"));
-            pipelineSql.Should().Contain("arrayFold(");
-            pipelineSql.Should().Contain("_sandbox_key_fields");
-            pipelineSql.Should().Contain("_sandbox_key_payload");
+            queueSql.Should().Contain("_key");
+            queueSql.Should().Contain("arrayFold(");
+            queueSql.Should().Contain("_sandbox_key_fields");
+            queueSql.Should().Contain("key_id");
+            queueSql.Should().Contain("key_shard");
+            queueSql.Should().Contain("key_delta");
+            queueSql.Should().Contain("ALIAS");
             pipelineSql.Should().Contain("key_id");
+            pipelineSql.Should().Contain("AS key_id");
             pipelineSql.Should().Contain("key_shard");
-            pipelineSql.Should().Contain("key_delta");
-            pipelineSql.Should().Contain("key_score");
-            pipelineSql.Should().Contain("mapContains(_sandbox_key_fields, 1)");
+            pipelineSql.Should().Contain("AS key_shard");
+            pipelineSql.Should().NotContain("arrayFold(");
             pipelineSql.Should().NotContain("CREATE OR REPLACE FUNCTION");
-            pipelineSql.Should().Contain("AS _sandbox_key_fields");
         }
         finally
         {

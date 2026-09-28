@@ -22,7 +22,13 @@ CREATE TABLE orders_queue
     payment              Enum8('absent' = 0, 'card' = 11, 'cash' = 12, 'wallet' = 13),  -- oneof presence
     promo_code           Nullable(String),  -- well-known type
     status_history       Array(Enum8('ORDER_STATUS_UNSPECIFIED' = 0, 'ORDER_STATUS_CREATED' = 1, 'ORDER_STATUS_PAID' = 2)),  -- proto repeated
-    loyalty_points       Nullable(Int32)  -- proto optional
+    loyalty_points       Nullable(Int32),  -- proto optional
+    _key                 String,  -- kafka message key
+    `_headers.name`      Array(String),  -- kafka message headers
+    `_headers.value`     Array(String),  -- kafka message headers
+    headers_name         Array(LowCardinality(String)) ALIAS CAST(`_headers.name`, 'Array(LowCardinality(String))'),  -- kafka message headers
+    headers_value        Array(String) ALIAS `_headers.value`,  -- kafka message headers
+    key_order_id         String ALIAS if(length(_key) <= 6, '', if(reinterpretAsUInt8(substring(substring(_key, 6 + 1), 1, 1)) != bitOr(bitShiftLeft(1, 3), 2), '', if(reinterpretAsUInt8(substring(substring(_key, 6 + 1), 2, 1)) < 128, substring(substring(_key, 6 + 1), 3, reinterpretAsUInt8(substring(substring(_key, 6 + 1), 2, 1))), if(reinterpretAsUInt8(substring(substring(_key, 6 + 1), 3, 1)) >= 128, '', substring(substring(_key, 6 + 1), 4, bitOr(bitAnd(reinterpretAsUInt8(substring(substring(_key, 6 + 1), 2, 1)), 127), bitShiftLeft(reinterpretAsUInt8(substring(substring(_key, 6 + 1), 3, 1)), 7)))))))  -- decoded kafka key field
 )
 ENGINE = Kafka
 SETTINGS

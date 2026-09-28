@@ -7,55 +7,20 @@ public static class ProtobufKeyDecoder
     private const int MaxKeyFields = 32;
 
     public static string SimpleStringFieldExpression(int skipBytes, int fieldNumber) =>
-        $"""
-        if(
-            length(_key) <= {skipBytes},
-            '',
-            if(
-                reinterpretAsUInt8(substring(substring(_key, {skipBytes} + 1), 1, 1)) != bitOr(bitShiftLeft({fieldNumber}, 3), 2),
-                '',
-                if(
-                    reinterpretAsUInt8(substring(substring(_key, {skipBytes} + 1), 2, 1)) < 128,
-                    substring(
-                        substring(_key, {skipBytes} + 1),
-                        3,
-                        reinterpretAsUInt8(substring(substring(_key, {skipBytes} + 1), 2, 1))),
-                    if(
-                        reinterpretAsUInt8(substring(substring(_key, {skipBytes} + 1), 3, 1)) >= 128,
-                        '',
-                        substring(
-                            substring(_key, {skipBytes} + 1),
-                            4,
-                            bitOr(
-                                bitAnd(reinterpretAsUInt8(substring(substring(_key, {skipBytes} + 1), 2, 1)), 127),
-                                bitShiftLeft(reinterpretAsUInt8(substring(substring(_key, {skipBytes} + 1), 3, 1)), 7)))
-                    )
-                )
-            )
-        )
-        """;
-
-    public static string KeyFieldsSourceFromSql(string sourceTable, int skipBytes)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(sourceTable);
-        ArgumentOutOfRangeException.ThrowIfNegative(skipBytes);
-
-        return
-            $"""
-            (
-                SELECT
-                    *,
-                    {ProtoFieldsExpression(KeyPayloadAlias)} AS {KeyFieldsAlias}
-                FROM
-                (
-                    SELECT
-                        *,
-                        {PayloadExpression("_key", skipBytes)} AS {KeyPayloadAlias}
-                    FROM {sourceTable}
-                )
-            )
-            """;
-    }
+        "if(" +
+        $"length(_key) <= {skipBytes}, " +
+        "'', " +
+        "if(" +
+        $"reinterpretAsUInt8(substring(substring(_key, {skipBytes} + 1), 1, 1)) != bitOr(bitShiftLeft({fieldNumber}, 3), 2), " +
+        "'', " +
+        "if(" +
+        $"reinterpretAsUInt8(substring(substring(_key, {skipBytes} + 1), 2, 1)) < 128, " +
+        $"substring(substring(_key, {skipBytes} + 1), 3, reinterpretAsUInt8(substring(substring(_key, {skipBytes} + 1), 2, 1))), " +
+        "if(" +
+        $"reinterpretAsUInt8(substring(substring(_key, {skipBytes} + 1), 3, 1)) >= 128, " +
+        "'', " +
+        $"substring(substring(_key, {skipBytes} + 1), 4, bitOr(bitAnd(reinterpretAsUInt8(substring(substring(_key, {skipBytes} + 1), 2, 1)), 127), bitShiftLeft(reinterpretAsUInt8(substring(substring(_key, {skipBytes} + 1), 3, 1)), 7)))" +
+        "))))";
 
     public static string PayloadExpression(string rawExpression, int skipBytes) =>
         $"if(length({rawExpression}) <= {skipBytes}, '', substring({rawExpression}, {skipBytes} + 1))";
