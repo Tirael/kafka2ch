@@ -25,7 +25,8 @@ CREATE TABLE shipments
     shipped_at           DateTime64(3)
 )
 ENGINE = MergeTree
-ORDER BY (shipped_at, shipment_id);
+ORDER BY (shipped_at, shipment_id)
+TTL shipped_at + INTERVAL 1 DAY;
 
 CREATE MATERIALIZED VIEW orders_mv TO orders AS
 SELECT

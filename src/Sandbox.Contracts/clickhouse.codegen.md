@@ -196,7 +196,7 @@ Overrides на корне конфига и в таблице **мержатся
 |---|---|
 | `tableName` | Имя MergeTree-таблицы |
 | `orderBy` | Выражение `ORDER BY`, например `"(event_time, order_id)"` |
-| `ttl` | Опционально. Выражение table-level `TTL`, например `"event_time + INTERVAL 90 DAY"` |
+| `ttl` | Опционально. Выражение table-level `TTL`, например `"event_time + INTERVAL 90 DAY"`. Должно ссылаться только на колонки этой таблицы (`shipments` → `shipped_at`, не `event_time`) |
 | `sourceTable` | Опционально. Имя Kafka-таблицы (`kafkaTables[].tableName`) для автозаполнения колонок |
 | `columns` | Список `{ "name", "type" }`. **Пустой / опущен** → взять все колонки из `sourceTable` |
 
@@ -313,4 +313,5 @@ TTL event_time + INTERVAL 90 DAY;
 - MV ссылается на неизвестный `sourceTable` / `targetTable`
 - MergeTree с пустым `columns` без `sourceTable` (нужен для автозаполнения)
 - MergeTree `sourceTable` не совпадает с `kafkaTables[].tableName`
+- TTL ссылается на колонку, которой нет в `columns` (например `event_time` у `shipments`, где есть только `shipped_at`)
 - `repeatedMessageStrategy` не из списка `nested` \| `arraytuple` \| `flatten`

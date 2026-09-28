@@ -115,6 +115,12 @@ internal sealed class MergeTreeTableConfigValidator : AbstractValidator<MergeTre
         RuleFor(table => table.Ttl)
             .Must(ttl => ttl is null || !string.IsNullOrWhiteSpace(ttl))
             .WithMessage("TTL expression must not be blank when provided.");
+        RuleFor(table => table)
+            .Must(ValidationRules.TtlReferencesKnownColumns)
+            .WithMessage(table =>
+                $"TTL expression references unknown columns for table '{table.TableName}'. " +
+                $"Available columns: {string.Join(", ", table.Columns.Select(column => column.Name))}.")
+            .When(table => !string.IsNullOrWhiteSpace(table.Ttl) && table.Columns.Count > 0);
         RuleFor(table => table.SourceTable)
             .Must(sourceTable => sourceTable is null || ValidationRules.IsSqlIdentifier(sourceTable))
             .WithMessage("Must be a valid ClickHouse identifier when provided.");

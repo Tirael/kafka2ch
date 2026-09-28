@@ -93,6 +93,35 @@ public sealed class CodegenConfigValidatorTests
     }
 
     [Fact]
+    public void GivenMergeTreeTtlWithUnknownColumn_WhenValidate_ThenFails()
+    {
+        var config = CreateValidConfig();
+        config.Pipeline!.MergeTreeTables =
+        [
+            new MergeTreeTableConfig
+            {
+                TableName = "shipments",
+                OrderBy = "(shipped_at, shipment_id)",
+                Ttl = "event_time + INTERVAL 1 DAY",
+                Columns =
+                [
+                    new PipelineColumnConfig { Name = "shipment_id", Type = "String" },
+                    new PipelineColumnConfig { Name = "shipped_at", Type = "DateTime64(3)" }
+                ]
+            }
+        ];
+        config.Pipeline.MaterializedViews[0].TargetTable = "shipments";
+        config.Pipeline.MaterializedViews[0].SourceTable = "orders_queue";
+
+        var result = _sut.Validate(config);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(error =>
+            error.ErrorMessage.Contains("TTL expression references unknown columns", StringComparison.Ordinal)
+            && error.ErrorMessage.Contains("shipments", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void GivenMergeTreeTableWithBlankTtl_WhenValidate_ThenFails()
     {
         var config = CreateValidConfig();
