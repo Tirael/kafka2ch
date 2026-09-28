@@ -29,6 +29,19 @@ message RepeatedEnumMessage {
   repeated SampleStatus statuses = 1;
 }
 
+message MultiFieldKey {
+  string id = 1;
+  int32 shard = 2;
+  bool active = 3;
+  uint64 revision = 4;
+  SampleStatus region = 5;
+  sint64 delta = 6;
+  double score = 7;
+  bytes token = 8;
+  float weight = 9;
+  fixed32 crc = 10;
+}
+
 enum SampleStatus {
   SAMPLE_STATUS_UNSPECIFIED = 0;
   SAMPLE_STATUS_ACTIVE = 1;

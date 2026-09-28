@@ -118,7 +118,22 @@ dotnet build src/Sandbox.Contracts
 
 ### `key` (опционально)
 
-Protobuf-ключ Kafka. ClickHouse `ProtobufSingle` разбирает только value. Если секция задана, codegen добавляет в целевой MergeTree колонку `key_<field>` и выражение, которое пропускает Confluent-конверт (`skipBytes`, для Protobuf это 6) и читает единственное singular `string`-поле ключа по номеру из proto. Ключ из нескольких полей или не-string не поддерживается.
+Protobuf-ключ Kafka. ClickHouse `ProtobufSingle` разбирает только value. Если секция задана, codegen добавляет в целевой MergeTree колонки `key_<field>` для каждого поля ключа и выражение, которое пропускает Confluent-конверт (`skipBytes`, для Protobuf это 6).
+
+Поддерживаются singular scalar-поля:
+
+| Proto | ClickHouse |
+|---|---|
+| `string` / `bytes` | `String` |
+| `bool` | `Bool` |
+| `int32` / `enum` | `Int32` |
+| `int64` / `sint64` / `sfixed64` | `Int64` |
+| `sint32` / `sfixed32` | `Int32` |
+| `uint32` / `fixed32` | `UInt32` |
+| `uint64` / `fixed64` | `UInt64` |
+| `float` / `double` | `Float32` / `Float64` |
+
+Один `string`-ключ декодируется быстрым путём (`sandbox_parse_proto_string`). Несколько полей или не-string типы идут через wire-сканер (`sandbox_proto_fields`) и функцию `sandbox_parse_key_<tableName>`, которая возвращает tuple; MV читает его один раз в subquery. Не поддерживаются `repeated`, `map` и nested `message`.
 
 Заголовки сообщения пишутся всегда, когда materialized view читает Kafka-таблицу: `headers_name Array(LowCardinality(String))` и `headers_value Array(String)` из `_headers.name` / `_headers.value`. Имена заголовков низкокардинальные, значения остаются обычным `String`.
 

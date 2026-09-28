@@ -119,6 +119,12 @@ public sealed class MaterializedViewConfig
     public required string SourceTable { get; set; }
 
     public List<PipelineColumnMapping> Columns { get; set; } = [];
+
+    /// <summary>
+    /// Extra SELECT expressions projected in a subquery over <see cref="SourceTable"/>
+    /// (for example a parsed Kafka key tuple alias).
+    /// </summary>
+    public List<string> SourceSelectExtras { get; set; } = [];
 }
 
 public sealed class PipelineColumnConfig

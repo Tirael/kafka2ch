@@ -15,8 +15,28 @@ public static class MaterializedViewGenerator
             builder.AppendLine($"    {ResolveExpression(mapping),-28} AS {mapping.Target}{comma}");
         }
 
+        if (config.SourceSelectExtras.Count == 0)
+        {
+            return builder
+                .AppendLine($"FROM {config.SourceTable};")
+                .AppendLine()
+                .ToString();
+        }
+
+        builder.AppendLine("FROM")
+            .AppendLine("(")
+            .AppendLine("    SELECT")
+            .AppendLine("        *,");
+
+        for (var i = 0; i < config.SourceSelectExtras.Count; i++)
+        {
+            var comma = i < config.SourceSelectExtras.Count - 1 ? "," : string.Empty;
+            builder.AppendLine($"        {config.SourceSelectExtras[i]}{comma}");
+        }
+
         return builder
-            .AppendLine($"FROM {config.SourceTable};")
+            .AppendLine($"    FROM {config.SourceTable}")
+            .AppendLine(");")
             .AppendLine()
             .ToString();
     }

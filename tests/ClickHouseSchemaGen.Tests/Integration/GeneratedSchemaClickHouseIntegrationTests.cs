@@ -236,7 +236,7 @@ public sealed class GeneratedSchemaClickHouseIntegrationTests : IAsyncLifetime
     [Fact]
     public async Task GivenConfluentProtobufKey_WhenDecoded_ThenMatchesProtobufSingleParser()
     {
-        var execResult = await _clickHouse.ExecScriptAsync(ProtobufKeyDecoder.CreateFunctionStatement());
+        var execResult = await _clickHouse.ExecScriptAsync(ProtobufKeyDecoder.CreateSimpleStringFunctionStatement());
         execResult.ExitCode.Should().Be(0, execResult.Stderr);
 
         foreach (var orderId in new[] { "abc", new string('x', 130), "7086cd58-eec4-4152-b2b4-1615dd3e7ca8" })
@@ -263,6 +263,66 @@ public sealed class GeneratedSchemaClickHouseIntegrationTests : IAsyncLifetime
             decoded.Should().Be(orderId);
             parsed.Should().Be(orderId);
         }
+    }
+
+    [Fact]
+    public async Task GivenMultiFieldConfluentKey_WhenDecoded_ThenMatchesFieldValues()
+    {
+        var fields = ProtobufKeyFieldMapper.MapFields(MultiFieldKey.Descriptor);
+        var sql = new StringBuilder()
+            .AppendLine(ProtobufKeyDecoder.CreateWireScannerFunctionStatements())
+            .AppendLine(ProtobufKeyDecoder.CreateKeyMessageParseFunction("orders_queue", 6, fields))
+            .ToString();
+        var execResult = await _clickHouse.ExecScriptAsync(sql);
+        execResult.ExitCode.Should().Be(0, execResult.Stderr);
+
+        var key = new MultiFieldKey
+        {
+            Id = "abc",
+            Shard = 7,
+            Active = true,
+            Revision = 99,
+            Region = SampleStatus.Active,
+            Delta = -3,
+            Score = 1.5,
+            Token = ByteString.CopyFromUtf8("tok"),
+            Weight = 0.25f,
+            Crc = 0xAABBCCDD
+        };
+        var payload = key.ToByteArray();
+        var raw = new byte[6 + payload.Length];
+        payload.CopyTo(raw, 6);
+        var hex = Convert.ToHexString(raw);
+
+        await using var connection = new ClickHouseConnection(_clickHouse.GetConnectionString());
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            SELECT
+                tupleElement(sandbox_parse_key_orders_queue(unhex('{hex}')), 1),
+                tupleElement(sandbox_parse_key_orders_queue(unhex('{hex}')), 2),
+                tupleElement(sandbox_parse_key_orders_queue(unhex('{hex}')), 3),
+                tupleElement(sandbox_parse_key_orders_queue(unhex('{hex}')), 4),
+                tupleElement(sandbox_parse_key_orders_queue(unhex('{hex}')), 5),
+                tupleElement(sandbox_parse_key_orders_queue(unhex('{hex}')), 6),
+                tupleElement(sandbox_parse_key_orders_queue(unhex('{hex}')), 7),
+                tupleElement(sandbox_parse_key_orders_queue(unhex('{hex}')), 8),
+                tupleElement(sandbox_parse_key_orders_queue(unhex('{hex}')), 9),
+                tupleElement(sandbox_parse_key_orders_queue(unhex('{hex}')), 10)
+            """;
+        await using var reader = await command.ExecuteReaderAsync();
+        (await reader.ReadAsync()).Should().BeTrue();
+
+        reader.GetString(0).Should().Be("abc");
+        Convert.ToInt32(reader.GetValue(1)).Should().Be(7);
+        Convert.ToBoolean(reader.GetValue(2)).Should().BeTrue();
+        Convert.ToUInt64(reader.GetValue(3)).Should().Be(99UL);
+        Convert.ToInt32(reader.GetValue(4)).Should().Be((int)SampleStatus.Active);
+        Convert.ToInt64(reader.GetValue(5)).Should().Be(-3L);
+        Convert.ToDouble(reader.GetValue(6)).Should().Be(1.5);
+        reader.GetString(7).Should().Be("tok");
+        Convert.ToSingle(reader.GetValue(8)).Should().Be(0.25f);
+        Convert.ToUInt32(reader.GetValue(9)).Should().Be(0xAABBCCDD);
     }
 
     private static async Task<string> ScalarAsync(ClickHouseConnection connection, string commandText)

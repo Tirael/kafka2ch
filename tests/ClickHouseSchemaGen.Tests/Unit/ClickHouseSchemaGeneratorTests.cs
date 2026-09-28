@@ -1,3 +1,5 @@
+using System.Text.Json;
+
 namespace ClickHouseSchemaGen.Tests.Unit;
 
 public sealed class ClickHouseSchemaGeneratorTests
@@ -66,7 +68,98 @@ public sealed class ClickHouseSchemaGeneratorTests
     }
 
     [Fact]
-    public void GivenKeyMessageWithSeveralFields_WhenGenerateFromConfigFile_ThenThrows()
+    public void GivenMultiFieldKey_WhenGenerateFromConfigFile_ThenEmitsWireScannerAndTupleProjection()
+    {
+        var outputDirectory = Path.Combine(Path.GetTempPath(), $"clickhouse-schema-gen-{Guid.NewGuid():N}");
+        var configPath = Path.Combine(outputDirectory, "clickhouse.codegen.json");
+        Directory.CreateDirectory(outputDirectory);
+
+        var config = new CodegenConfig
+        {
+            Defaults = OrdersQueueTestConfig.Defaults,
+            KafkaTables =
+            [
+                new KafkaTableConfig
+                {
+                    MessageType = "Sandbox.Contracts.OrderEvent, Sandbox.Contracts",
+                    TableName = "orders_queue",
+                    ProtoFile = "order_event",
+                    MessageName = "OrderEvent",
+                    OutputPath = "generated_queue.sql",
+                    Kafka = new KafkaSettingsConfig
+                    {
+                        Topic = "orders",
+                        GroupName = "clickhouse-orders",
+                        SkipBytes = 6
+                    },
+                    Key = new KeyMessageConfig
+                    {
+                        MessageType = "Sandbox.Contracts.TestFixtures.MultiFieldKey, Sandbox.Contracts",
+                        ProtoFile = "mapping_fixtures",
+                        MessageName = "MultiFieldKey",
+                        SkipBytes = 6
+                    }
+                }
+            ],
+            Pipeline = new PipelineConfig
+            {
+                OutputPath = "generated_pipeline.sql",
+                MergeTreeTables =
+                [
+                    new MergeTreeTableConfig
+                    {
+                        TableName = "orders",
+                        OrderBy = "(order_id)",
+                        Columns =
+                        [
+                            new PipelineColumnConfig { Name = "order_id", Type = "String" }
+                        ]
+                    }
+                ],
+                MaterializedViews =
+                [
+                    new MaterializedViewConfig
+                    {
+                        Name = "orders_mv",
+                        SourceTable = "orders_queue",
+                        TargetTable = "orders",
+                        Columns =
+                        [
+                            new PipelineColumnMapping { Source = "order_id", Target = "order_id" }
+                        ]
+                    }
+                ]
+            }
+        };
+        File.WriteAllText(
+            configPath,
+            JsonSerializer.Serialize(config, new JsonSerializerOptions { WriteIndented = true }));
+
+        try
+        {
+            _sut.GenerateFromConfigFile(configPath);
+
+            var pipelineSql = File.ReadAllText(Path.Combine(outputDirectory, "generated_pipeline.sql"));
+            pipelineSql.Should().Contain("sandbox_proto_fields");
+            pipelineSql.Should().Contain("sandbox_parse_key_orders_queue");
+            pipelineSql.Should().Contain("key_id");
+            pipelineSql.Should().Contain("key_shard");
+            pipelineSql.Should().Contain("key_delta");
+            pipelineSql.Should().Contain("key_score");
+            pipelineSql.Should().Contain("tupleElement(_sandbox_key, 1)");
+            pipelineSql.Should().Contain("sandbox_parse_key_orders_queue(_key) AS _sandbox_key");
+            pipelineSql.Should().Contain("FROM\n(\n    SELECT\n        *,");
+            pipelineSql.Should().NotContain("sandbox_parse_proto_string");
+        }
+        finally
+        {
+            if (Directory.Exists(outputDirectory))
+                Directory.Delete(outputDirectory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void GivenKeyMessageWithNestedFields_WhenGenerateFromConfigFile_ThenThrows()
     {
         var outputDirectory = Path.Combine(Path.GetTempPath(), $"clickhouse-schema-gen-{Guid.NewGuid():N}");
         var configPath = Path.Combine(outputDirectory, "clickhouse.codegen.json");
@@ -86,7 +179,7 @@ public sealed class ClickHouseSchemaGeneratorTests
             var act = () => _sut.GenerateFromConfigFile(configPath);
 
             act.Should().Throw<InvalidOperationException>()
-                .WithMessage("*exactly one singular string field*");
+                .WithMessage("*nested message*");
         }
         finally
         {

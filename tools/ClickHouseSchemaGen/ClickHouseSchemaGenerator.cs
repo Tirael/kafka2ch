@@ -54,20 +54,14 @@ public sealed class ClickHouseSchemaGenerator(
         var pipeline = config.Pipeline
             ?? throw new InvalidOperationException("Pipeline config is required.");
         AppendHeaders(config);
-        var decodeKeys = AppendKeys(config);
+        var keySql = AppendKeys(config);
 
         var pipelineBuilder = new StringBuilder()
             .AppendLine(SqlScriptWriter.GeneratedHeader)
             .AppendLine();
 
-        if (decodeKeys)
-        {
-            pipelineBuilder
-                .AppendLine("-- Kafka ProtobufSingle parses the message value. The key is the same Confluent")
-                .AppendLine("-- protobuf envelope plus one singular string field, decoded by field number.")
-                .AppendLine(ProtobufKeyDecoder.CreateFunctionStatement())
-                .AppendLine();
-        }
+        if (!string.IsNullOrWhiteSpace(keySql))
+            pipelineBuilder.AppendLine(keySql.TrimEnd()).AppendLine();
 
         foreach (var mergeTreeTable in pipeline.MergeTreeTables)
             pipelineBuilder.Append(MergeTreeTableGenerator.Generate(mergeTreeTable));
@@ -102,27 +96,78 @@ public sealed class ClickHouseSchemaGenerator(
         }
     }
 
-    private static bool AppendKeys(CodegenConfig config)
+    private static string AppendKeys(CodegenConfig config)
     {
-        var decodeKeys = false;
+        List<(KafkaTableConfig Table, KeyMessageConfig Key, IReadOnlyList<ProtobufKeyField> Fields)> keyed = [];
 
         foreach (var (view, kafkaTable, target) in EnumerateKafkaProjections(config))
         {
             if (kafkaTable.Key is not { } key)
                 continue;
 
-            var field = ResolveSingularStringField(key);
-            decodeKeys = true;
-            AddProjectedColumn(
-                target,
-                view,
-                $"key_{field.Name}",
-                "String",
-                field.Name,
-                ProtobufKeyDecoder.StringFieldExpression(key.SkipBytes, field.FieldNumber));
+            var fields = ProtobufKeyFieldMapper.MapFields(
+                ProtoDescriptorResolver.ResolveDescriptor(key.MessageType));
+            keyed.Add((kafkaTable, key, fields));
+
+            if (ProtobufKeyFieldMapper.IsSingleStringKey(fields))
+            {
+                AddProjectedColumn(
+                    target,
+                    view,
+                    $"key_{fields[0].Name}",
+                    fields[0].ClickHouseType,
+                    fields[0].Name,
+                    ProtobufKeyDecoder.SimpleStringFieldExpression(key.SkipBytes, fields[0].FieldNumber));
+                continue;
+            }
+
+            if (!view.SourceSelectExtras.Contains(ProtobufKeyDecoder.KeyParseProjection(kafkaTable.TableName)))
+                view.SourceSelectExtras.Add(ProtobufKeyDecoder.KeyParseProjection(kafkaTable.TableName));
+
+            for (var i = 0; i < fields.Count; i++)
+            {
+                var field = fields[i];
+                AddProjectedColumn(
+                    target,
+                    view,
+                    $"key_{field.Name}",
+                    field.ClickHouseType,
+                    field.Name,
+                    ProtobufKeyDecoder.KeyTupleElementExpression(i + 1));
+            }
         }
 
-        return decodeKeys;
+        if (keyed.Count == 0)
+            return string.Empty;
+
+        var sql = new StringBuilder()
+            .AppendLine("-- Kafka ProtobufSingle parses the message value. Keys are decoded from `_key`")
+            .AppendLine("-- after skipping the Confluent envelope (skipBytes).");
+
+        var needsWireScanner = keyed.Any(entry => !ProtobufKeyFieldMapper.IsSingleStringKey(entry.Fields));
+        var needsSimpleString = keyed.Any(entry => ProtobufKeyFieldMapper.IsSingleStringKey(entry.Fields));
+
+        if (needsSimpleString)
+            sql.AppendLine(ProtobufKeyDecoder.CreateSimpleStringFunctionStatement()).AppendLine();
+
+        if (needsWireScanner)
+        {
+            sql.AppendLine(ProtobufKeyDecoder.CreateWireScannerFunctionStatements()).AppendLine();
+            foreach (var entry in keyed
+                .Where(entry => !ProtobufKeyFieldMapper.IsSingleStringKey(entry.Fields))
+                .GroupBy(entry => entry.Table.TableName, StringComparer.OrdinalIgnoreCase)
+                .Select(group => group.First()))
+            {
+                sql.AppendLine(
+                        ProtobufKeyDecoder.CreateKeyMessageParseFunction(
+                            entry.Table.TableName,
+                            entry.Key.SkipBytes,
+                            entry.Fields))
+                    .AppendLine();
+            }
+        }
+
+        return sql.ToString();
     }
 
     private static IEnumerable<(MaterializedViewConfig View, KafkaTableConfig KafkaTable, MergeTreeTableConfig Target)>
@@ -144,25 +189,6 @@ public sealed class ClickHouseSchemaGenerator(
 
             yield return (view, kafkaTable, target);
         }
-    }
-
-    private static FieldDescriptor ResolveSingularStringField(KeyMessageConfig key)
-    {
-        var fields = ProtoDescriptorResolver.ResolveDescriptor(key.MessageType).Fields.InFieldNumberOrder().ToList();
-        if (fields.Count != 1
-            || fields[0].IsRepeated
-            || fields[0].IsMap
-            || fields[0].FieldType != FieldType.String)
-        {
-            throw new InvalidOperationException(
-                $"Kafka key message '{key.MessageName}' must contain exactly one singular string field.");
-        }
-
-        var field = fields[0];
-        if (!ValidationRules.IsSqlIdentifier(field.Name))
-            throw new InvalidOperationException($"Kafka key field '{field.Name}' is not a valid column name.");
-
-        return field;
     }
 
     private static void AddProjectedColumn(
