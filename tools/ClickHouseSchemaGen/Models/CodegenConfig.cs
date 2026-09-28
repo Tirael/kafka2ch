@@ -94,6 +94,14 @@ public sealed class MergeTreeTableConfig
 
     public string? Ttl { get; set; }
 
+    /// <summary>
+    /// Kafka queue table to copy columns from when <see cref="Columns"/> is empty.
+    /// </summary>
+    public string? SourceTable { get; set; }
+
+    /// <summary>
+    /// Explicit MergeTree columns. When empty, columns are taken from <see cref="SourceTable"/>.
+    /// </summary>
     public List<PipelineColumnConfig> Columns { get; set; } = [];
 }
 
@@ -105,6 +113,10 @@ public sealed class MaterializedViewConfig
 
     public required string SourceTable { get; set; }
 
+    /// <summary>
+    /// Explicit column mappings. When empty, all columns from <see cref="SourceTable"/>
+    /// are mapped 1:1 (<c>source</c> → <c>target</c> with the same name).
+    /// </summary>
     public List<PipelineColumnMapping> Columns { get; set; } = [];
 }
 

@@ -40,31 +40,52 @@ public sealed class ClickHouseSchemaGenerator(
 
         _configValidator.ValidateAndThrow(config);
 
+        var queueColumnsByTable = new Dictionary<string, IReadOnlyList<ClickHouseColumn>>(StringComparer.OrdinalIgnoreCase);
+
         foreach (var table in config.KafkaTables)
-            WriteGeneratedSql(configDirectory, table.OutputPath, GenerateKafkaTableSql(table, config.Defaults, config));
+        {
+            var columns = MapKafkaTableColumns(table, config);
+            queueColumnsByTable[table.TableName] = columns;
+            WriteGeneratedSql(configDirectory, table.OutputPath, KafkaTableGenerator.Generate(table, columns));
+        }
 
         if (config.Pipeline is null)
             return;
 
-        WriteGeneratedSql(configDirectory, config.Pipeline.OutputPath, BuildPipelineSql(config.Pipeline));
+        WriteGeneratedSql(configDirectory, config.Pipeline.OutputPath, BuildPipelineSql(config.Pipeline, queueColumnsByTable));
     }
 
-    private static string BuildPipelineSql(PipelineConfig pipeline)
+    private static string BuildPipelineSql(
+        PipelineConfig pipeline,
+        IReadOnlyDictionary<string, IReadOnlyList<ClickHouseColumn>> queueColumnsByTable)
     {
         var pipelineBuilder = new StringBuilder()
             .AppendLine(SqlScriptWriter.GeneratedHeader)
             .AppendLine();
 
         foreach (var mergeTreeTable in pipeline.MergeTreeTables)
-            pipelineBuilder.Append(MergeTreeTableGenerator.Generate(mergeTreeTable));
+        {
+            var resolved = PipelineColumnExpander.ExpandMergeTreeTable(mergeTreeTable, queueColumnsByTable);
+            pipelineBuilder.Append(MergeTreeTableGenerator.Generate(resolved));
+        }
 
         foreach (var materializedView in pipeline.MaterializedViews)
-            pipelineBuilder.Append(MaterializedViewGenerator.Generate(materializedView));
+        {
+            var resolved = PipelineColumnExpander.ExpandMaterializedView(materializedView, queueColumnsByTable);
+            pipelineBuilder.Append(MaterializedViewGenerator.Generate(resolved));
+        }
 
         if (!string.IsNullOrWhiteSpace(pipeline.TrailingSql))
             pipelineBuilder.AppendLine(pipeline.TrailingSql.Trim());
 
         return pipelineBuilder.ToString();
+    }
+
+    private IReadOnlyList<ClickHouseColumn> MapKafkaTableColumns(KafkaTableConfig table, CodegenConfig rootConfig)
+    {
+        var descriptor = ProtoDescriptorResolver.ResolveDescriptor(table.MessageType);
+        var overrides = MergeFieldOverrides(rootConfig.FieldOverrides, table.FieldOverrides);
+        return planner.MapMessage(descriptor, rootConfig.Defaults, overrides);
     }
 
     private static void WriteGeneratedSql(string configDirectory, string outputPath, string sql)

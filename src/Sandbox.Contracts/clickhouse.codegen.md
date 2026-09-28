@@ -197,9 +197,10 @@ Overrides на корне конфига и в таблице **мержатся
 | `tableName` | Имя MergeTree-таблицы |
 | `orderBy` | Выражение `ORDER BY`, например `"(event_time, order_id)"` |
 | `ttl` | Опционально. Выражение table-level `TTL`, например `"event_time + INTERVAL 90 DAY"` |
-| `columns` | Непустой список `{ "name", "type" }` |
+| `sourceTable` | Опционально. Имя Kafka-таблицы (`kafkaTables[].tableName`) для автозаполнения колонок |
+| `columns` | Список `{ "name", "type" }`. **Пустой / опущен** → взять все колонки из `sourceTable` |
 
-Пример с TTL:
+Пример с TTL и явным списком колонок:
 
 ```json
 {
@@ -228,7 +229,7 @@ TTL event_time + INTERVAL 90 DAY;
 | `name` | Имя MV |
 | `sourceTable` | Должна совпадать с `kafkaTables[].tableName` |
 | `targetTable` | Должна совпадать с `mergeTreeTables[].tableName` |
-| `columns` | Маппинг `{ "source", "target", "expression"? }` |
+| `columns` | Маппинг `{ "source", "target", "expression"? }`. **Пустой / опущен** → все колонки `sourceTable` 1:1 |
 
 - `source` — колонка/путь в Kafka-таблице (`price.amount`, `event_time.seconds`)
 - `target` — колонка в MergeTree
@@ -248,6 +249,41 @@ TTL event_time + INTERVAL 90 DAY;
 }
 ```
 
+### Автоколонки из queue (зеркало схемы)
+
+Если нужен MergeTree + MV со **всеми** полями Kafka-таблицы без ручного перечисления — оставьте `columns` пустым (или не указывайте) и задайте `sourceTable`:
+
+```json
+"mergeTreeTables": [
+  {
+    "tableName": "orders_raw",
+    "sourceTable": "orders_queue",
+    "orderBy": "(order_id)"
+  }
+],
+"materializedViews": [
+  {
+    "name": "orders_raw_mv",
+    "sourceTable": "orders_queue",
+    "targetTable": "orders_raw"
+  }
+]
+```
+
+Поведение:
+
+| Объект | Пустой `columns` |
+|---|---|
+| `mergeTreeTables` | Копирует `name` + `type` из mapped-схемы `sourceTable` (включая `` `price.amount` ``, Nested, Enum, …) |
+| `materializedViews` | Строит `SELECT col AS col, … FROM sourceTable` по всем колонкам queue |
+
+Правила:
+
+- Для MergeTree при пустом `columns` поле `sourceTable` **обязательно** и должно совпадать с `kafkaTables[].tableName`.
+- Непустой `columns` — как раньше: только перечисленные поля (автозаполнение не смешивается).
+- Зеркало копирует protobuf→ClickHouse типы queue as-is (Timestamp остаётся `*.seconds`/`*.nanos`, enum — `Enum8`/`Enum16`). Для преобразований (`toDateTime64`, `toString`, rename) задайте `columns` явно.
+- `orderBy` / `ttl` по-прежнему задаются вручную и должны ссылаться на колонки итоговой таблицы.
+
 ### `trailingSql`
 
 Произвольный SQL, дописывается в конец файла (агрегаты, дополнительные MV и т.п.). Может быть многострочной строкой JSON с `\n`.
@@ -260,7 +296,7 @@ TTL event_time + INTERVAL 90 DAY;
 2. Добавьте элемент в `kafkaTables` с `messageType`, `protoFile`, `messageName`, `tableName`, `outputPath`.
 3. Заполните `kafka.topic` / `groupName` (и при необходимости `skipBytes`).
 4. При необходимости задайте `fieldOverrides`.
-5. Если нужна аналитика — добавьте `mergeTreeTables` + `materializedViews` в `pipeline` (`sourceTable` / `targetTable` должны ссылаться на существующие имена).
+5. Если нужна аналитика — добавьте `mergeTreeTables` + `materializedViews` в `pipeline` (`sourceTable` / `targetTable` должны ссылаться на существующие имена). Для зеркала всех полей queue оставьте `columns` пустым и укажите `sourceTable` у MergeTree.
 6. Выполните `dotnet build src/Sandbox.Contracts` и проверьте сгенерированный SQL.
 7. Пересоздайте ClickHouse init при необходимости (`docker compose` / volume init).
 
@@ -275,4 +311,6 @@ TTL event_time + INTERVAL 90 DAY;
 - `protoFile` с путём или расширением (нужно только имя: `order_event`)
 - неверный путь в ключе `fieldOverrides`
 - MV ссылается на неизвестный `sourceTable` / `targetTable`
+- MergeTree с пустым `columns` без `sourceTable` (нужен для автозаполнения)
+- MergeTree `sourceTable` не совпадает с `kafkaTables[].tableName`
 - `repeatedMessageStrategy` не из списка `nested` \| `arraytuple` \| `flatten`
