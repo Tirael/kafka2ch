@@ -12,7 +12,7 @@ public static class MaterializedViewGenerator
         {
             var mapping = config.Columns[i];
             var comma = i < config.Columns.Count - 1 ? "," : string.Empty;
-            builder.AppendLine($"    {ResolveExpression(mapping),-28} AS {mapping.Target}{comma}");
+            builder.AppendLine($"    {ResolveExpression(mapping),-28} AS {SqlColumnFormatter.FormatColumnName(mapping.Target)}{comma}");
         }
 
         return builder

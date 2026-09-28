@@ -38,6 +38,12 @@ public sealed class CodegenConfigValidator : AbstractValidator<CodegenConfig>
             .Must(HasValidMaterializedViewReferences)
             .WithMessage(config => BuildMaterializedViewReferenceError(config))
             .When(config => config.Pipeline?.MaterializedViews.Count > 0);
+
+        RuleFor(config => config)
+            .Must(HasValidMergeTreeSourceTableReferences)
+            .WithMessage(config => BuildMergeTreeSourceTableReferenceError(config))
+            .When(config => config.Pipeline?.MergeTreeTables.Any(table =>
+                !string.IsNullOrWhiteSpace(table.SourceTable)) == true);
     }
 
     private static bool HasValidMaterializedViewReferences(CodegenConfig config)
@@ -79,5 +85,39 @@ public sealed class CodegenConfigValidator : AbstractValidator<CodegenConfig>
         }
 
         return "Pipeline materialized views reference unknown tables.";
+    }
+
+    private static bool HasValidMergeTreeSourceTableReferences(CodegenConfig config)
+    {
+        if (config.Pipeline is null)
+            return true;
+
+        var kafkaTables = config.KafkaTables
+            .Select(table => table.TableName)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        return config.Pipeline.MergeTreeTables
+            .Where(table => !string.IsNullOrWhiteSpace(table.SourceTable))
+            .All(table => kafkaTables.Contains(table.SourceTable!));
+    }
+
+    private static string BuildMergeTreeSourceTableReferenceError(CodegenConfig config)
+    {
+        if (config.Pipeline is null)
+            return "Pipeline MergeTree tables reference unknown Kafka source tables.";
+
+        var kafkaTables = config.KafkaTables
+            .Select(table => table.TableName)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var table in config.Pipeline.MergeTreeTables)
+        {
+            if (!string.IsNullOrWhiteSpace(table.SourceTable) && !kafkaTables.Contains(table.SourceTable))
+            {
+                return $"MergeTree table '{table.TableName}' references unknown Kafka source table '{table.SourceTable}'.";
+            }
+        }
+
+        return "Pipeline MergeTree tables reference unknown Kafka source tables.";
     }
 }

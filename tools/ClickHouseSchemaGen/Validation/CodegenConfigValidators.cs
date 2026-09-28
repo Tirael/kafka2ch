@@ -82,8 +82,8 @@ internal sealed class PipelineColumnConfigValidator : AbstractValidator<Pipeline
     {
         RuleFor(column => column.Name)
             .NotEmpty()
-            .Must(ValidationRules.IsSqlIdentifier)
-            .WithMessage("Must be a valid ClickHouse identifier.");
+            .Must(ValidationRules.IsFieldPath)
+            .WithMessage("Must be a valid ClickHouse column name or nested field path.");
         RuleFor(column => column.Type).NotEmpty();
     }
 }
@@ -92,11 +92,14 @@ internal sealed class PipelineColumnMappingValidator : AbstractValidator<Pipelin
 {
     public PipelineColumnMappingValidator()
     {
-        RuleFor(mapping => mapping.Source).NotEmpty();
+        RuleFor(mapping => mapping.Source)
+            .NotEmpty()
+            .Must(ValidationRules.IsFieldPath)
+            .WithMessage("Must be a valid source column name or nested field path.");
         RuleFor(mapping => mapping.Target)
             .NotEmpty()
-            .Must(ValidationRules.IsSqlIdentifier)
-            .WithMessage("Must be a valid ClickHouse identifier.");
+            .Must(ValidationRules.IsFieldPath)
+            .WithMessage("Must be a valid ClickHouse column name or nested field path.");
     }
 }
 
@@ -112,7 +115,13 @@ internal sealed class MergeTreeTableConfigValidator : AbstractValidator<MergeTre
         RuleFor(table => table.Ttl)
             .Must(ttl => ttl is null || !string.IsNullOrWhiteSpace(ttl))
             .WithMessage("TTL expression must not be blank when provided.");
-        RuleFor(table => table.Columns).NotEmpty();
+        RuleFor(table => table.SourceTable)
+            .Must(sourceTable => sourceTable is null || ValidationRules.IsSqlIdentifier(sourceTable))
+            .WithMessage("Must be a valid ClickHouse identifier when provided.");
+        RuleFor(table => table.SourceTable)
+            .NotEmpty()
+            .WithMessage("sourceTable is required when columns is empty (auto-fill from Kafka queue).")
+            .When(table => table.Columns.Count == 0);
         RuleForEach(table => table.Columns).SetValidator(new PipelineColumnConfigValidator());
     }
 }
@@ -133,7 +142,6 @@ internal sealed class MaterializedViewConfigValidator : AbstractValidator<Materi
             .NotEmpty()
             .Must(ValidationRules.IsSqlIdentifier)
             .WithMessage("Must be a valid ClickHouse identifier.");
-        RuleFor(view => view.Columns).NotEmpty();
         RuleForEach(view => view.Columns).SetValidator(new PipelineColumnMappingValidator());
     }
 }

@@ -105,6 +105,46 @@ public sealed class CodegenConfigValidatorTests
             error.ErrorMessage == "TTL expression must not be blank when provided.");
     }
 
+    [Fact]
+    public void GivenEmptyColumnsWithSourceTable_WhenValidate_ThenSucceeds()
+    {
+        var config = CreateValidConfig();
+        config.Pipeline!.MergeTreeTables[0].Columns = [];
+        config.Pipeline.MergeTreeTables[0].SourceTable = "orders_queue";
+        config.Pipeline.MaterializedViews[0].Columns = [];
+
+        var result = _sut.Validate(config);
+
+        result.IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public void GivenEmptyMergeTreeColumnsWithoutSourceTable_WhenValidate_ThenFails()
+    {
+        var config = CreateValidConfig();
+        config.Pipeline!.MergeTreeTables[0].Columns = [];
+        config.Pipeline.MergeTreeTables[0].SourceTable = null;
+
+        var result = _sut.Validate(config);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(error =>
+            error.ErrorMessage.Contains("sourceTable is required when columns is empty", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void GivenMergeTreeWithUnknownSourceTable_WhenValidate_ThenFails()
+    {
+        var config = CreateValidConfig();
+        config.Pipeline!.MergeTreeTables[0].SourceTable = "missing_queue";
+
+        var result = _sut.Validate(config);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(error =>
+            error.ErrorMessage.Contains("unknown Kafka source table 'missing_queue'", StringComparison.Ordinal));
+    }
+
     private static CodegenConfig CreateValidConfig() => new()
     {
         Defaults = OrdersQueueTestConfig.Defaults,
