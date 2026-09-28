@@ -53,7 +53,8 @@ public sealed class ClickHouseSchemaGenerator(
     {
         var pipeline = config.Pipeline
             ?? throw new InvalidOperationException("Pipeline config is required.");
-        var decodeKeys = AppendKeyAndHeaders(config);
+        AppendHeaders(config);
+        var decodeKeys = AppendKeys(config);
 
         var pipelineBuilder = new StringBuilder()
             .AppendLine(SqlScriptWriter.GeneratedHeader)
@@ -80,24 +81,10 @@ public sealed class ClickHouseSchemaGenerator(
         return pipelineBuilder.ToString();
     }
 
-    private static bool AppendKeyAndHeaders(CodegenConfig config)
+    private static void AppendHeaders(CodegenConfig config)
     {
-        var pipeline = config.Pipeline!;
-        var decodeKeys = false;
-
-        foreach (var view in pipeline.MaterializedViews)
+        foreach (var (view, _, target) in EnumerateKafkaProjections(config))
         {
-            var kafkaTable = config.KafkaTables.FirstOrDefault(table =>
-                string.Equals(table.TableName, view.SourceTable, StringComparison.OrdinalIgnoreCase));
-            if (kafkaTable is null)
-                continue;
-
-            var target = pipeline.MergeTreeTables.FirstOrDefault(table =>
-                string.Equals(table.TableName, view.TargetTable, StringComparison.OrdinalIgnoreCase));
-            if (target is null)
-                continue;
-
-            // Header names repeat; values stay plain String because they are arbitrary bytes.
             AddProjectedColumn(
                 target,
                 view,
@@ -112,25 +99,19 @@ public sealed class ClickHouseSchemaGenerator(
                 "Array(String)",
                 "_headers.value",
                 "_headers.value");
+        }
+    }
 
+    private static bool AppendKeys(CodegenConfig config)
+    {
+        var decodeKeys = false;
+
+        foreach (var (view, kafkaTable, target) in EnumerateKafkaProjections(config))
+        {
             if (kafkaTable.Key is not { } key)
                 continue;
 
-            var descriptor = ProtoDescriptorResolver.ResolveDescriptor(key.MessageType);
-            var fields = descriptor.Fields.InFieldNumberOrder().ToList();
-            if (fields.Count != 1
-                || fields[0].IsRepeated
-                || fields[0].IsMap
-                || fields[0].FieldType != FieldType.String)
-            {
-                throw new InvalidOperationException(
-                    $"Kafka key message '{key.MessageName}' must contain exactly one singular string field.");
-            }
-
-            var field = fields[0];
-            if (!ValidationRules.IsSqlIdentifier(field.Name))
-                throw new InvalidOperationException($"Kafka key field '{field.Name}' is not a valid column name.");
-
+            var field = ResolveSingularStringField(key);
             decodeKeys = true;
             AddProjectedColumn(
                 target,
@@ -142,6 +123,46 @@ public sealed class ClickHouseSchemaGenerator(
         }
 
         return decodeKeys;
+    }
+
+    private static IEnumerable<(MaterializedViewConfig View, KafkaTableConfig KafkaTable, MergeTreeTableConfig Target)>
+        EnumerateKafkaProjections(CodegenConfig config)
+    {
+        var pipeline = config.Pipeline!;
+
+        foreach (var view in pipeline.MaterializedViews)
+        {
+            var kafkaTable = config.KafkaTables.FirstOrDefault(table =>
+                string.Equals(table.TableName, view.SourceTable, StringComparison.OrdinalIgnoreCase));
+            if (kafkaTable is null)
+                continue;
+
+            var target = pipeline.MergeTreeTables.FirstOrDefault(table =>
+                string.Equals(table.TableName, view.TargetTable, StringComparison.OrdinalIgnoreCase));
+            if (target is null)
+                continue;
+
+            yield return (view, kafkaTable, target);
+        }
+    }
+
+    private static FieldDescriptor ResolveSingularStringField(KeyMessageConfig key)
+    {
+        var fields = ProtoDescriptorResolver.ResolveDescriptor(key.MessageType).Fields.InFieldNumberOrder().ToList();
+        if (fields.Count != 1
+            || fields[0].IsRepeated
+            || fields[0].IsMap
+            || fields[0].FieldType != FieldType.String)
+        {
+            throw new InvalidOperationException(
+                $"Kafka key message '{key.MessageName}' must contain exactly one singular string field.");
+        }
+
+        var field = fields[0];
+        if (!ValidationRules.IsSqlIdentifier(field.Name))
+            throw new InvalidOperationException($"Kafka key field '{field.Name}' is not a valid column name.");
+
+        return field;
     }
 
     private static void AddProjectedColumn(
