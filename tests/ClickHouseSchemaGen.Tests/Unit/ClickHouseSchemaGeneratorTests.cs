@@ -51,9 +51,10 @@ public sealed class ClickHouseSchemaGeneratorTests
             File.ReadAllText(queuePath).Should().Contain("CREATE TABLE orders_queue");
             File.ReadAllText(pipelinePath).Should().Contain("CREATE MATERIALIZED VIEW orders_mv");
             File.ReadAllText(pipelinePath).Should().Contain("CREATE TABLE orders_agg_1m");
-            File.ReadAllText(pipelinePath).Should().Contain("sandbox_parse_proto_string(_key, 6, 1)");
             File.ReadAllText(pipelinePath).Should().Contain("key_order_id");
             File.ReadAllText(pipelinePath).Should().Contain("key_shipment_id");
+            File.ReadAllText(pipelinePath).Should().Contain("bitOr(bitShiftLeft(1, 3), 2)");
+            File.ReadAllText(pipelinePath).Should().NotContain("CREATE OR REPLACE FUNCTION");
             File.ReadAllText(pipelinePath).Should().Contain("CAST(_headers.name, 'Array(LowCardinality(String))')");
             File.ReadAllText(pipelinePath).Should().Contain("AS headers_name");
             File.ReadAllText(pipelinePath).Should().Contain("_headers.value");
@@ -140,16 +141,16 @@ public sealed class ClickHouseSchemaGeneratorTests
             _sut.GenerateFromConfigFile(configPath);
 
             var pipelineSql = File.ReadAllText(Path.Combine(outputDirectory, "generated_pipeline.sql"));
-            pipelineSql.Should().Contain("sandbox_proto_fields");
-            pipelineSql.Should().Contain("sandbox_parse_key_orders_queue");
+            pipelineSql.Should().Contain("arrayFold(");
+            pipelineSql.Should().Contain("_sandbox_key_fields");
+            pipelineSql.Should().Contain("_sandbox_key_payload");
             pipelineSql.Should().Contain("key_id");
             pipelineSql.Should().Contain("key_shard");
             pipelineSql.Should().Contain("key_delta");
             pipelineSql.Should().Contain("key_score");
-            pipelineSql.Should().Contain("tupleElement(_sandbox_key, 1)");
-            pipelineSql.Should().Contain("sandbox_parse_key_orders_queue(_key) AS _sandbox_key");
-            pipelineSql.Should().Contain("FROM\n(\n    SELECT\n        *,");
-            pipelineSql.Should().NotContain("sandbox_parse_proto_string");
+            pipelineSql.Should().Contain("mapContains(_sandbox_key_fields, 1)");
+            pipelineSql.Should().NotContain("CREATE OR REPLACE FUNCTION");
+            pipelineSql.Should().Contain("AS _sandbox_key_fields");
         }
         finally
         {

@@ -38,8 +38,8 @@ public static class ProtobufKeyFieldMapper
     private static ProtobufKeyField MapField(FieldDescriptor field)
     {
         var number = field.FieldNumber;
-        var bytes = $"f[{number}]";
-        var varint = $"sandbox_vi({bytes}, 1).1";
+        var bytes = $"{ProtobufKeyDecoder.KeyFieldsAlias}[{number}]";
+        var varint = ProtobufKeyDecoder.VarintValueExpression(bytes);
 
         return field.FieldType switch
         {
@@ -47,85 +47,85 @@ public static class ProtobufKeyFieldMapper
                 field.Name,
                 number,
                 "String",
-                $"if(mapContains(f, {number}), {bytes}, '')"),
+                $"if(mapContains({ProtobufKeyDecoder.KeyFieldsAlias}, {number}), {bytes}, '')"),
 
             FieldType.Bool => new(
                 field.Name,
                 number,
                 "Bool",
-                $"if(mapContains(f, {number}), {varint} != 0, false)"),
+                $"if(mapContains({ProtobufKeyDecoder.KeyFieldsAlias}, {number}), {varint} != 0, false)"),
 
             FieldType.Int32 or FieldType.Enum => new(
                 field.Name,
                 number,
                 "Int32",
-                $"if(mapContains(f, {number}), toInt32({varint}), toInt32(0))"),
+                $"if(mapContains({ProtobufKeyDecoder.KeyFieldsAlias}, {number}), toInt32({varint}), toInt32(0))"),
 
             FieldType.UInt32 => new(
                 field.Name,
                 number,
                 "UInt32",
-                $"if(mapContains(f, {number}), toUInt32({varint}), toUInt32(0))"),
+                $"if(mapContains({ProtobufKeyDecoder.KeyFieldsAlias}, {number}), toUInt32({varint}), toUInt32(0))"),
 
             FieldType.Int64 => new(
                 field.Name,
                 number,
                 "Int64",
-                $"if(mapContains(f, {number}), reinterpretAsInt64(reinterpretAsUInt64({varint})), toInt64(0))"),
+                $"if(mapContains({ProtobufKeyDecoder.KeyFieldsAlias}, {number}), reinterpretAsInt64(reinterpretAsUInt64({varint})), toInt64(0))"),
 
             FieldType.UInt64 => new(
                 field.Name,
                 number,
                 "UInt64",
-                $"if(mapContains(f, {number}), {varint}, toUInt64(0))"),
+                $"if(mapContains({ProtobufKeyDecoder.KeyFieldsAlias}, {number}), {varint}, toUInt64(0))"),
 
             FieldType.SInt32 => new(
                 field.Name,
                 number,
                 "Int32",
-                $"if(mapContains(f, {number}), CAST(bitXor(bitShiftRight({varint}, 1), 0 - bitAnd({varint}, 1)), 'Int32'), toInt32(0))"),
+                $"if(mapContains({ProtobufKeyDecoder.KeyFieldsAlias}, {number}), CAST(bitXor(bitShiftRight({varint}, 1), 0 - bitAnd({varint}, 1)), 'Int32'), toInt32(0))"),
 
             FieldType.SInt64 => new(
                 field.Name,
                 number,
                 "Int64",
-                $"if(mapContains(f, {number}), reinterpretAsInt64(reinterpretAsUInt64(bitXor(bitShiftRight({varint}, 1), 0 - bitAnd({varint}, 1)))), toInt64(0))"),
+                $"if(mapContains({ProtobufKeyDecoder.KeyFieldsAlias}, {number}), reinterpretAsInt64(reinterpretAsUInt64(bitXor(bitShiftRight({varint}, 1), 0 - bitAnd({varint}, 1)))), toInt64(0))"),
 
             FieldType.Fixed32 => new(
                 field.Name,
                 number,
                 "UInt32",
-                $"if(mapContains(f, {number}) AND length({bytes}) = 4, reinterpretAsUInt32({bytes}), toUInt32(0))"),
+                $"if(mapContains({ProtobufKeyDecoder.KeyFieldsAlias}, {number}) AND length({bytes}) = 4, reinterpretAsUInt32({bytes}), toUInt32(0))"),
 
             FieldType.SFixed32 => new(
                 field.Name,
                 number,
                 "Int32",
-                $"if(mapContains(f, {number}) AND length({bytes}) = 4, reinterpretAsInt32({bytes}), toInt32(0))"),
+                $"if(mapContains({ProtobufKeyDecoder.KeyFieldsAlias}, {number}) AND length({bytes}) = 4, reinterpretAsInt32({bytes}), toInt32(0))"),
 
             FieldType.Fixed64 => new(
                 field.Name,
                 number,
                 "UInt64",
-                $"if(mapContains(f, {number}) AND length({bytes}) = 8, reinterpretAsUInt64({bytes}), toUInt64(0))"),
+                $"if(mapContains({ProtobufKeyDecoder.KeyFieldsAlias}, {number}) AND length({bytes}) = 8, reinterpretAsUInt64({bytes}), toUInt64(0))"),
 
             FieldType.SFixed64 => new(
                 field.Name,
                 number,
                 "Int64",
-                $"if(mapContains(f, {number}) AND length({bytes}) = 8, reinterpretAsInt64({bytes}), toInt64(0))"),
+                $"if(mapContains({ProtobufKeyDecoder.KeyFieldsAlias}, {number}) AND length({bytes}) = 8, reinterpretAsInt64({bytes}), toInt64(0))"),
 
             FieldType.Float => new(
                 field.Name,
                 number,
                 "Float32",
-                $"if(mapContains(f, {number}) AND length({bytes}) = 4, reinterpretAsFloat32({bytes}), toFloat32(0))"),
+                $"if(mapContains({ProtobufKeyDecoder.KeyFieldsAlias}, {number}) AND length({bytes}) = 4, reinterpretAsFloat32({bytes}), toFloat32(0))"),
 
             FieldType.Double => new(
                 field.Name,
                 number,
                 "Float64",
-                $"if(mapContains(f, {number}) AND length({bytes}) = 8, reinterpretAsFloat64({bytes}), toFloat64(0))"),
+                $"if(mapContains({ProtobufKeyDecoder.KeyFieldsAlias}, {number}) AND length({bytes}) = 8, reinterpretAsFloat64({bytes}), toFloat64(0))"),
 
             _ => throw new InvalidOperationException(
                 $"Kafka key field '{field.Name}' has unsupported type '{field.FieldType}'.")

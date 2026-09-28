@@ -236,22 +236,19 @@ public sealed class GeneratedSchemaClickHouseIntegrationTests : IAsyncLifetime
     [Fact]
     public async Task GivenConfluentProtobufKey_WhenDecoded_ThenMatchesProtobufSingleParser()
     {
-        var execResult = await _clickHouse.ExecScriptAsync(ProtobufKeyDecoder.CreateSimpleStringFunctionStatement());
-        execResult.ExitCode.Should().Be(0, execResult.Stderr);
-
         foreach (var orderId in new[] { "abc", new string('x', 130), "7086cd58-eec4-4152-b2b4-1615dd3e7ca8" })
         {
             var payload = new OrderKey { OrderId = orderId }.ToByteArray();
             var raw = new byte[6 + payload.Length];
             payload.CopyTo(raw, 6);
             var hex = Convert.ToHexString(raw);
+            var expression = ProtobufKeyDecoder.SimpleStringFieldExpression(6, 1)
+                .Replace("_key", $"unhex('{hex}')", StringComparison.Ordinal);
 
             await using var connection = new ClickHouseConnection(_clickHouse.GetConnectionString());
             await connection.OpenAsync();
 
-            var decoded = await ScalarAsync(
-                connection,
-                $"SELECT sandbox_parse_proto_string(unhex('{hex}'), 6, 1)");
+            var decoded = await ScalarAsync(connection, $"SELECT {expression}");
             var parsed = await ScalarAsync(
                 connection,
                 $"""
@@ -269,13 +266,6 @@ public sealed class GeneratedSchemaClickHouseIntegrationTests : IAsyncLifetime
     public async Task GivenMultiFieldConfluentKey_WhenDecoded_ThenMatchesFieldValues()
     {
         var fields = ProtobufKeyFieldMapper.MapFields(MultiFieldKey.Descriptor);
-        var sql = new StringBuilder()
-            .AppendLine(ProtobufKeyDecoder.CreateWireScannerFunctionStatements())
-            .AppendLine(ProtobufKeyDecoder.CreateKeyMessageParseFunction("orders_queue", 6, fields))
-            .ToString();
-        var execResult = await _clickHouse.ExecScriptAsync(sql);
-        execResult.ExitCode.Should().Be(0, execResult.Stderr);
-
         var key = new MultiFieldKey
         {
             Id = "abc",
@@ -294,22 +284,19 @@ public sealed class GeneratedSchemaClickHouseIntegrationTests : IAsyncLifetime
         payload.CopyTo(raw, 6);
         var hex = Convert.ToHexString(raw);
 
+        var selectList = string.Join(",\n                ", fields.Select(field => field.TupleValueExpression));
+        var sql = $"""
+            SELECT
+                {selectList}
+            FROM
+            {ProtobufKeyDecoder.KeyFieldsSourceFromSql("src", 6)}
+            """
+            .Replace("FROM src", $"FROM (SELECT unhex('{hex}') AS _key) AS src", StringComparison.Ordinal);
+
         await using var connection = new ClickHouseConnection(_clickHouse.GetConnectionString());
         await connection.OpenAsync();
         await using var command = connection.CreateCommand();
-        command.CommandText = $"""
-            SELECT
-                tupleElement(sandbox_parse_key_orders_queue(unhex('{hex}')), 1),
-                tupleElement(sandbox_parse_key_orders_queue(unhex('{hex}')), 2),
-                tupleElement(sandbox_parse_key_orders_queue(unhex('{hex}')), 3),
-                tupleElement(sandbox_parse_key_orders_queue(unhex('{hex}')), 4),
-                tupleElement(sandbox_parse_key_orders_queue(unhex('{hex}')), 5),
-                tupleElement(sandbox_parse_key_orders_queue(unhex('{hex}')), 6),
-                tupleElement(sandbox_parse_key_orders_queue(unhex('{hex}')), 7),
-                tupleElement(sandbox_parse_key_orders_queue(unhex('{hex}')), 8),
-                tupleElement(sandbox_parse_key_orders_queue(unhex('{hex}')), 9),
-                tupleElement(sandbox_parse_key_orders_queue(unhex('{hex}')), 10)
-            """;
+        command.CommandText = sql;
         await using var reader = await command.ExecuteReaderAsync();
         (await reader.ReadAsync()).Should().BeTrue();
 

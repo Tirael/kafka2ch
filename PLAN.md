@@ -114,7 +114,7 @@ message OrderEvent {
 
 На конверт Confluent (`skip_bytes = 6`) импорты не влияют: message-indexes считаются по top-level message-ам главного файла, а `OrderEvent` в нём остаётся первым и единственным (типы из импортов в индексацию не входят).
 
-Kafka engine парсит ProtobufSingle только value. Ключ остаётся сырыми байтами в `_key`; пайплайн декодирует его после пропуска Confluent-конверта (`skipBytes = 6`). Для одиночного string-ключа используется компактная SQL-функция; для нескольких scalar-полей — wire-сканер protobuf и tuple-функция на таблицу. В sandbox `OrderKey` / `ShipmentKey` дают колонки `key_order_id` / `key_shipment_id`. Заголовки сохраняются из `_headers.name` / `_headers.value` (`headers_name` как `Array(LowCardinality(String))`, `headers_value` как `Array(String)`).
+Kafka engine парсит ProtobufSingle только value. Ключ остаётся сырыми байтами в `_key`; пайплайн декодирует его inline в MV после пропуска Confluent-конверта (`skipBytes = 6`), без ClickHouse UDF. Одиночный string-ключ — компактное выражение; несколько scalar-полей — wire-сканер в subquery (`Map` полей). В sandbox `OrderKey` / `ShipmentKey` дают колонки `key_order_id` / `key_shipment_id`. Заголовки сохраняются из `_headers.name` / `_headers.value` (`headers_name` как `Array(LowCardinality(String))`, `headers_value` как `Array(String)`).
 
 ## DDL ClickHouse (docker-entrypoint-initdb.d)
 

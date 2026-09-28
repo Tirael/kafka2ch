@@ -54,14 +54,19 @@ public sealed class ClickHouseSchemaGenerator(
         var pipeline = config.Pipeline
             ?? throw new InvalidOperationException("Pipeline config is required.");
         AppendHeaders(config);
-        var keySql = AppendKeys(config);
+        var hasKeys = AppendKeys(config);
 
         var pipelineBuilder = new StringBuilder()
             .AppendLine(SqlScriptWriter.GeneratedHeader)
             .AppendLine();
 
-        if (!string.IsNullOrWhiteSpace(keySql))
-            pipelineBuilder.AppendLine(keySql.TrimEnd()).AppendLine();
+        if (hasKeys)
+        {
+            pipelineBuilder
+                .AppendLine("-- Kafka ProtobufSingle parses the message value. Keys are decoded inline from `_key`")
+                .AppendLine("-- after skipping the Confluent envelope (skipBytes). No ClickHouse UDFs are created.")
+                .AppendLine();
+        }
 
         foreach (var mergeTreeTable in pipeline.MergeTreeTables)
             pipelineBuilder.Append(MergeTreeTableGenerator.Generate(mergeTreeTable));
@@ -96,18 +101,18 @@ public sealed class ClickHouseSchemaGenerator(
         }
     }
 
-    private static string AppendKeys(CodegenConfig config)
+    private static bool AppendKeys(CodegenConfig config)
     {
-        List<(KafkaTableConfig Table, KeyMessageConfig Key, IReadOnlyList<ProtobufKeyField> Fields)> keyed = [];
+        var hasKeys = false;
 
         foreach (var (view, kafkaTable, target) in EnumerateKafkaProjections(config))
         {
             if (kafkaTable.Key is not { } key)
                 continue;
 
+            hasKeys = true;
             var fields = ProtobufKeyFieldMapper.MapFields(
                 ProtoDescriptorResolver.ResolveDescriptor(key.MessageType));
-            keyed.Add((kafkaTable, key, fields));
 
             if (ProtobufKeyFieldMapper.IsSingleStringKey(fields))
             {
@@ -121,53 +126,21 @@ public sealed class ClickHouseSchemaGenerator(
                 continue;
             }
 
-            if (!view.SourceSelectExtras.Contains(ProtobufKeyDecoder.KeyParseProjection(kafkaTable.TableName)))
-                view.SourceSelectExtras.Add(ProtobufKeyDecoder.KeyParseProjection(kafkaTable.TableName));
+            view.SourceFromSql = ProtobufKeyDecoder.KeyFieldsSourceFromSql(view.SourceTable, key.SkipBytes);
 
-            for (var i = 0; i < fields.Count; i++)
+            foreach (var field in fields)
             {
-                var field = fields[i];
                 AddProjectedColumn(
                     target,
                     view,
                     $"key_{field.Name}",
                     field.ClickHouseType,
                     field.Name,
-                    ProtobufKeyDecoder.KeyTupleElementExpression(i + 1));
+                    field.TupleValueExpression);
             }
         }
 
-        if (keyed.Count == 0)
-            return string.Empty;
-
-        var sql = new StringBuilder()
-            .AppendLine("-- Kafka ProtobufSingle parses the message value. Keys are decoded from `_key`")
-            .AppendLine("-- after skipping the Confluent envelope (skipBytes).");
-
-        var needsWireScanner = keyed.Any(entry => !ProtobufKeyFieldMapper.IsSingleStringKey(entry.Fields));
-        var needsSimpleString = keyed.Any(entry => ProtobufKeyFieldMapper.IsSingleStringKey(entry.Fields));
-
-        if (needsSimpleString)
-            sql.AppendLine(ProtobufKeyDecoder.CreateSimpleStringFunctionStatement()).AppendLine();
-
-        if (needsWireScanner)
-        {
-            sql.AppendLine(ProtobufKeyDecoder.CreateWireScannerFunctionStatements()).AppendLine();
-            foreach (var entry in keyed
-                .Where(entry => !ProtobufKeyFieldMapper.IsSingleStringKey(entry.Fields))
-                .GroupBy(entry => entry.Table.TableName, StringComparer.OrdinalIgnoreCase)
-                .Select(group => group.First()))
-            {
-                sql.AppendLine(
-                        ProtobufKeyDecoder.CreateKeyMessageParseFunction(
-                            entry.Table.TableName,
-                            entry.Key.SkipBytes,
-                            entry.Fields))
-                    .AppendLine();
-            }
-        }
-
-        return sql.ToString();
+        return hasKeys;
     }
 
     private static IEnumerable<(MaterializedViewConfig View, KafkaTableConfig KafkaTable, MergeTreeTableConfig Target)>

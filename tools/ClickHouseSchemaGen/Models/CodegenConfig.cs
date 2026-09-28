@@ -122,9 +122,14 @@ public sealed class MaterializedViewConfig
 
     /// <summary>
     /// Extra SELECT expressions projected in a subquery over <see cref="SourceTable"/>
-    /// (for example a parsed Kafka key tuple alias).
+    /// (for example a parsed Kafka key map alias). Ignored when <see cref="SourceFromSql"/> is set.
     /// </summary>
     public List<string> SourceSelectExtras { get; set; } = [];
+
+    /// <summary>
+    /// Optional replacement for the MV FROM clause (including surrounding parentheses).
+    /// </summary>
+    public string? SourceFromSql { get; set; }
 }
 
 public sealed class PipelineColumnConfig

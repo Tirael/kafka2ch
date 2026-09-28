@@ -133,7 +133,7 @@ Protobuf-ключ Kafka. ClickHouse `ProtobufSingle` разбирает толь
 | `uint64` / `fixed64` | `UInt64` |
 | `float` / `double` | `Float32` / `Float64` |
 
-Один `string`-ключ декодируется быстрым путём (`sandbox_parse_proto_string`). Несколько полей или не-string типы идут через wire-сканер (`sandbox_proto_fields`) и функцию `sandbox_parse_key_<tableName>`, которая возвращает tuple; MV читает его один раз в subquery. Не поддерживаются `repeated`, `map` и nested `message`.
+Декодирование встроено в SQL materialized view — ClickHouse UDF (`CREATE FUNCTION`) не создаются. Один `string`-ключ читается компактным inline-выражением. Несколько полей или не-string типы: MV subquery считает `Map(field_number → bytes)` wire-сканером по `_key`, затем колонки `key_<field>` читают значения из этой map. Не поддерживаются `repeated`, `map` и nested `message`.
 
 Заголовки сообщения пишутся всегда, когда materialized view читает Kafka-таблицу: `headers_name Array(LowCardinality(String))` и `headers_value Array(String)` из `_headers.name` / `_headers.value`. Имена заголовков низкокардинальные, значения остаются обычным `String`.
 

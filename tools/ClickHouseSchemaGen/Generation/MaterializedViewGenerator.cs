@@ -15,6 +15,16 @@ public static class MaterializedViewGenerator
             builder.AppendLine($"    {ResolveExpression(mapping),-28} AS {mapping.Target}{comma}");
         }
 
+        if (!string.IsNullOrWhiteSpace(config.SourceFromSql))
+        {
+            return builder
+                .AppendLine("FROM")
+                .AppendLine(config.SourceFromSql.TrimEnd())
+                .AppendLine(";")
+                .AppendLine()
+                .ToString();
+        }
+
         if (config.SourceSelectExtras.Count == 0)
         {
             return builder
