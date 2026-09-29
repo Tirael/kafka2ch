@@ -25,4 +25,14 @@ public sealed class KafkaClientFactory(IOptions<KafkaOptions> options)
             .SetValueSerializer(new ProtobufSerializer<TValue>(schemaRegistry, serializerConfig))
             .Build();
     }
+
+    public IConsumer<byte[], byte[]> CreateByteConsumer(string groupId) =>
+        new ConsumerBuilder<byte[], byte[]>(new ConsumerConfig
+        {
+            BootstrapServers = _options.BootstrapServers,
+            GroupId = groupId,
+            AutoOffsetReset = AutoOffsetReset.Earliest,
+            EnableAutoCommit = false,
+            AllowAutoCreateTopics = false
+        }).Build();
 }

@@ -84,6 +84,16 @@
           { "name": "delivery_outcome", "type": "LowCardinality(String)" },
           { "name": "shipped_at", "type": "DateTime64(3)" }
         ]
+      },
+      {
+        "tableName": "orders_full",
+        "sourceTable": "orders_queue",
+        "orderBy": "(order_id)"
+      },
+      {
+        "tableName": "shipments_full",
+        "sourceTable": "shipments_queue",
+        "orderBy": "(shipment_id)"
       }
     ],
     "materializedViews": [

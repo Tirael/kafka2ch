@@ -5,7 +5,8 @@ builder.Services
     .AddCommon(builder.Configuration)
     .AddPublishOrders(builder.Configuration)
     .AddPublishShipments(builder.Configuration)
-    .AddReadAggregates(builder.Configuration);
+    .AddReadAggregates(builder.Configuration)
+    .AddVerifyStoredMessages(builder.Configuration);
 
 var host = builder.Build();
 host.Run();

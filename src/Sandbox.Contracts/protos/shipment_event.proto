@@ -3,6 +3,7 @@ syntax = "proto3";
 package sandbox.shipments.v1;
 
 import "common/address.proto";
+import "common/case_file.proto";
 import "google/protobuf/timestamp.proto";
 import "google/protobuf/wrappers.proto";
 import "shipment_types.proto";
@@ -27,4 +28,5 @@ message ShipmentEvent {
   google.protobuf.Int32Value priority = 11;
   repeated ShipmentStatus status_history = 12;
   ShipmentDocuments documents = 13;
+  sandbox.common.v1.CaseFile case_file = 14;
 }

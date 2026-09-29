@@ -26,6 +26,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\src\Sandbox.App\Sandbox.App.csproj" />
     <ProjectReference Include="..\..\src\Sandbox.Contracts\Sandbox.Contracts.csproj" />
     <ProjectReference Include="..\..\tools\ClickHouseSchemaGen\ClickHouseSchemaGen.csproj" />
   </ItemGroup>

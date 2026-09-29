@@ -28,6 +28,65 @@ ENGINE = MergeTree
 ORDER BY (shipped_at, shipment_id)
 TTL shipped_at + INTERVAL 1 DAY;
 
+CREATE TABLE orders_full
+(
+    order_id             String,
+    category             LowCardinality(String),
+    `price.currency`     String,
+    `price.amount`       Float64,
+    quantity             UInt32,
+    `event_time.seconds` Int64,
+    `event_time.nanos`   Int32,
+    status               Enum8('ORDER_STATUS_UNSPECIFIED' = 0, 'ORDER_STATUS_CREATED' = 1, 'ORDER_STATUS_PAID' = 2),
+    tags                 Array(LowCardinality(String)),
+    items                Nested(sku String, qty UInt32, unit_price Float64, line_status Enum8('ORDER_STATUS_UNSPECIFIED' = 0, 'ORDER_STATUS_CREATED' = 1, 'ORDER_STATUS_PAID' = 2), parts Array(Tuple(sku String, qty UInt32, weight Nullable(Float64)))),
+    metadata             Map(String, String),
+    note                 Nullable(String),
+    `card.last4`         String,
+    `card.network`       String,
+    `cash.received`      Float64,
+    `wallet.provider`    String,
+    `wallet.wallet_id`   String,
+    payment              Enum8('absent' = 0, 'card' = 11, 'cash' = 12, 'wallet' = 13),
+    promo_code           Nullable(String),
+    status_history       Array(Enum8('ORDER_STATUS_UNSPECIFIED' = 0, 'ORDER_STATUS_CREATED' = 1, 'ORDER_STATUS_PAID' = 2)),
+    loyalty_points       Nullable(Int32),
+    attachments          Tuple(invoices Array(Tuple(name String, note Nullable(String))), receipts Array(Tuple(name String, note Nullable(String)))),
+    case_file            Tuple(file_id String, stage Enum8('CASE_STAGE_UNSPECIFIED' = 0, 'CASE_STAGE_DRAFT' = 1, 'CASE_STAGE_OPEN' = 2, 'CASE_STAGE_REVIEW' = 3, 'CASE_STAGE_SEALED' = 4), opened_at Tuple(seconds Int64, nanos Int32), headline Nullable(String), principal Tuple(party_id String, legal_name String, residence Tuple(country String, city String, street String, postal_code String), contacts Array(Tuple(kind Enum8('CONTACT_KIND_UNSPECIFIED' = 0, 'CONTACT_KIND_EMAIL' = 1, 'CONTACT_KIND_PHONE' = 2, 'CONTACT_KIND_POST' = 3), value String, preferred Nullable(UInt8), note Nullable(String))), traits Map(String, String), registration_no Nullable(String), aliases Array(String)), counterparties Array(Tuple(party_id String, legal_name String, residence Tuple(country String, city String, street String, postal_code String), contacts Array(Tuple(kind Enum8('CONTACT_KIND_UNSPECIFIED' = 0, 'CONTACT_KIND_EMAIL' = 1, 'CONTACT_KIND_PHONE' = 2, 'CONTACT_KIND_POST' = 3), value String, preferred Nullable(UInt8), note Nullable(String))), traits Map(String, String), registration_no Nullable(String), aliases Array(String))), obligations Array(Tuple(obligation_id String, amount Tuple(currency String, amount Float64), due_at Tuple(seconds Int64, nanos Int32), installments Array(Tuple(sequence UInt32, amount Tuple(currency String, amount Float64), due_at Tuple(seconds Int64, nanos Int32), notes Array(String))), covenants Array(String), memo Nullable(String))), labels Map(String, String), bank Tuple(iban String, bic String, holder String, branch Nullable(String)), wallet Tuple(provider String, account_ref String, display_name Nullable(String)), ledger Tuple(book String, account String, posted_minor Int64, dimensions Array(String)), instrument Enum8('absent' = 0, 'bank' = 9, 'wallet' = 10, 'ledger' = 11), evidence Tuple(exhibits Array(Tuple(exhibit_id String, title String, digest String, excerpts Array(Tuple(page UInt32, text String, annotation Nullable(String), highlights Array(String))), attributes Map(String, String))), statements Array(Tuple(author String, stated_at Tuple(seconds Int64, nanos Int32), body String, witnesses Array(String)))), schedules Array(Tuple(schedule_id String, title String, windows Array(Tuple(window_id String, starts_at Tuple(seconds Int64, nanos Int32), slots Array(Tuple(index UInt32, label String, note Nullable(String), assignees Array(String))))))), journal Array(Tuple(entry_id String, recorded_at Tuple(seconds Int64, nanos Int32), actor String, body String, tags Array(String), context Map(String, String))), seal String, clerk_note Nullable(String), markers Array(String))
+)
+ENGINE = MergeTree
+ORDER BY (order_id)
+SETTINGS flatten_nested = 0;
+
+CREATE TABLE shipments_full
+(
+    shipment_id          String,
+    order_id             String,
+    `shipped_at.seconds` Int64,
+    `shipped_at.nanos`   Int32,
+    status               Enum8('SHIPMENT_STATUS_UNSPECIFIED' = 0, 'SHIPMENT_STATUS_CREATED' = 1, 'SHIPMENT_STATUS_IN_TRANSIT' = 2, 'SHIPMENT_STATUS_DELIVERED' = 3, 'SHIPMENT_STATUS_FAILED' = 4),
+    `destination.country` LowCardinality(String),
+    `destination.city`   LowCardinality(String),
+    `destination.street` String,
+    `destination.postal_code` String,
+    checkpoints          Nested(recorded_at_seconds Int64, recorded_at_nanos Int32, location String, status Enum8('SHIPMENT_STATUS_UNSPECIFIED' = 0, 'SHIPMENT_STATUS_CREATED' = 1, 'SHIPMENT_STATUS_IN_TRANSIT' = 2, 'SHIPMENT_STATUS_DELIVERED' = 3, 'SHIPMENT_STATUS_FAILED' = 4), scans Array(Tuple(code String, operator_note Nullable(String)))),
+    carrier_metadata     Map(String, String),
+    instructions         Nullable(String),
+    `delivered.delivered_at.seconds` Int64,
+    `delivered.delivered_at.nanos` Int32,
+    `delivered.signed_by` String,
+    `failed.reason`      String,
+    `failed.retry_count` Nullable(Int32),
+    delivery_outcome     Enum8('absent' = 0, 'delivered' = 9, 'failed' = 10),
+    priority             Nullable(Int32),
+    status_history       Array(Enum8('SHIPMENT_STATUS_UNSPECIFIED' = 0, 'SHIPMENT_STATUS_CREATED' = 1, 'SHIPMENT_STATUS_IN_TRANSIT' = 2, 'SHIPMENT_STATUS_DELIVERED' = 3, 'SHIPMENT_STATUS_FAILED' = 4)),
+    documents            Tuple(labels Array(Tuple(id String, pages Nullable(Int32))), customs_forms Array(Tuple(id String, pages Nullable(Int32)))),
+    case_file            Tuple(file_id String, stage Enum8('CASE_STAGE_UNSPECIFIED' = 0, 'CASE_STAGE_DRAFT' = 1, 'CASE_STAGE_OPEN' = 2, 'CASE_STAGE_REVIEW' = 3, 'CASE_STAGE_SEALED' = 4), opened_at Tuple(seconds Int64, nanos Int32), headline Nullable(String), principal Tuple(party_id String, legal_name String, residence Tuple(country String, city String, street String, postal_code String), contacts Array(Tuple(kind Enum8('CONTACT_KIND_UNSPECIFIED' = 0, 'CONTACT_KIND_EMAIL' = 1, 'CONTACT_KIND_PHONE' = 2, 'CONTACT_KIND_POST' = 3), value String, preferred Nullable(UInt8), note Nullable(String))), traits Map(String, String), registration_no Nullable(String), aliases Array(String)), counterparties Array(Tuple(party_id String, legal_name String, residence Tuple(country String, city String, street String, postal_code String), contacts Array(Tuple(kind Enum8('CONTACT_KIND_UNSPECIFIED' = 0, 'CONTACT_KIND_EMAIL' = 1, 'CONTACT_KIND_PHONE' = 2, 'CONTACT_KIND_POST' = 3), value String, preferred Nullable(UInt8), note Nullable(String))), traits Map(String, String), registration_no Nullable(String), aliases Array(String))), obligations Array(Tuple(obligation_id String, amount Tuple(currency String, amount Float64), due_at Tuple(seconds Int64, nanos Int32), installments Array(Tuple(sequence UInt32, amount Tuple(currency String, amount Float64), due_at Tuple(seconds Int64, nanos Int32), notes Array(String))), covenants Array(String), memo Nullable(String))), labels Map(String, String), bank Tuple(iban String, bic String, holder String, branch Nullable(String)), wallet Tuple(provider String, account_ref String, display_name Nullable(String)), ledger Tuple(book String, account String, posted_minor Int64, dimensions Array(String)), instrument Enum8('absent' = 0, 'bank' = 9, 'wallet' = 10, 'ledger' = 11), evidence Tuple(exhibits Array(Tuple(exhibit_id String, title String, digest String, excerpts Array(Tuple(page UInt32, text String, annotation Nullable(String), highlights Array(String))), attributes Map(String, String))), statements Array(Tuple(author String, stated_at Tuple(seconds Int64, nanos Int32), body String, witnesses Array(String)))), schedules Array(Tuple(schedule_id String, title String, windows Array(Tuple(window_id String, starts_at Tuple(seconds Int64, nanos Int32), slots Array(Tuple(index UInt32, label String, note Nullable(String), assignees Array(String))))))), journal Array(Tuple(entry_id String, recorded_at Tuple(seconds Int64, nanos Int32), actor String, body String, tags Array(String), context Map(String, String))), seal String, clerk_note Nullable(String), markers Array(String))
+)
+ENGINE = MergeTree
+ORDER BY (shipment_id)
+SETTINGS flatten_nested = 0;
+
 CREATE MATERIALIZED VIEW orders_mv TO orders AS
 SELECT
     order_id                     AS order_id,
@@ -49,6 +108,59 @@ SELECT
     `destination.city`           AS city,
     toString(delivery_outcome)   AS delivery_outcome,
     toDateTime64(shipped_at.seconds + shipped_at.nanos / 1000000000.0, 3) AS shipped_at
+FROM shipments_queue;
+
+CREATE MATERIALIZED VIEW orders_full_mv TO orders_full AS
+SELECT
+    order_id                     AS order_id,
+    category                     AS category,
+    `price.currency`             AS `price.currency`,
+    `price.amount`               AS `price.amount`,
+    quantity                     AS quantity,
+    `event_time.seconds`         AS `event_time.seconds`,
+    `event_time.nanos`           AS `event_time.nanos`,
+    status                       AS status,
+    tags                         AS tags,
+    items                        AS items,
+    metadata                     AS metadata,
+    note                         AS note,
+    `card.last4`                 AS `card.last4`,
+    `card.network`               AS `card.network`,
+    `cash.received`              AS `cash.received`,
+    `wallet.provider`            AS `wallet.provider`,
+    `wallet.wallet_id`           AS `wallet.wallet_id`,
+    payment                      AS payment,
+    promo_code                   AS promo_code,
+    status_history               AS status_history,
+    loyalty_points               AS loyalty_points,
+    attachments                  AS attachments,
+    case_file                    AS case_file
+FROM orders_queue;
+
+CREATE MATERIALIZED VIEW shipments_full_mv TO shipments_full AS
+SELECT
+    shipment_id                  AS shipment_id,
+    order_id                     AS order_id,
+    `shipped_at.seconds`         AS `shipped_at.seconds`,
+    `shipped_at.nanos`           AS `shipped_at.nanos`,
+    status                       AS status,
+    `destination.country`        AS `destination.country`,
+    `destination.city`           AS `destination.city`,
+    `destination.street`         AS `destination.street`,
+    `destination.postal_code`    AS `destination.postal_code`,
+    checkpoints                  AS checkpoints,
+    carrier_metadata             AS carrier_metadata,
+    instructions                 AS instructions,
+    `delivered.delivered_at.seconds` AS `delivered.delivered_at.seconds`,
+    `delivered.delivered_at.nanos` AS `delivered.delivered_at.nanos`,
+    `delivered.signed_by`        AS `delivered.signed_by`,
+    `failed.reason`              AS `failed.reason`,
+    `failed.retry_count`         AS `failed.retry_count`,
+    delivery_outcome             AS delivery_outcome,
+    priority                     AS priority,
+    status_history               AS status_history,
+    documents                    AS documents,
+    case_file                    AS case_file
 FROM shipments_queue;
 
 CREATE TABLE orders_agg_1m

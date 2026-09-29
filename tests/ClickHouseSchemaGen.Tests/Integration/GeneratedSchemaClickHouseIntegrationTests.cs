@@ -54,7 +54,8 @@ public sealed class GeneratedSchemaClickHouseIntegrationTests : IAsyncLifetime
             "promo_code",
             "status_history",
             "loyalty_points",
-            "attachments"
+            "attachments",
+            "case_file"
         ], options => options.WithStrictOrdering());
         columns.Single(column => column.Name == "items").Type.Should().Contain("parts Array(Tuple(");
         columns.Single(column => column.Name == "metadata").Type.Should().Be("Map(String, String)");
@@ -326,6 +327,99 @@ public sealed class GeneratedSchemaClickHouseIntegrationTests : IAsyncLifetime
         // Assert
         createdAt.Should().NotBeNull();
         Convert.ToDateTime(createdAt).Should().Be(DateTime.Parse("2024-01-15T10:30:00Z").ToUniversalTime());
+    }
+
+    [Fact]
+    public async Task GivenLargeOrderAndShipment_WhenInsertedViaProtobufSingle_ThenNestedContentRoundTrips()
+    {
+        var now = DateTimeOffset.Parse("2026-09-29T12:00:00Z");
+        var (_, orderEvent) = OrderEventFactory.CreateRandom(now);
+        var (_, shipmentEvent) = ShipmentEventFactory.CreateRandom(now, orderEvent.OrderId);
+
+        await CreateIngestTableAsync(
+            OrderEvent.Descriptor,
+            "order_events_complex",
+            "SETTINGS flatten_nested = 0, input_format_protobuf_oneof_presence = 1, input_format_protobuf_flatten_google_wrappers = 1");
+        await CreateIngestTableAsync(
+            ShipmentEvent.Descriptor,
+            "shipment_events_complex",
+            "SETTINGS flatten_nested = 0, input_format_protobuf_oneof_presence = 1, input_format_protobuf_flatten_google_wrappers = 1");
+
+        await InsertMessageAsync("order_events_complex", "order_event:OrderEvent", orderEvent);
+        await InsertMessageAsync("shipment_events_complex", "shipment_event:ShipmentEvent", shipmentEvent);
+
+        await AssertWitnessAsync("order_events_complex", "order_id", orderEvent.OrderId, orderEvent.CaseFile);
+        await AssertWitnessAsync("shipment_events_complex", "shipment_id", shipmentEvent.ShipmentId, shipmentEvent.CaseFile);
+        await AssertProtobufRoundTripAsync(
+            "order_events_complex",
+            "order_id",
+            orderEvent.OrderId,
+            "order_event:OrderEvent",
+            orderEvent);
+        await AssertProtobufRoundTripAsync(
+            "shipment_events_complex",
+            "shipment_id",
+            shipmentEvent.ShipmentId,
+            "shipment_event:ShipmentEvent",
+            shipmentEvent);
+    }
+
+    private async Task InsertMessageAsync(string table, string schema, IMessage message)
+    {
+        using var payload = new MemoryStream();
+        message.WriteTo(payload);
+        await InsertProtobufAsync(
+            $"INSERT INTO {table} SETTINGS format_schema='{schema}', input_format_protobuf_oneof_presence=1, input_format_protobuf_flatten_google_wrappers=1 FORMAT ProtobufSingle",
+            payload.ToArray());
+    }
+
+    private async Task AssertWitnessAsync(string table, string idColumn, string id, CaseFile file)
+    {
+        await using var connection = new ClickHouseConnection(_clickHouse.GetConnectionString());
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = CaseFileWitness.SelectSql(table, idColumn, id);
+        await using var reader = await command.ExecuteReaderAsync();
+        (await reader.ReadAsync()).Should().BeTrue();
+
+        var stored = new string[reader.FieldCount];
+        for (var i = 0; i < stored.Length; i++)
+            stored[i] = reader.IsDBNull(i) ? "" : reader.GetValue(i)?.ToString() ?? "";
+
+        CaseFileWitness.Compare(file, stored).Should().BeEmpty();
+    }
+
+    private async Task AssertProtobufRoundTripAsync(
+        string table,
+        string idColumn,
+        string id,
+        string schema,
+        IMessage expected)
+    {
+        var sql =
+            $"SELECT * FROM {table} WHERE {idColumn} = '{id}' SETTINGS format_schema = '{schema}', output_format_protobuf_nullables_with_google_wrappers = 1 FORMAT ProtobufSingle";
+        var stored = await ReadProtobufAsync(sql);
+        var actual = expected.Descriptor.Parser.ParseFrom(stored);
+        MessageContentDiff.Compare(expected, actual).Should().BeEmpty();
+    }
+
+    private async Task<byte[]> ReadProtobufAsync(string query)
+    {
+        var connectionStringBuilder = new ClickHouseConnectionStringBuilder(_clickHouse.GetConnectionString());
+        var port = _clickHouse.GetMappedPublicPort(8123);
+        using var httpClient = new HttpClient { BaseAddress = new Uri($"http://{_clickHouse.Hostname}:{port}") };
+
+        if (!string.IsNullOrEmpty(connectionStringBuilder.Password))
+        {
+            var credentials = Convert.ToBase64String(
+                Encoding.UTF8.GetBytes($"{connectionStringBuilder.Username}:{connectionStringBuilder.Password}"));
+            httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", credentials);
+        }
+
+        using var response = await httpClient.PostAsync($"?query={Uri.EscapeDataString(query)}", new StringContent(""));
+        var body = await response.Content.ReadAsByteArrayAsync();
+        response.IsSuccessStatusCode.Should().BeTrue(Encoding.UTF8.GetString(body));
+        return body;
     }
 
     private async Task CreateIngestTableAsync(

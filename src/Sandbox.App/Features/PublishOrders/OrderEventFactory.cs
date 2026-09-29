@@ -1,3 +1,5 @@
+using Sandbox.App.Features.ComplexPayload;
+
 namespace Sandbox.App.Features.PublishOrders;
 
 public static class OrderEventFactory
@@ -77,6 +79,7 @@ public static class OrderEventFactory
         if (Random.Shared.Next(0, 2) == 0)
             orderEvent.LoyaltyPoints = Random.Shared.Next(10, 500);
 
+        CaseFileFactory.Attach(orderEvent, now);
         return (key, orderEvent);
     }
 

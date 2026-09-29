@@ -105,6 +105,15 @@ services:
       ClickHouse__Password: ${CLICKHOUSE_PASSWORD}
       ReadAggregates__IntervalMs: 5000
       ReadAggregates__WindowMinutes: 10
+      VerifyStoredMessages__OrdersTopic: orders
+      VerifyStoredMessages__ShipmentsTopic: shipments
+      VerifyStoredMessages__GroupId: sandbox-stored-messages
+      VerifyStoredMessages__OrdersTable: orders_full
+      VerifyStoredMessages__ShipmentsTable: shipments_full
+      VerifyStoredMessages__OrdersProjectionTable: orders
+      VerifyStoredMessages__ShipmentsProjectionTable: shipments
+      VerifyStoredMessages__PollIntervalMs: 1000
+      VerifyStoredMessages__WaitTimeoutMs: 90000
 
   kafka-ui:
     image: ${KAFKA_UI_IMAGE}

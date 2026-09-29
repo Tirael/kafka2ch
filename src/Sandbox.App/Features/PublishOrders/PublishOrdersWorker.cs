@@ -1,3 +1,5 @@
+using Sandbox.App.Features.ComplexPayload;
+
 namespace Sandbox.App.Features.PublishOrders;
 
 public sealed class PublishOrdersWorker(
@@ -23,8 +25,9 @@ public sealed class PublishOrdersWorker(
                     stoppingToken);
 
                 logger.LogInformation(
-                    "Published order {OrderId} to {Topic} partition {Partition} offset {Offset}",
+                    "Published order {OrderId} ({PayloadBytes} bytes) to {Topic} partition {Partition} offset {Offset}",
                     orderEvent.OrderId,
+                    PayloadSize.KafkaValueBytes(orderEvent),
                     _options.Topic,
                     result.Partition,
                     result.Offset);
