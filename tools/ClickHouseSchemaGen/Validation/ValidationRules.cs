@@ -21,7 +21,7 @@ internal static partial class ValidationRules
     [GeneratedRegex("^[a-zA-Z_][a-zA-Z0-9_]*(\\.[a-zA-Z_][a-zA-Z0-9_]*)*$")]
     private static partial Regex FieldPathRegex();
 
-    [GeneratedRegex(@"[a-zA-Z_][a-zA-Z0-9_]*")]
+    [GeneratedRegex(@"`(?<quoted>[^`]+)`|(?<bare>[a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)*)")]
     private static partial Regex SqlTokenRegex();
 
     public static bool IsSqlIdentifier(string value) => SqlIdentifierRegex().IsMatch(value);
@@ -31,12 +31,40 @@ internal static partial class ValidationRules
     public static bool IsMappingStrategy(string value) =>
         Enum.TryParse<MappingStrategy>(value, ignoreCase: true, out _);
 
-    public static IEnumerable<string> ExtractColumnCandidates(string expression) =>
-        SqlTokenRegex().Matches(expression)
-            .Select(match => match.Value)
-            .Where(token => !SqlExpressionKeywords.Contains(token))
-            .Where(token => !ulong.TryParse(token, out _))
-            .Distinct(StringComparer.OrdinalIgnoreCase);
+    public static IEnumerable<string> ExtractColumnCandidates(string expression)
+    {
+        List<string> candidates = [];
+        foreach (Match match in SqlTokenRegex().Matches(expression))
+        {
+            if (match.Groups["quoted"].Success)
+            {
+                candidates.Add(match.Groups["quoted"].Value);
+                continue;
+            }
+
+            var token = match.Groups["bare"].Value;
+            if (IsFunctionCall(expression, match.Index + match.Length)
+                || SqlExpressionKeywords.Contains(token)
+                || ulong.TryParse(token, out _))
+            {
+                continue;
+            }
+
+            candidates.Add(token);
+        }
+
+        return candidates.Distinct(StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static bool IsFunctionCall(string expression, int indexAfterToken)
+    {
+        while (indexAfterToken < expression.Length && char.IsWhiteSpace(expression[indexAfterToken]))
+        {
+            indexAfterToken++;
+        }
+
+        return indexAfterToken < expression.Length && expression[indexAfterToken] == '(';
+    }
 
     public static bool TtlReferencesKnownColumns(MergeTreeTableConfig table)
     {

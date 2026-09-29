@@ -68,6 +68,39 @@ public sealed class ProtoToClickHouseMapperTests
     }
 
     [Fact]
+    public void GivenDottedFieldOverrides_WhenMapped_ThenAppliesThemOnNestedPaths()
+    {
+        var orderColumns = _sut.MapMessage(
+            OrderEvent.Descriptor,
+            OrdersQueueTestConfig.Defaults,
+            new Dictionary<string, FieldOverrideConfig>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["price.currency"] = new() { Type = "LowCardinality(String)" },
+                ["card.last4"] = new() { Type = "FixedString(4)" },
+                ["items.sku"] = new() { Type = "LowCardinality(String)" },
+                ["attachments.invoices"] = new() { Type = "Array(String)" }
+            });
+        var shipmentColumns = _sut.MapMessage(
+            ShipmentEvent.Descriptor,
+            OrdersQueueTestConfig.Defaults,
+            new Dictionary<string, FieldOverrideConfig>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["destination.country"] = new() { Type = "LowCardinality(String)" },
+                ["destination.city"] = new() { Type = "LowCardinality(String)" }
+            });
+
+        orderColumns.Single(column => column.Name == "price.currency").Type.Should().Be("LowCardinality(String)");
+        orderColumns.Single(column => column.Name == "price.amount").Type.Should().Be("Float64");
+        orderColumns.Single(column => column.Name == "card.last4").Type.Should().Be("FixedString(4)");
+        orderColumns.Single(column => column.Name == "card.network").Type.Should().Be("String");
+        orderColumns.Single(column => column.Name == "items").Type.Should().Contain("sku LowCardinality(String)");
+        orderColumns.Single(column => column.Name == "attachments").Type.Should().Contain("invoices Array(String)");
+        shipmentColumns.Single(column => column.Name == "destination.country").Type.Should().Be("LowCardinality(String)");
+        shipmentColumns.Single(column => column.Name == "destination.city").Type.Should().Be("LowCardinality(String)");
+        shipmentColumns.Single(column => column.Name == "destination.street").Type.Should().Be("String");
+    }
+
+    [Fact]
     public void GivenRepeatedStringField_WhenMappedWithoutOverride_ThenUsesArrayOfString()
     {
         // Arrange

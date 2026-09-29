@@ -68,6 +68,9 @@ public sealed class ClickHouseSchemaGenerator(
             .ToList();
 
         foreach (var mergeTreeTable in expandedTables)
+            EnsureTtlReferencesKnownColumns(mergeTreeTable);
+
+        foreach (var mergeTreeTable in expandedTables)
         {
             pipelineBuilder.Append(MergeTreeTableGenerator.Generate(mergeTreeTable));
         }
@@ -88,6 +91,16 @@ public sealed class ClickHouseSchemaGenerator(
             pipelineBuilder.AppendLine(pipeline.TrailingSql.Trim());
 
         return pipelineBuilder.ToString();
+    }
+
+    private static void EnsureTtlReferencesKnownColumns(MergeTreeTableConfig table)
+    {
+        if (ValidationRules.TtlReferencesKnownColumns(table))
+            return;
+
+        throw new InvalidOperationException(
+            $"TTL expression '{table.Ttl}' references unknown columns for MergeTree table '{table.TableName}'. " +
+            $"Available columns: {string.Join(", ", table.Columns.Select(column => column.Name))}.");
     }
 
     private IReadOnlyList<ClickHouseColumn> MapKafkaTableColumns(KafkaTableConfig table, CodegenConfig rootConfig)

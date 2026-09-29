@@ -22,9 +22,20 @@ public static class MergeTreeTableGenerator
                 .Append($"TTL {config.Ttl.Trim()}");
         }
 
+        // Nested(...) is rejected unless the table disables ClickHouse's default flattening.
+        if (RequiresFlattenNested(config.Columns))
+        {
+            builder
+                .AppendLine()
+                .Append("SETTINGS flatten_nested = 0");
+        }
+
         return builder
             .AppendLine(";")
             .AppendLine()
             .ToString();
     }
+
+    private static bool RequiresFlattenNested(IReadOnlyList<PipelineColumnConfig> columns) =>
+        columns.Any(column => column.Type.StartsWith("Nested(", StringComparison.Ordinal));
 }

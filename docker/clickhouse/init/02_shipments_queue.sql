@@ -7,8 +7,8 @@ CREATE TABLE shipments_queue
     `shipped_at.seconds` Int64,  -- nested message
     `shipped_at.nanos`   Int32,  -- nested message
     status               Enum8('SHIPMENT_STATUS_UNSPECIFIED' = 0, 'SHIPMENT_STATUS_CREATED' = 1, 'SHIPMENT_STATUS_IN_TRANSIT' = 2, 'SHIPMENT_STATUS_DELIVERED' = 3, 'SHIPMENT_STATUS_FAILED' = 4),  -- proto enum
-    `destination.country` String,  -- nested message
-    `destination.city`   String,  -- nested message
+    `destination.country` LowCardinality(String),  -- nested message
+    `destination.city`   LowCardinality(String),  -- nested message
     `destination.street` String,  -- nested message
     `destination.postal_code` String,  -- nested message
     checkpoints          Nested(recorded_at_seconds Int64, recorded_at_nanos Int32, location String, status Enum8('SHIPMENT_STATUS_UNSPECIFIED' = 0, 'SHIPMENT_STATUS_CREATED' = 1, 'SHIPMENT_STATUS_IN_TRANSIT' = 2, 'SHIPMENT_STATUS_DELIVERED' = 3, 'SHIPMENT_STATUS_FAILED' = 4), scans Array(Tuple(code String, operator_note Nullable(String)))),  -- proto repeated message

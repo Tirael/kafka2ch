@@ -93,6 +93,41 @@ public sealed class CodegenConfigValidatorTests
     }
 
     [Fact]
+    public void GivenTtlWithBacktickedDottedColumn_WhenValidate_ThenSucceeds()
+    {
+        var config = CreateValidConfig();
+        config.Pipeline!.MergeTreeTables[0].Columns =
+        [
+            new PipelineColumnConfig { Name = "order_id", Type = "String" },
+            new PipelineColumnConfig { Name = "event_time.seconds", Type = "Int64" },
+            new PipelineColumnConfig { Name = "event_time.nanos", Type = "Int32" }
+        ];
+        config.Pipeline.MergeTreeTables[0].Ttl = "toDateTime(`event_time.seconds`) + INTERVAL 1 DAY";
+
+        var result = _sut.Validate(config);
+
+        result.IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public void GivenTtlWithUnknownDottedColumn_WhenValidate_ThenFails()
+    {
+        var config = CreateValidConfig();
+        config.Pipeline!.MergeTreeTables[0].Columns =
+        [
+            new PipelineColumnConfig { Name = "order_id", Type = "String" },
+            new PipelineColumnConfig { Name = "event_time.seconds", Type = "Int64" }
+        ];
+        config.Pipeline.MergeTreeTables[0].Ttl = "toDateTime(`shipped_at.seconds`) + INTERVAL 1 DAY";
+
+        var result = _sut.Validate(config);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(error =>
+            error.ErrorMessage.Contains("TTL expression references unknown columns", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void GivenMergeTreeTtlWithUnknownColumn_WhenValidate_ThenFails()
     {
         var config = CreateValidConfig();
