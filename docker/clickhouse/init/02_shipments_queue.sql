@@ -11,7 +11,7 @@ CREATE TABLE shipments_queue
     `destination.city`   String,  -- nested message
     `destination.street` String,  -- nested message
     `destination.postal_code` String,  -- nested message
-    checkpoints          Nested(recorded_at_seconds Int64, recorded_at_nanos Int32, location String, status Enum8('SHIPMENT_STATUS_UNSPECIFIED' = 0, 'SHIPMENT_STATUS_CREATED' = 1, 'SHIPMENT_STATUS_IN_TRANSIT' = 2, 'SHIPMENT_STATUS_DELIVERED' = 3, 'SHIPMENT_STATUS_FAILED' = 4)),  -- proto repeated message
+    checkpoints          Nested(recorded_at_seconds Int64, recorded_at_nanos Int32, location String, status Enum8('SHIPMENT_STATUS_UNSPECIFIED' = 0, 'SHIPMENT_STATUS_CREATED' = 1, 'SHIPMENT_STATUS_IN_TRANSIT' = 2, 'SHIPMENT_STATUS_DELIVERED' = 3, 'SHIPMENT_STATUS_FAILED' = 4), scans Array(Tuple(code String, operator_note Nullable(String)))),  -- proto repeated message
     carrier_metadata     Map(String, String),  -- proto map
     instructions         Nullable(String),  -- proto optional
     `delivered.delivered_at.seconds` Int64,  -- nested message
@@ -21,7 +21,8 @@ CREATE TABLE shipments_queue
     `failed.retry_count` Nullable(Int32),  -- well-known type
     delivery_outcome     Enum8('absent' = 0, 'delivered' = 9, 'failed' = 10),  -- oneof presence
     priority             Nullable(Int32),  -- well-known type
-    status_history       Array(Enum8('SHIPMENT_STATUS_UNSPECIFIED' = 0, 'SHIPMENT_STATUS_CREATED' = 1, 'SHIPMENT_STATUS_IN_TRANSIT' = 2, 'SHIPMENT_STATUS_DELIVERED' = 3, 'SHIPMENT_STATUS_FAILED' = 4))  -- proto repeated
+    status_history       Array(Enum8('SHIPMENT_STATUS_UNSPECIFIED' = 0, 'SHIPMENT_STATUS_CREATED' = 1, 'SHIPMENT_STATUS_IN_TRANSIT' = 2, 'SHIPMENT_STATUS_DELIVERED' = 3, 'SHIPMENT_STATUS_FAILED' = 4)),  -- proto repeated
+    documents            Tuple(labels Array(Tuple(id String, pages Nullable(Int32))), customs_forms Array(Tuple(id String, pages Nullable(Int32))))  -- nested message
 )
 ENGINE = Kafka
 SETTINGS

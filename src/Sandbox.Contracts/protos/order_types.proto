@@ -3,6 +3,7 @@ syntax = "proto3";
 package sandbox.orders.v1;
 
 import "common/money.proto";
+import "google/protobuf/wrappers.proto";
 
 option csharp_namespace = "Sandbox.Contracts";
 
@@ -11,6 +12,23 @@ message LineItem {
   uint32 qty = 2;
   double unit_price = 3;
   sandbox.common.v1.OrderStatus line_status = 4;
+  repeated ItemPart parts = 5;
+}
+
+message ItemPart {
+  string sku = 1;
+  uint32 qty = 2;
+  google.protobuf.DoubleValue weight = 3;
+}
+
+message OrderAttachments {
+  repeated Attachment invoices = 1;
+  repeated Attachment receipts = 2;
+}
+
+message Attachment {
+  string name = 1;
+  google.protobuf.StringValue note = 2;
 }
 
 message CardPayment {

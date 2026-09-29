@@ -27,7 +27,7 @@ public sealed class ProtoToClickHouseMapperTests
             ("event_time.nanos", "Int32"),
             ("status", "Enum8('ORDER_STATUS_UNSPECIFIED' = 0, 'ORDER_STATUS_CREATED' = 1, 'ORDER_STATUS_PAID' = 2)"),
             ("tags", "Array(LowCardinality(String))"),
-            ("items", "Nested(sku String, qty UInt32, unit_price Float64, line_status Enum8('ORDER_STATUS_UNSPECIFIED' = 0, 'ORDER_STATUS_CREATED' = 1, 'ORDER_STATUS_PAID' = 2))"),
+            ("items", "Nested(sku String, qty UInt32, unit_price Float64, line_status Enum8('ORDER_STATUS_UNSPECIFIED' = 0, 'ORDER_STATUS_CREATED' = 1, 'ORDER_STATUS_PAID' = 2), parts Array(Tuple(sku String, qty UInt32, weight Nullable(Float64))))"),
             ("metadata", "Map(String, String)"),
             ("note", "Nullable(String)"),
             ("card.last4", "String"),
@@ -38,8 +38,33 @@ public sealed class ProtoToClickHouseMapperTests
             ("payment", "Enum8('absent' = 0, 'card' = 11, 'cash' = 12, 'wallet' = 13)"),
             ("promo_code", "Nullable(String)"),
             ("status_history", "Array(Enum8('ORDER_STATUS_UNSPECIFIED' = 0, 'ORDER_STATUS_CREATED' = 1, 'ORDER_STATUS_PAID' = 2))"),
-            ("loyalty_points", "Nullable(Int32)")
+            ("loyalty_points", "Nullable(Int32)"),
+            ("attachments", "Tuple(invoices Array(Tuple(name String, note Nullable(String))), receipts Array(Tuple(name String, note Nullable(String))))")
         ], options => options.WithStrictOrdering());
+    }
+
+    [Fact]
+    public void GivenShipmentEventDescriptor_WhenMapped_ThenNestedRepeatedAndIndependentListsStaySeparate()
+    {
+        // Act
+        var columns = _sut.MapMessage(
+            ShipmentEvent.Descriptor,
+            OrdersQueueTestConfig.Defaults,
+            MappingTestSupport.EmptyOverrides);
+
+        // Assert
+        var checkpoints = columns.Should().ContainSingle(column => column.Name == "checkpoints").Subject;
+        checkpoints.Type.Should().StartWith("Nested(");
+        checkpoints.Type.Should().Contain("scans Array(Tuple(code String, operator_note Nullable(String)))");
+        checkpoints.Type.IndexOf("Nested(", "Nested(".Length, StringComparison.Ordinal).Should().Be(-1);
+        checkpoints.FlattensGoogleWrapper.Should().BeTrue();
+
+        var documents = columns.Should().ContainSingle(column => column.Name == "documents").Subject;
+        documents.Type.Should().StartWith("Tuple(");
+        documents.Type.Should().Contain("labels Array(Tuple(id String, pages Nullable(Int32)))");
+        documents.Type.Should().Contain("customs_forms Array(Tuple(id String, pages Nullable(Int32)))");
+        documents.Type.Should().NotContain("Nested(");
+        documents.FlattensGoogleWrapper.Should().BeTrue();
     }
 
     [Fact]
