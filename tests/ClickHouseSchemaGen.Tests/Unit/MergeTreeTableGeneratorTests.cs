@@ -30,6 +30,22 @@ public sealed class MergeTreeTableGeneratorTests
     }
 
     [Fact]
+    public void GivenNestedColumn_WhenGenerate_ThenDisablesFlattenNested()
+    {
+        var config = CreateTable(ttl: "toDateTime(`event_time.seconds`) + INTERVAL 1 DAY");
+        config.Columns.Add(new PipelineColumnConfig
+        {
+            Name = "items",
+            Type = "Nested(sku String)"
+        });
+
+        var sql = MergeTreeTableGenerator.Generate(config);
+
+        sql.Should().Contain("TTL toDateTime(`event_time.seconds`) + INTERVAL 1 DAY");
+        sql.Should().Contain("SETTINGS flatten_nested = 0;");
+    }
+
+    [Fact]
     public void GivenTableWithWhitespaceTtl_WhenGenerate_ThenOmitsTtlClause()
     {
         var config = CreateTable(ttl: "   ");

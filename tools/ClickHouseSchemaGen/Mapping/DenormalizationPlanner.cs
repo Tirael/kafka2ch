@@ -51,8 +51,14 @@ public sealed class DenormalizationPlanner
 
     internal IEnumerable<ClickHouseColumn> MapNestedFields(
         MessageDescriptor descriptor,
-        MappingContext context) =>
-        MapMessage(descriptor, context with { Depth = context.Depth + 1 });
+        MappingContext context,
+        string parentColumnPath) =>
+        // Overrides use the full proto path; column names stay local until the caller prefixes them.
+        MapMessage(descriptor, context with
+        {
+            Depth = context.Depth + 1,
+            ColumnPathPrefix = context.Qualify(parentColumnPath)
+        });
 
     private IEnumerable<ClickHouseColumn> MapField(
         FieldDescriptor field,

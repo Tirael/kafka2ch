@@ -26,7 +26,10 @@ public sealed class MessageFieldStrategy(DenormalizationPlanner planner) : IFiel
         var maxDepth = fieldOverride?.MaxDepth ?? request.Context.Defaults.MaxFlattenDepth;
         if (request.Context.Depth >= maxDepth)
         {
-            var innerColumns = planner.MapNestedFields(request.Field.MessageType, request.Context).ToArray();
+            var innerColumns = planner.MapNestedFields(
+                request.Field.MessageType,
+                request.Context,
+                request.ColumnPath).ToArray();
             return CreateSingleColumn(
                 request.ColumnPath,
                 DenormalizationPlanner.BuildTupleType(innerColumns),
@@ -50,7 +53,8 @@ public sealed class MessageFieldStrategy(DenormalizationPlanner planner) : IFiel
     {
         var innerColumns = planner.MapNestedFields(
             request.Field.MessageType,
-            request.Context with { Depth = maxDepth }).ToArray();
+            request.Context with { Depth = maxDepth },
+            request.ColumnPath).ToArray();
 
         return CreateSingleColumn(
             request.ColumnPath,
@@ -76,7 +80,10 @@ public sealed class MessageFieldStrategy(DenormalizationPlanner planner) : IFiel
     {
         List<ClickHouseColumn> columns = [];
 
-        foreach (var nestedColumn in planner.MapNestedFields(request.Field.MessageType, request.Context))
+        foreach (var nestedColumn in planner.MapNestedFields(
+            request.Field.MessageType,
+            request.Context,
+            request.ColumnPath))
         {
             var nestedPath = $"{request.ColumnPath}.{nestedColumn.Name}";
             columns.Add(nestedColumn with

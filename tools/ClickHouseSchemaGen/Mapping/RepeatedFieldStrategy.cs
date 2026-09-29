@@ -19,7 +19,10 @@ public sealed class RepeatedFieldStrategy(DenormalizationPlanner planner) : IFie
 
     private IEnumerable<ClickHouseColumn> MapRepeatedMessage(FieldMappingRequest request)
     {
-        var innerColumns = planner.MapNestedFields(request.Field.MessageType, request.Context).ToArray();
+        var innerColumns = planner.MapNestedFields(
+            request.Field.MessageType,
+            request.Context,
+            request.ColumnPath).ToArray();
 
         var strategy = request.Context.Defaults.RepeatedMessageStrategy.ToLowerInvariant();
         if (strategy == "flatten")
