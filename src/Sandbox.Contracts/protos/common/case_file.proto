@@ -1,0 +1,160 @@
+syntax = "proto3";
+
+package sandbox.common.v1;
+
+import "common/address.proto";
+import "common/money.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option csharp_namespace = "Sandbox.Contracts.Common";
+
+enum CaseStage {
+  CASE_STAGE_UNSPECIFIED = 0;
+  CASE_STAGE_DRAFT = 1;
+  CASE_STAGE_OPEN = 2;
+  CASE_STAGE_REVIEW = 3;
+  CASE_STAGE_SEALED = 4;
+}
+
+enum ContactKind {
+  CONTACT_KIND_UNSPECIFIED = 0;
+  CONTACT_KIND_EMAIL = 1;
+  CONTACT_KIND_PHONE = 2;
+  CONTACT_KIND_POST = 3;
+}
+
+// Wide commercial dossier attached to sandbox events.
+// Several independent repeated fields, maps, a oneof and nested lists
+// exercise the same shape of document the pipeline must preserve.
+message CaseFile {
+  string file_id = 1;
+  CaseStage stage = 2;
+  google.protobuf.Timestamp opened_at = 3;
+  optional string headline = 4;
+  Party principal = 5;
+  repeated Party counterparties = 6;
+  repeated Obligation obligations = 7;
+  map<string, string> labels = 8;
+
+  oneof instrument {
+    BankInstrument bank = 9;
+    WalletInstrument wallet = 10;
+    LedgerInstrument ledger = 11;
+  }
+
+  EvidenceBundle evidence = 12;
+  repeated Schedule schedules = 13;
+  repeated JournalEntry journal = 14;
+  bytes seal = 15;
+  google.protobuf.StringValue clerk_note = 16;
+  repeated string markers = 17;
+}
+
+message Party {
+  string party_id = 1;
+  string legal_name = 2;
+  Address residence = 3;
+  repeated ContactPoint contacts = 4;
+  map<string, string> traits = 5;
+  optional string registration_no = 6;
+  repeated string aliases = 7;
+}
+
+message ContactPoint {
+  ContactKind kind = 1;
+  string value = 2;
+  google.protobuf.BoolValue preferred = 3;
+  optional string note = 4;
+}
+
+message Obligation {
+  string obligation_id = 1;
+  Money amount = 2;
+  google.protobuf.Timestamp due_at = 3;
+  repeated Installment installments = 4;
+  repeated string covenants = 5;
+  optional string memo = 6;
+}
+
+message Installment {
+  uint32 sequence = 1;
+  Money amount = 2;
+  google.protobuf.Timestamp due_at = 3;
+  repeated string notes = 4;
+}
+
+message BankInstrument {
+  string iban = 1;
+  string bic = 2;
+  string holder = 3;
+  optional string branch = 4;
+}
+
+message WalletInstrument {
+  string provider = 1;
+  string account_ref = 2;
+  google.protobuf.StringValue display_name = 3;
+}
+
+message LedgerInstrument {
+  string book = 1;
+  string account = 2;
+  int64 posted_minor = 3;
+  repeated string dimensions = 4;
+}
+
+message EvidenceBundle {
+  repeated Exhibit exhibits = 1;
+  repeated Statement statements = 2;
+}
+
+message Exhibit {
+  string exhibit_id = 1;
+  string title = 2;
+  bytes digest = 3;
+  repeated Excerpt excerpts = 4;
+  map<string, string> attributes = 5;
+}
+
+message Excerpt {
+  uint32 page = 1;
+  string text = 2;
+  google.protobuf.StringValue annotation = 3;
+  repeated string highlights = 4;
+}
+
+message Statement {
+  string author = 1;
+  google.protobuf.Timestamp stated_at = 2;
+  string body = 3;
+  repeated string witnesses = 4;
+}
+
+message Schedule {
+  string schedule_id = 1;
+  string title = 2;
+  repeated Window windows = 3;
+}
+
+message Window {
+  string window_id = 1;
+  google.protobuf.Timestamp starts_at = 2;
+  repeated Slot slots = 3;
+}
+
+message Slot {
+  uint32 index = 1;
+  string label = 2;
+  optional string note = 3;
+  repeated string assignees = 4;
+}
+
+message JournalEntry {
+  string entry_id = 1;
+  google.protobuf.Timestamp recorded_at = 2;
+  string actor = 3;
+  string body = 4;
+  repeated string tags = 5;
+  map<string, string> context = 6;
+}

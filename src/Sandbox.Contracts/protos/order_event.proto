@@ -2,6 +2,7 @@ syntax = "proto3";
 
 package sandbox.orders.v1;
 
+import "common/case_file.proto";
 import "common/money.proto";
 import "google/protobuf/timestamp.proto";
 import "google/protobuf/wrappers.proto";
@@ -31,4 +32,5 @@ message OrderEvent {
   repeated sandbox.common.v1.OrderStatus status_history = 15;
   optional int32 loyalty_points = 16;
   OrderAttachments attachments = 17;
+  sandbox.common.v1.CaseFile case_file = 18;
 }

@@ -2,14 +2,16 @@
 
 Демонстрационный стенд: **Kafka (Protobuf + Schema Registry) → ClickHouse → агрегаты**.
 
-Sandbox-приложение на .NET 8 публикует события заказов и отгрузок в Kafka; ClickHouse читает топики через Kafka table engine, складывает сырые строки в MergeTree и агрегирует их materialized view. Background worker периодически читает агрегаты и пишет их в лог.
+Sandbox-приложение на .NET 8 публикует события заказов и отгрузок в Kafka; ClickHouse читает топики через Kafka table engine, складывает сырые строки в MergeTree и агрегирует их materialized view. Background worker периодически читает агрегаты и пишет их в лог. Отдельный консьюмер сверяет прочитанное из Kafka с полными строками ClickHouse.
 
 ```
 PublishOrders / PublishShipments  →  Kafka + Schema Registry
                                          ↓
                               ClickHouse (Kafka engine + MV)
                                          ↓
-                              ReadAggregates (лог агрегатов)
+                    orders_full / shipments_full  +  агрегаты
+                                         ↓
+              VerifyStoredMessages (сверка)   ReadAggregates
 ```
 
 Подробности архитектуры и решений — в [PLAN.md](PLAN.md).
@@ -64,6 +66,7 @@ cp .env.example .env
 | `PublishShipments__Topic` / `IntervalMs` | топик и интервал публикации отгрузок |
 | `ClickHouse__Host` / `Port` / `Password` / … | подключение к ClickHouse |
 | `ReadAggregates__IntervalMs` / `WindowMinutes` | период и окно чтения агрегатов |
+| `VerifyStoredMessages__*` | сверка сообщений Kafka с `orders_full` / `shipments_full` и проекциями `orders` / `shipments` |
 
 В docker-compose эти значения уже заданы для работы внутри сети (`kafka:9092`, `clickhouse:8123` и т.д.).
 
@@ -183,6 +186,8 @@ curl -s http://localhost:8081/subjects/orders-value/versions/latest | jq .
 
 Kafka engine в ClickHouse флашит блоками (размер блока / таймаут). В демо задержка в несколько секунд до появления строк в `orders` / `orders_agg_1m` — нормальное поведение.
 
+Сообщения заказов и отгрузок — широкие вложенные документы размером 150–200 КБ. Полная копия колонок Kafka-очереди лежит в `orders_full` и `shipments_full`. В логах `sandbox-app` строка `Stored order ... matches ClickHouse` означает, что вложенные поля в таблице совпали с сообщением из Kafka; `differs from ClickHouse` перечисляет расхождения.
+
 ## Сборка, codegen и тесты
 
 Регенерация format schemas и DDL ClickHouse (из protobuf):
@@ -227,7 +232,7 @@ docker exec kafka kafka-console-consumer \
 ## Структура репозитория
 
 ```
-src/Sandbox.App/          # worker: PublishOrders, PublishShipments, ReadAggregates
+src/Sandbox.App/          # worker: PublishOrders, PublishShipments, ReadAggregates, VerifyStoredMessages
 src/Sandbox.Contracts/    # protobuf + clickhouse.codegen.json
 tools/ClickHouseSchemaGen # proto3 → ClickHouse DDL
 docker/clickhouse/        # init SQL + format schemas

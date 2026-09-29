@@ -1,3 +1,5 @@
+using Sandbox.App.Features.ComplexPayload;
+
 namespace Sandbox.App.Features.PublishShipments;
 
 public static class ShipmentEventFactory
@@ -66,6 +68,7 @@ public static class ShipmentEventFactory
         ApplyDeliveryOutcome(shipmentEvent, now, status);
         ApplyPriority(shipmentEvent);
         ApplyStatusHistory(shipmentEvent, status);
+        CaseFileFactory.Attach(shipmentEvent, now);
 
         return (key, shipmentEvent);
     }
