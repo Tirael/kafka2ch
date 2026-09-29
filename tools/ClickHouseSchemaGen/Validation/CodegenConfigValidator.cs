@@ -44,6 +44,12 @@ public sealed class CodegenConfigValidator : AbstractValidator<CodegenConfig>
             .WithMessage(config => BuildMergeTreeSourceTableReferenceError(config))
             .When(config => config.Pipeline?.MergeTreeTables.Any(table =>
                 !string.IsNullOrWhiteSpace(table.SourceTable)) == true);
+
+        RuleFor(config => config)
+            .Must(HasNoAutoMaterializedViewNameConflicts)
+            .WithMessage(config => BuildAutoMaterializedViewNameError(config))
+            .When(config => config.Pipeline?.MergeTreeTables.Any(table =>
+                MaterializedViewAutoGenerator.ShouldCreate(table, config.Pipeline.MaterializedViews)) == true);
     }
 
     private static bool HasValidMaterializedViewReferences(CodegenConfig config)
@@ -119,5 +125,38 @@ public sealed class CodegenConfigValidator : AbstractValidator<CodegenConfig>
         }
 
         return "Pipeline MergeTree tables reference unknown Kafka source tables.";
+    }
+
+    private static bool HasNoAutoMaterializedViewNameConflicts(CodegenConfig config) =>
+        FindAutoMaterializedViewNameConflict(config) is null;
+
+    private static string BuildAutoMaterializedViewNameError(CodegenConfig config) =>
+        FindAutoMaterializedViewNameConflict(config)
+        ?? "Auto-generated materialized view name conflicts with an existing view.";
+
+    private static string? FindAutoMaterializedViewNameConflict(CodegenConfig config)
+    {
+        if (config.Pipeline is null)
+            return null;
+
+        var explicitViews = config.Pipeline.MaterializedViews;
+        var usedNames = explicitViews
+            .Select(view => view.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var table in config.Pipeline.MergeTreeTables)
+        {
+            if (!MaterializedViewAutoGenerator.ShouldCreate(table, explicitViews))
+                continue;
+
+            var name = MaterializedViewAutoGenerator.DefaultName(table.TableName);
+            if (!usedNames.Add(name))
+            {
+                return $"MergeTree table '{table.TableName}' auto-generates materialized view '{name}', " +
+                    "but that name is already used.";
+            }
+        }
+
+        return null;
     }
 }

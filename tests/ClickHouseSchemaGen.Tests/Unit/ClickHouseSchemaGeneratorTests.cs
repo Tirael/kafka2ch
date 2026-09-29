@@ -122,9 +122,75 @@ public sealed class ClickHouseSchemaGeneratorTests
             _sut.GenerateFromConfigFile(configPath);
 
             var pipelineSql = File.ReadAllText(Path.Combine(outputDirectory, "generated_pipeline.sql"));
+            var viewCount = pipelineSql.Split("CREATE MATERIALIZED VIEW").Length - 1;
+            viewCount.Should().Be(1);
             pipelineSql.Should().Contain("CREATE TABLE orders_raw");
             pipelineSql.Should().Contain("order_id");
             pipelineSql.Should().Contain("`price.amount`");
+            pipelineSql.Should().Contain("CREATE MATERIALIZED VIEW orders_raw_mv TO orders_raw AS");
+            pipelineSql.Should().Contain("AS `price.amount`");
+            pipelineSql.Should().Contain("FROM orders_queue;");
+        }
+        finally
+        {
+            if (Directory.Exists(outputDirectory))
+                Directory.Delete(outputDirectory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void GivenAutoColumnsWithoutMaterializedView_WhenGenerateFromConfigFile_ThenWritesMirrorView()
+    {
+        var outputDirectory = Path.Combine(Path.GetTempPath(), $"clickhouse-schema-gen-{Guid.NewGuid():N}");
+        var configPath = Path.Combine(outputDirectory, "clickhouse.codegen.json");
+        Directory.CreateDirectory(outputDirectory);
+
+        var config = new CodegenConfig
+        {
+            Defaults = OrdersQueueTestConfig.Defaults,
+            KafkaTables =
+            [
+                new KafkaTableConfig
+                {
+                    MessageType = "Sandbox.Contracts.OrderEvent, Sandbox.Contracts",
+                    TableName = "orders_queue",
+                    ProtoFile = "order_event",
+                    MessageName = "OrderEvent",
+                    OutputPath = "generated_queue.sql",
+                    Kafka = new KafkaSettingsConfig
+                    {
+                        Topic = "orders",
+                        GroupName = "clickhouse-orders"
+                    }
+                }
+            ],
+            Pipeline = new PipelineConfig
+            {
+                OutputPath = "generated_pipeline.sql",
+                MergeTreeTables =
+                [
+                    new MergeTreeTableConfig
+                    {
+                        TableName = "orders_raw",
+                        SourceTable = "orders_queue",
+                        OrderBy = "(order_id)",
+                        Columns = []
+                    }
+                ]
+            }
+        };
+
+        File.WriteAllText(
+            configPath,
+            JsonSerializer.Serialize(config, new JsonSerializerOptions { WriteIndented = true }));
+
+        try
+        {
+            _sut.GenerateFromConfigFile(configPath);
+
+            var pipelineSql = File.ReadAllText(Path.Combine(outputDirectory, "generated_pipeline.sql"));
+            var viewCount = pipelineSql.Split("CREATE MATERIALIZED VIEW").Length - 1;
+            viewCount.Should().Be(1);
             pipelineSql.Should().Contain("CREATE MATERIALIZED VIEW orders_raw_mv TO orders_raw AS");
             pipelineSql.Should().Contain("AS `price.amount`");
             pipelineSql.Should().Contain("FROM orders_queue;");

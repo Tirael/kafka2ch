@@ -315,12 +315,27 @@ TTL event_time + INTERVAL 90 DAY;
 | `materializedViews` | Строит `SELECT col AS col, … FROM sourceTable` по всем колонкам queue                              |
 
 
+Если MergeTree заполняется автоколонками и в `materializedViews` нет view с `targetTable`, равным этой таблице, генератор сам добавляет зеркальный view `{tableName}_mv` (`orders_raw` -> `orders_raw_mv`). Явный view на ту же таблицу (в том числе с пустым `columns`) отключает автосоздание: используется только он.
+
+Короткий вариант без секции `materializedViews`:
+
+```json
+"mergeTreeTables": [
+  {
+    "tableName": "orders_raw",
+    "sourceTable": "orders_queue",
+    "orderBy": "(order_id)"
+  }
+]
+```
+
 Правила:
 
 - Для MergeTree при пустом `columns` поле `sourceTable` **обязательно** и должно совпадать с `kafkaTables[].tableName`.
-- Непустой `columns` - только перечисленные поля.
+- Непустой `columns` - только перечисленные поля. Автоматический view в этом случае не создаётся: для rename и expression нужен явный `materializedViews`.
 - Зеркало копирует protobuf->ClickHouse типы queue as-is (Timestamp остаётся `*.seconds`/`*.nanos`, enum - `Enum8`/`Enum16`). Для преобразований (`toDateTime64`, `toString`, rename) задайте `columns` явно.
 - `orderBy` / `ttl` по-прежнему задаются вручную и должны ссылаться на колонки итоговой таблицы.
+- Имя автогенерируемого view (`{tableName}_mv`) не должно совпадать с уже объявленным `materializedViews[].name`.
 
 
 
@@ -338,7 +353,7 @@ TTL event_time + INTERVAL 90 DAY;
 2. Добавьте элемент в `kafkaTables` с `messageType`, `protoFile`, `messageName`, `tableName`, `outputPath`.
 3. Заполните `kafka.topic` / `groupName` (и при необходимости `skipBytes`).
 4. При необходимости задайте `fieldOverrides`.
-5. Если нужна аналитика - добавьте `mergeTreeTables` + `materializedViews` в `pipeline` (`sourceTable` / `targetTable` должны ссылаться на существующие имена). Для зеркала всех полей queue оставьте `columns` пустым и укажите `sourceTable` у MergeTree.
+5. Если нужна аналитика - добавьте `mergeTreeTables` + `materializedViews` в `pipeline` (`sourceTable` / `targetTable` должны ссылаться на существующие имена). Для зеркала всех полей queue оставьте `columns` пустым и укажите `sourceTable` у MergeTree: view `{tableName}_mv` будет создан сам, если вы не описали view на эту таблицу.
 6. Выполните `dotnet build src/Sandbox.Contracts` и проверьте сгенерированный SQL.
 7. Пересоздайте ClickHouse init при необходимости (`docker compose` / volume init).
 
@@ -357,6 +372,7 @@ TTL event_time + INTERVAL 90 DAY;
 - MV ссылается на неизвестный `sourceTable` / `targetTable`
 - MergeTree с пустым `columns` без `sourceTable` (нужен для автозаполнения)
 - MergeTree `sourceTable` не совпадает с `kafkaTables[].tableName`
+- Автогенерируемое имя view `{tableName}_mv` уже занято другим materialized view
 - TTL ссылается на колонку, которой нет в `columns` (например `event_time` у `shipments`, где есть только `shipped_at`)
 - `repeatedMessageStrategy` не из списка `nested`  `arraytuple`  `flatten`
 
