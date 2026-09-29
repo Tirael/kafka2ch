@@ -19,6 +19,22 @@ message TrackingCheckpoint {
   google.protobuf.Timestamp recorded_at = 1;
   string location = 2;
   ShipmentStatus status = 3;
+  repeated Scan scans = 4;
+}
+
+message Scan {
+  string code = 1;
+  google.protobuf.StringValue operator_note = 2;
+}
+
+message ShipmentDocuments {
+  repeated Document labels = 1;
+  repeated Document customs_forms = 2;
+}
+
+message Document {
+  string id = 1;
+  google.protobuf.Int32Value pages = 2;
 }
 
 message DeliveredInfo {

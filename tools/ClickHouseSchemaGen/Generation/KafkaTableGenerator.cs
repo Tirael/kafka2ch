@@ -47,7 +47,7 @@ public static class KafkaTableGenerator
 
     private static bool ShouldFlattenGoogleWrappers(IReadOnlyList<ClickHouseColumn> columns, KafkaTableConfig config) =>
         config.Kafka.ProtobufFlattenGoogleWrappers
-        && columns.Any(column => column.Strategy == MappingStrategy.WellKnownType);
+        && columns.Any(column => column.FlattensGoogleWrapper || column.Strategy == MappingStrategy.WellKnownType);
 
     private static bool RequiresFlattenNested(IReadOnlyList<ClickHouseColumn> columns, KafkaTableConfig config) =>
         !config.Kafka.FlattenNested

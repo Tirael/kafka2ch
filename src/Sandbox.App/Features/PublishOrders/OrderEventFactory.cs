@@ -40,14 +40,29 @@ public static class OrderEventFactory
         var itemCount = Random.Shared.Next(1, 3);
         for (var i = 0; i < itemCount; i++)
         {
-            orderEvent.Items.Add(new LineItem
+            var lineItem = new LineItem
             {
                 Sku = Skus[Random.Shared.Next(Skus.Length)],
                 Qty = (uint)Random.Shared.Next(1, 5),
                 UnitPrice = Random.Shared.NextDouble() * 100,
                 LineStatus = Statuses[Random.Shared.Next(Statuses.Length)]
+            };
+            lineItem.Parts.Add(new ItemPart
+            {
+                Sku = $"{lineItem.Sku}-PART",
+                Qty = 1,
+                Weight = Random.Shared.NextDouble() * 2
             });
+            orderEvent.Items.Add(lineItem);
         }
+
+        orderEvent.Attachments = new OrderAttachments();
+        orderEvent.Attachments.Invoices.Add(new Attachment
+        {
+            Name = "invoice.pdf",
+            Note = "generated"
+        });
+        orderEvent.Attachments.Receipts.Add(new Attachment { Name = "receipt.pdf" });
 
         orderEvent.Metadata["source"] = "sandbox-app";
         orderEvent.Metadata[MetadataKeys[Random.Shared.Next(MetadataKeys.Length)]] = "demo";

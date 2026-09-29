@@ -39,13 +39,23 @@ public static class ShipmentEventFactory
         var checkpointCount = Random.Shared.Next(1, 4);
         for (var i = 0; i < checkpointCount; i++)
         {
-            shipmentEvent.Checkpoints.Add(new TrackingCheckpoint
+            var checkpoint = new TrackingCheckpoint
             {
                 RecordedAt = Google.Protobuf.WellKnownTypes.Timestamp.FromDateTimeOffset(now.AddMinutes(-Random.Shared.Next(1, 60))),
                 Location = Locations[Random.Shared.Next(Locations.Length)],
                 Status = Statuses[Random.Shared.Next(Statuses.Length)]
+            };
+            checkpoint.Scans.Add(new Scan
+            {
+                Code = "SCAN",
+                OperatorNote = "hub"
             });
+            shipmentEvent.Checkpoints.Add(checkpoint);
         }
+
+        shipmentEvent.Documents = new ShipmentDocuments();
+        shipmentEvent.Documents.Labels.Add(new Document { Id = "label-1", Pages = 1 });
+        shipmentEvent.Documents.CustomsForms.Add(new Document { Id = "customs-1" });
 
         shipmentEvent.CarrierMetadata["carrier"] = "sandbox-express";
         shipmentEvent.CarrierMetadata[CarrierKeys[Random.Shared.Next(CarrierKeys.Length)]] = "demo";

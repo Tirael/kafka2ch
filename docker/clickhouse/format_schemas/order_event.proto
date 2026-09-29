@@ -30,4 +30,5 @@ message OrderEvent {
   google.protobuf.StringValue promo_code = 14;
   repeated sandbox.common.v1.OrderStatus status_history = 15;
   optional int32 loyalty_points = 16;
+  OrderAttachments attachments = 17;
 }

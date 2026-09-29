@@ -22,21 +22,24 @@ public sealed class RepeatedFieldStrategy(DenormalizationPlanner planner) : IFie
         var innerColumns = planner.MapNestedFields(request.Field.MessageType, request.Context).ToArray();
 
         var strategy = request.Context.Defaults.RepeatedMessageStrategy.ToLowerInvariant();
-        var nestedType = strategy switch
+        if (strategy == "flatten")
         {
-            "arraytuple" => $"Array({DenormalizationPlanner.BuildTupleType(innerColumns)})",
-            "flatten" => throw new NotSupportedException(
-                $"Repeated message '{request.ColumnPath}' cannot use flatten strategy."),
-            _ => DenormalizationPlanner.BuildNestedType(innerColumns)
-        };
+            throw new NotSupportedException(
+                $"Repeated message '{request.ColumnPath}' cannot use flatten strategy.");
+        }
+
+        var repeatedType = strategy == "arraytuple"
+            ? $"Array({DenormalizationPlanner.BuildTupleType(innerColumns)})"
+            : DenormalizationPlanner.BuildNestedType(innerColumns);
 
         return
         [
             ClickHouseColumn.Create(
                 request.ColumnPath,
-                nestedType,
+                repeatedType,
                 MappingStrategy.Nested,
-                "proto repeated message")
+                "proto repeated message",
+                innerColumns.Any(column => column.FlattensGoogleWrapper))
         ];
     }
 }

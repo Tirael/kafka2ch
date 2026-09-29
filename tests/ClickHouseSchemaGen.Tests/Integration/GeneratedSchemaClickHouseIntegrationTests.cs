@@ -53,9 +53,10 @@ public sealed class GeneratedSchemaClickHouseIntegrationTests : IAsyncLifetime
             "payment",
             "promo_code",
             "status_history",
-            "loyalty_points"
+            "loyalty_points",
+            "attachments"
         ], options => options.WithStrictOrdering());
-        columns.Single(column => column.Name == "items").Type.Should().StartWith("Nested(");
+        columns.Single(column => column.Name == "items").Type.Should().Contain("parts Array(Tuple(");
         columns.Single(column => column.Name == "metadata").Type.Should().Be("Map(String, String)");
         columns.Single(column => column.Name == "note").Type.Should().Be("Nullable(String)");
     }
@@ -102,13 +103,18 @@ public sealed class GeneratedSchemaClickHouseIntegrationTests : IAsyncLifetime
             LoyaltyPoints = 100
         };
         orderEvent.Tags.AddRange(["promo", "vip"]);
-        orderEvent.Items.Add(new LineItem
+        var lineItem = new LineItem
         {
             Sku = "SKU-42",
             Qty = 3,
             UnitPrice = 9.99,
             LineStatus = OrderStatus.Paid
-        });
+        };
+        lineItem.Parts.Add(new ItemPart { Sku = "PART-1", Qty = 1, Weight = 0.4 });
+        orderEvent.Items.Add(lineItem);
+        orderEvent.Attachments = new OrderAttachments();
+        orderEvent.Attachments.Invoices.Add(new Attachment { Name = "invoice.pdf", Note = "paid" });
+        orderEvent.Attachments.Receipts.Add(new Attachment { Name = "receipt.pdf" });
         orderEvent.Metadata["source"] = "integration-test";
         orderEvent.StatusHistory.Add(OrderStatus.Created);
         orderEvent.StatusHistory.Add(OrderStatus.Paid);
@@ -139,7 +145,11 @@ public sealed class GeneratedSchemaClickHouseIntegrationTests : IAsyncLifetime
                 note,
                 `card.last4`,
                 toString(payment) AS payment,
-                promo_code
+                promo_code,
+                toJSONString(items.parts.sku) AS part_skus,
+                toJSONString(items.parts.weight) AS part_weights,
+                toJSONString(attachments.invoices.note) AS invoice_notes,
+                toJSONString(attachments.receipts.name) AS receipt_names
             FROM order_events_ingest
             WHERE order_id = 'ord-integration-1'
             """;
@@ -162,6 +172,91 @@ public sealed class GeneratedSchemaClickHouseIntegrationTests : IAsyncLifetime
         reader.GetString(11).Should().Be("4242");
         reader.GetString(12).Should().Be("card");
         reader.GetString(13).Should().Be("PROMO-42");
+        reader.GetString(14).Should().Contain("PART-1");
+        reader.GetString(15).Should().Contain("0.4");
+        reader.GetString(16).Should().Contain("paid");
+        reader.GetString(17).Should().Contain("receipt.pdf");
+    }
+
+    [Fact]
+    public async Task GivenShipmentEventProtobuf_WhenInsertedViaProtobufSingle_ThenNestedScansAndDocumentsAreReadable()
+    {
+        // Arrange
+        var columns = new DenormalizationPlanner().MapMessage(
+            ShipmentEvent.Descriptor,
+            OrdersQueueTestConfig.Defaults,
+            MappingTestSupport.EmptyOverrides);
+        var columnDefinitions = string.Join(
+            ",\n    ",
+            columns.Select(column => SqlColumnFormatter.FormatBareDefinition(column.Name, column.Type)));
+        var createTableSql = $"""
+            CREATE TABLE shipment_events_ingest
+            (
+                {columnDefinitions}
+            )
+            ENGINE = MergeTree
+            ORDER BY shipment_id
+            SETTINGS flatten_nested = 0, input_format_protobuf_oneof_presence = 1, input_format_protobuf_flatten_google_wrappers = 1
+            """;
+        var execResult = await _clickHouse.ExecScriptAsync(createTableSql);
+        execResult.ExitCode.Should().Be(0, execResult.Stderr);
+
+        var shippedAt = Timestamp.FromDateTimeOffset(DateTimeOffset.Parse("2024-06-01T12:00:00Z"));
+        var shipmentEvent = new ShipmentEvent
+        {
+            ShipmentId = "shp-integration-1",
+            OrderId = "ord-integration-1",
+            ShippedAt = shippedAt,
+            Status = ShipmentStatus.InTransit,
+            Destination = new Address
+            {
+                Country = "DE",
+                City = "Berlin",
+                Street = "Main",
+                PostalCode = "10115"
+            },
+            Documents = new ShipmentDocuments()
+        };
+        var checkpoint = new TrackingCheckpoint
+        {
+            RecordedAt = shippedAt,
+            Location = "hub",
+            Status = ShipmentStatus.InTransit
+        };
+        checkpoint.Scans.Add(new Scan { Code = "SCAN-1", OperatorNote = "loaded" });
+        shipmentEvent.Checkpoints.Add(checkpoint);
+        shipmentEvent.Documents.Labels.Add(new Document { Id = "label-1", Pages = 2 });
+        shipmentEvent.Documents.CustomsForms.Add(new Document { Id = "customs-1" });
+
+        using var payload = new MemoryStream();
+        shipmentEvent.WriteTo(payload);
+
+        // Act
+        await InsertProtobufAsync(
+            "INSERT INTO shipment_events_ingest SETTINGS format_schema='shipment_event:ShipmentEvent', input_format_protobuf_oneof_presence=1, input_format_protobuf_flatten_google_wrappers=1 FORMAT ProtobufSingle",
+            payload.ToArray());
+
+        await using var connection = new ClickHouseConnection(_clickHouse.GetConnectionString());
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT
+                toJSONString(checkpoints.scans.code) AS scan_codes,
+                toJSONString(checkpoints.scans.operator_note) AS scan_notes,
+                toJSONString(documents.labels.pages) AS label_pages,
+                toJSONString(documents.customs_forms.id) AS customs_ids
+            FROM shipment_events_ingest
+            WHERE shipment_id = 'shp-integration-1'
+            """;
+        await using var reader = await command.ExecuteReaderAsync();
+        var hasRow = await reader.ReadAsync();
+
+        // Assert
+        hasRow.Should().BeTrue();
+        reader.GetString(0).Should().Contain("SCAN-1");
+        reader.GetString(1).Should().Contain("loaded");
+        reader.GetString(2).Should().Contain("2");
+        reader.GetString(3).Should().Contain("customs-1");
     }
 
     [Fact]

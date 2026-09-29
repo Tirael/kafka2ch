@@ -26,4 +26,5 @@ message ShipmentEvent {
 
   google.protobuf.Int32Value priority = 11;
   repeated ShipmentStatus status_history = 12;
+  ShipmentDocuments documents = 13;
 }

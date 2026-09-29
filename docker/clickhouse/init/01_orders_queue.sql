@@ -11,7 +11,7 @@ CREATE TABLE orders_queue
     `event_time.nanos`   Int32,  -- nested message
     status               Enum8('ORDER_STATUS_UNSPECIFIED' = 0, 'ORDER_STATUS_CREATED' = 1, 'ORDER_STATUS_PAID' = 2),  -- proto enum
     tags                 Array(LowCardinality(String)),  -- proto repeated
-    items                Nested(sku String, qty UInt32, unit_price Float64, line_status Enum8('ORDER_STATUS_UNSPECIFIED' = 0, 'ORDER_STATUS_CREATED' = 1, 'ORDER_STATUS_PAID' = 2)),  -- proto repeated message
+    items                Nested(sku String, qty UInt32, unit_price Float64, line_status Enum8('ORDER_STATUS_UNSPECIFIED' = 0, 'ORDER_STATUS_CREATED' = 1, 'ORDER_STATUS_PAID' = 2), parts Array(Tuple(sku String, qty UInt32, weight Nullable(Float64)))),  -- proto repeated message
     metadata             Map(String, String),  -- proto map
     note                 Nullable(String),  -- proto optional
     `card.last4`         String,  -- nested message
@@ -22,7 +22,8 @@ CREATE TABLE orders_queue
     payment              Enum8('absent' = 0, 'card' = 11, 'cash' = 12, 'wallet' = 13),  -- oneof presence
     promo_code           Nullable(String),  -- well-known type
     status_history       Array(Enum8('ORDER_STATUS_UNSPECIFIED' = 0, 'ORDER_STATUS_CREATED' = 1, 'ORDER_STATUS_PAID' = 2)),  -- proto repeated
-    loyalty_points       Nullable(Int32)  -- proto optional
+    loyalty_points       Nullable(Int32),  -- proto optional
+    attachments          Tuple(invoices Array(Tuple(name String, note Nullable(String))), receipts Array(Tuple(name String, note Nullable(String))))  -- nested message
 )
 ENGINE = Kafka
 SETTINGS
