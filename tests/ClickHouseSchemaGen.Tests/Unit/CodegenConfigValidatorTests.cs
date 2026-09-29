@@ -162,6 +162,42 @@ public sealed class CodegenConfigValidatorTests
     }
 
     [Fact]
+    public void GivenAutoColumnsWithoutMaterializedView_WhenValidate_ThenSucceeds()
+    {
+        var config = CreateValidConfig();
+        config.Pipeline!.MergeTreeTables[0].Columns = [];
+        config.Pipeline.MergeTreeTables[0].SourceTable = "orders_queue";
+        config.Pipeline.MaterializedViews = [];
+
+        var result = _sut.Validate(config);
+
+        result.IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public void GivenAutoViewNameConflict_WhenValidate_ThenFails()
+    {
+        var config = CreateValidConfig();
+        config.Pipeline!.MergeTreeTables[0].Columns = [];
+        config.Pipeline.MergeTreeTables[0].SourceTable = "orders_queue";
+        config.Pipeline.MaterializedViews[0].Name = "orders_mv";
+        config.Pipeline.MaterializedViews[0].TargetTable = "orders_other";
+        config.Pipeline.MergeTreeTables.Add(new MergeTreeTableConfig
+        {
+            TableName = "orders_other",
+            OrderBy = "(order_id)",
+            Columns = [new PipelineColumnConfig { Name = "order_id", Type = "String" }]
+        });
+
+        var result = _sut.Validate(config);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(error =>
+            error.ErrorMessage.Contains("auto-generates materialized view 'orders_mv'", StringComparison.Ordinal)
+            && error.ErrorMessage.Contains("already used", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void GivenMergeTreeWithUnknownSourceTable_WhenValidate_ThenFails()
     {
         var config = CreateValidConfig();

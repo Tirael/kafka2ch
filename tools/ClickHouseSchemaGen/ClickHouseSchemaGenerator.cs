@@ -63,16 +63,25 @@ public sealed class ClickHouseSchemaGenerator(
             .AppendLine(SqlScriptWriter.GeneratedHeader)
             .AppendLine();
 
-        foreach (var mergeTreeTable in pipeline.MergeTreeTables)
+        var expandedTables = pipeline.MergeTreeTables
+            .Select(mergeTreeTable => PipelineColumnExpander.ExpandMergeTreeTable(mergeTreeTable, queueColumnsByTable))
+            .ToList();
+
+        foreach (var mergeTreeTable in expandedTables)
         {
-            var resolved = PipelineColumnExpander.ExpandMergeTreeTable(mergeTreeTable, queueColumnsByTable);
-            pipelineBuilder.Append(MergeTreeTableGenerator.Generate(resolved));
+            pipelineBuilder.Append(MergeTreeTableGenerator.Generate(mergeTreeTable));
         }
 
-        foreach (var materializedView in pipeline.MaterializedViews)
+        var materializedViews = pipeline.MaterializedViews
+            .Select(materializedView => PipelineColumnExpander.ExpandMaterializedView(materializedView, queueColumnsByTable))
+            .Concat(MaterializedViewAutoGenerator.CreateForAutoColumns(
+                pipeline.MergeTreeTables,
+                expandedTables,
+                pipeline.MaterializedViews));
+
+        foreach (var materializedView in materializedViews)
         {
-            var resolved = PipelineColumnExpander.ExpandMaterializedView(materializedView, queueColumnsByTable);
-            pipelineBuilder.Append(MaterializedViewGenerator.Generate(resolved));
+            pipelineBuilder.Append(MaterializedViewGenerator.Generate(materializedView));
         }
 
         if (!string.IsNullOrWhiteSpace(pipeline.TrailingSql))
