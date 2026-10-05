@@ -347,6 +347,63 @@ TTL event_time + INTERVAL 90 DAY;
 
 
 
+## Миграции схемы (сравнение двух proto → `ALTER TABLE`)
+
+ClickHouse init SQL одноразовый (`/docker-entrypoint-initdb.d` только на пустом volume). Для эволюции **MergeTree**-таблиц без `down -v` сравните две protobuf-схемы и сгенерируйте `ALTER TABLE`.
+
+### Как это работает
+
+1. Оба message мапятся теми же правилами, что и codegen (`DenormalizationPlanner` + `defaults` / `fieldOverrides`).
+2. `ColumnSchemaComparer` сравнивает списки колонок по имени:
+   - есть только в новой схеме → `ADD COLUMN`
+   - есть только в старой → `DROP COLUMN` (по умолчанию **не** эмитится)
+   - тип изменился → `MODIFY COLUMN`
+3. `AlterTableMigrationGenerator` собирает один `ALTER TABLE …`.
+
+**Важно:** `ENGINE = Kafka` **не поддерживает** `ADD`/`MODIFY COLUMN`. Для queue-таблиц: обновить `.proto` / format schema → `DROP` + `CREATE` queue → `ALTER` MergeTree → пересоздать MV. Мигратор генерирует `ALTER` для mutable-таблиц (MergeTree и зеркала).
+
+### CLI
+
+```bash
+dotnet exec tools/ClickHouseSchemaGen.Cli/bin/Debug/net8.0/ClickHouseSchemaGen.Cli.dll \
+  --migrate \
+  --from "Sandbox.Contracts.TestFixtures.MigrationBaseline, Sandbox.Contracts" \
+  --to   "Sandbox.Contracts.TestFixtures.MigrationEvolved, Sandbox.Contracts" \
+  --table orders_raw \
+  --output docker/clickhouse/migrations/001_orders_raw_alter.sql
+```
+
+Флаги:
+
+| Флаг | Значение по умолчанию | Описание |
+| --- | --- | --- |
+| `--drop-removed` | выкл. | Эмитить `DROP COLUMN` для удалённых из proto полей |
+| `--no-modify` | выкл. | Не эмитить `MODIFY COLUMN` при смене типа |
+| `--output` | stdout | Путь к `.sql` |
+
+### API (C#)
+
+```csharp
+var migrator = new ProtoSchemaMigrator();
+var sql = migrator.GenerateAlterTableSql(
+    tableName: "orders_raw",
+    fromDescriptor: MigrationBaseline.Descriptor,
+    toDescriptor: MigrationEvolved.Descriptor,
+    defaults: config.Defaults,
+    overrides: config.FieldOverrides,
+    options: new AlterTableMigrationOptions
+    {
+        DropRemovedColumns = false,
+        ModifyChangedTypes = true
+    });
+```
+
+Применение: выполнить SQL в ClickHouse (`clickhouse-client < file.sql` или HTTP :8123). После `ADD COLUMN` обновите MV (`DETACH`/`ATTACH` или `MODIFY QUERY`), чтобы новые поля попадали из Kafka queue.
+
+---
+
+
+
 ## Чеклист новой Kafka-таблицы
 
 1. Добавьте `.proto` в `protos/` и убедитесь, что message собирается в `Sandbox.Contracts`.
