@@ -34,3 +34,23 @@ enum SampleStatus {
   SAMPLE_STATUS_ACTIVE = 1;
   SAMPLE_STATUS_ARCHIVED = 2;
 }
+
+// Baseline / evolved pair for proto → ALTER TABLE migration tests.
+message MigrationBaseline {
+  string id = 1;
+  string name = 2;
+  SampleStatus status = 3;
+  int32 count = 4;
+}
+
+message MigrationEvolved {
+  string id = 1;
+  string name = 2;
+  SampleStatus status = 3;
+  // count removed relative to MigrationBaseline (field number 4 reserved for safety).
+  reserved 4;
+  reserved "count";
+  optional string note = 5;
+  google.protobuf.Timestamp created_at = 6;
+  map<string, string> labels = 7;
+}

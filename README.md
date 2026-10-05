@@ -198,6 +198,7 @@ dotnet build src/Sandbox.Contracts
 
 Конфиг codegen: `src/Sandbox.Contracts/clickhouse.codegen.json`.  
 Инструкция по заполнению: [`src/Sandbox.Contracts/clickhouse.codegen.md`](src/Sandbox.Contracts/clickhouse.codegen.md).  
+Миграции MergeTree без пересоздания volume: сравнение двух proto → `ALTER TABLE` (раздел «Миграции схемы» в инструкции; CLI `--migrate`).  
 Пропуск codegen при сборке приложения в Docker: `-p:SkipClickHouseCodegen=true` (уже в `Dockerfile`).
 
 Тесты генератора схем (нужен Docker для integration):

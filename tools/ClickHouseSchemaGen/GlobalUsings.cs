@@ -1,5 +1,6 @@
 global using ClickHouseSchemaGen.Generation;
 global using ClickHouseSchemaGen.Mapping;
+global using ClickHouseSchemaGen.Migration;
 global using ClickHouseSchemaGen.Models;
 global using FluentValidation;
 global using Google.Protobuf;
