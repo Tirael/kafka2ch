@@ -142,7 +142,7 @@ flowchart LR
   plan -->|migrate: new| differ
   differ --> mig[migrations/ts_name.sql]
   differ -->|rewrite| snap
-  differ -->|rewrite| ver[init/99_schema_migrations.sql]
+  differ -->|rewrite| ver[init/00_schema_migrations.sql]
   mig --> runner[Migrator apply]
   runner --> ch[(ClickHouse)]
 ```
@@ -152,7 +152,7 @@ flowchart LR
 | Каталог / файл | Кто пишет | Как меняется |
 |---|---|---|
 | `docker/clickhouse/init/01..03_*.sql` | `dotnet build` | перезаписываются целиком, всегда конечная схема |
-| `docker/clickhouse/init/99_schema_migrations.sql` | `migrate` | один файл, перезаписывается; +1 строка `INSERT` на миграцию |
+| `docker/clickhouse/init/00_schema_migrations.sql` | `migrate` | один файл, перезаписывается; +1 строка `INSERT` на миграцию |
 | `docker/clickhouse/init/schema.snapshot.json` | `migrate` | один файл, перезаписывается |
 | `docker/clickhouse/migrations/<ts>_<name>.sql` | `migrate` | +1 файл на каждое изменение схемы |
 
@@ -204,12 +204,12 @@ flowchart LR
   4. Новые MergeTree-таблицы — полный `CREATE TABLE IF NOT EXISTS` из `MergeTreeTableGenerator` (с комментарием про backfill через новую `kafka_group_name`).
   5. Для изменённых queue/MV: `DROP VIEW IF EXISTS <mv>;` → при изменении proto/settings queue: `DROP TABLE IF EXISTS <queue>;` → `CREATE TABLE <queue> ...` → `CREATE MATERIALIZED VIEW <mv> ...` (с `_key` / `mapFromArrays` при включённом meta). Если менялась только meta / mapping MV без proto — queue можно не трогать: достаточно `DROP VIEW` + `CREATE MATERIALIZED VIEW` после `ALTER` MergeTree (queue остаётся `DETACH`→`ATTACH`, либо `DETACH` снят recreate’ом MV при всё ещё существующей таблице — предпочтительно `ATTACH TABLE <queue>` после recreate MV, если queue не дропали). SELECT MV обязан быть устойчив к protobuf-default’ам старых сообщений.
   6. Блок `-- MANUAL` / `-- DESTRUCTIVE`: закомментированные `DROP COLUMN`, шаблоны `ADD + ALTER UPDATE + DROP` для split / несовместимых типов, изменения `ORDER BY` / `TTL`, `trailingSql`.
-- Файл: `docker/clickhouse/migrations/{yyyyMMddHHmmss}_{name}.sql`. Если есть `Manual` / `Destructive` и не передан `--allow-manual`, файл пишется, но снапшот и `99_*.sql` не обновляются, exit code 2 с сообщением.
+- Файл: `docker/clickhouse/migrations/{yyyyMMddHHmmss}_{name}.sql`. Если есть `Manual` / `Destructive` и не передан `--allow-manual`, файл пишется, но снапшот и `00_*.sql` не обновляются, exit code 2 с сообщением.
 - `MergeTreeTableGenerator` / `KafkaTableGenerator`: добавить параметр `ifNotExists` (или отдельный метод), чтобы не менять init-вывод.
 
 ## Этап 6. Таблица версий и раннер
 
-- `tools/ClickHouseSchemaGen/Migration/SchemaMigrationsScriptGenerator.cs`: `docker/clickhouse/init/99_schema_migrations.sql` — `CREATE TABLE IF NOT EXISTS schema_migrations (version String, name String, checksum String, applied_at DateTime) ENGINE = MergeTree ORDER BY version;` + `INSERT` всех версий из каталога миграций (checksum = SHA-256 файла). Перезаписывается на каждом `migrate`.
+- `tools/ClickHouseSchemaGen/Migration/SchemaMigrationsScriptGenerator.cs`: `docker/clickhouse/init/00_schema_migrations.sql` — `CREATE TABLE IF NOT EXISTS schema_migrations (version String, name String, checksum String, applied_at DateTime) ENGINE = MergeTree ORDER BY version;` + `INSERT` всех версий из каталога миграций (checksum = SHA-256 файла). Перезаписывается на каждом `migrate`.
 - Новый проект `tools/ClickHouseSchemaGen.Migrator/` (Exe, `UseAppHost=false`, ссылки: `ClickHouseSchemaGen`, `ClickHouse.Client` 7.14.0 — уже используется в App и тестах). Отдельный проект, чтобы `ClickHouseSchemaGen` оставался без зависимости на драйвер и MSBuild shadow-copy не тянула лишнее.
   - `MigrationRunner.ApplyAsync(connection, migrationsDir, ct)`: создать `schema_migrations`; прочитать применённые; сверить checksum уже применённых файлов (расхождение — ошибка); проверить отсутствие pending старше последней применённой (out-of-order — ошибка); применить pending по порядку, statement за statement (сплит по `;` вне строк / комментариев); записать строку версии только после успеха файла. Повторный прогон после сбоя безопасен благодаря `IF [NOT] EXISTS`.
   - После statement `DETACH TABLE <queue>` (и по маркеру `-- await:kafka_consumers_empty <queue>`): поллить `system.kafka_consumers` до `count() = 0` для этой таблицы или до таймаута → abort миграции (файл не помечается applied). Так гарантируется, что батч уже ушёл в MergeTree и offset закоммичен **до** `DROP`.
@@ -243,10 +243,10 @@ flowchart LR
 
 ## Этап 9. Документация и bootstrap
 
-- `src/Sandbox.Contracts/clickhouse.codegen.md`: секция `migrations`, секция `persistKafkaMeta` (key/headers, канонические имена, raw protobuf key), workflow (правка proto -> build падает -> `migrate --name` -> review -> commit снапшот + миграция + `99_*.sql`), таблица классов изменений, что считается Manual, политика BACKWARD-only и что CH игнорирует schema id.
+- `src/Sandbox.Contracts/clickhouse.codegen.md`: секция `migrations`, секция `persistKafkaMeta` (key/headers, канонические имена, raw protobuf key), workflow (правка proto -> build падает -> `migrate --name` -> review -> commit снапшот + миграция + `00_*.sql`), таблица классов изменений, что считается Manual, политика BACKWARD-only и что CH игнорирует schema id.
 - `README.md`: раздел «Миграции схемы»; упомянуть `kafka_key` / `kafka_headers` в сырых таблицах; смешанный топик / `format_schemas` до apply; поправить предупреждение про `down -v`. Убрать/обновить тезис из PLAN.md «ключ в пайплайне не используется».
 - `.cursor/skills/senior-csharp-developer/TOOLS.md`: добавить команды `migrate` и список новых генерируемых файлов.
-- Bootstrap в репозитории: `migrate init` -> первый `schema.snapshot.json` + `99_schema_migrations.sql` с пустой таблицей; каталог `docker/clickhouse/migrations/.gitkeep`. Включить `persistKafkaMeta.key/headers` для orders/shipments в `clickhouse.codegen.json` как часть того же bootstrap (или отдельной первой миграции `add_kafka_meta`).
+- Bootstrap в репозитории: `migrate init` -> первый `schema.snapshot.json` + `00_schema_migrations.sql` с пустой таблицей; каталог `docker/clickhouse/migrations/.gitkeep`. Включить `persistKafkaMeta.key/headers` для orders/shipments в `clickhouse.codegen.json` как часть того же bootstrap (или отдельной первой миграции `add_kafka_meta`).
 
 ## Ключевые риски и как закрыты
 
@@ -268,7 +268,7 @@ flowchart LR
 - [ ] Этап 3: `SnapshotDriftChecker` в `GenerateFromConfigFile`, `SkipClickHouseSnapshotCheck` через Tasks / Contracts.csproj
 - [ ] Этап 4: `SchemaDiffer`, `TypeCompatibility`, `MigrationPolicy`, `ProtoCompatibilityValidator` (BACKWARD gate; `kafka:*` вне proto-проверки)
 - [ ] Этап 5: `MigrationSqlGenerator` (flush-порядок, meta ADD COLUMN defaults, recreate MV ± queue, MANUAL / `--allow-manual`)
-- [ ] Этап 6: генератор `99_schema_migrations.sql`, проект `ClickHouseSchemaGen.Migrator` с `MigrationRunner` (checksum, порядок, await consumers), подкоманды CLI
+- [ ] Этап 6: генератор `00_schema_migrations.sql`, проект `ClickHouseSchemaGen.Migrator` с `MigrationRunner` (checksum, порядок, await consumers), подкоманды CLI
 - [ ] Этап 7: сервис `clickhouse-migrate` в docker-compose, stage `migrator` в Dockerfile, порядок `format_schemas` → apply, `verify-pipeline.sh`
 - [ ] Этап 8: unit (differ / snapshot / sqlgen / drift / proto-compat / kafka-meta) + integration round-trip, mixed-topic, meta persistence, runner
 - [ ] Этап 9: `clickhouse.codegen.md` (`persistKafkaMeta` + migrations), README, TOOLS.md, `migrate init` bootstrap

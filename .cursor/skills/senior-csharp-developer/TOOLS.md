@@ -105,7 +105,7 @@ dotnet exec tools/ClickHouseSchemaGen.Migrator/bin/Debug/net8.0/ClickHouseSchema
   --migrations docker/clickhouse/migrations
 ```
 
-Also generated/updated by migrate: `docker/clickhouse/init/schema.snapshot.json`, `99_schema_migrations.sql`, files under `docker/clickhouse/migrations/`.
+Also generated/updated by migrate: `docker/clickhouse/init/schema.snapshot.json`, `00_schema_migrations.sql`, files under `docker/clickhouse/migrations/`.
 
 Escape hatches:
 

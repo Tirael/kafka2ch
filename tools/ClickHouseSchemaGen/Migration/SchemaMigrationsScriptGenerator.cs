@@ -8,23 +8,20 @@ public static class SchemaMigrationsScriptGenerator
 
         var builder = new StringBuilder()
             .AppendLine(SqlScriptWriter.GeneratedHeader)
+            .AppendLine("-- Must sort before every init script: they record themselves into this table.")
             .AppendLine()
-            .AppendLine("CREATE TABLE IF NOT EXISTS schema_migrations")
-            .AppendLine("(")
-            .AppendLine("    version             String,")
-            .AppendLine("    name                String,")
-            .AppendLine("    checksum            String,")
-            .AppendLine("    applied_at          DateTime")
-            .AppendLine(")")
-            .AppendLine("ENGINE = MergeTree")
-            .AppendLine("ORDER BY version;")
+            .Append(SchemaMigrationsTable.CreateTableSql).AppendLine(";")
             .AppendLine();
 
         foreach (var migration in migrations.OrderBy(m => m.Version, StringComparer.Ordinal))
         {
-            builder.AppendLine(
-                "INSERT INTO schema_migrations (version, name, checksum, applied_at) VALUES " +
-                $"('{EscapeSql(migration.Version)}', '{EscapeSql(migration.Name)}', '{EscapeSql(migration.Checksum)}', toDateTime(0));");
+            builder.Append(SchemaMigrationsTable.InsertSql(
+                    migration.Version,
+                    migration.Name,
+                    migration.Checksum,
+                    SchemaMigrationsTable.MigrationKind,
+                    "toDateTime(0)"))
+                .AppendLine(";");
         }
 
         return builder.ToString();
@@ -53,8 +50,6 @@ public static class SchemaMigrationsScriptGenerator
             .OrderBy(m => m.Version, StringComparer.Ordinal)
             .ToList();
     }
-
-    private static string EscapeSql(string value) => value.Replace("'", "''", StringComparison.Ordinal);
 }
 
 public sealed record MigrationFileInfo(
