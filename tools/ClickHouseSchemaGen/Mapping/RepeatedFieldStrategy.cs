@@ -15,7 +15,8 @@ public sealed class RepeatedFieldStrategy(DenormalizationPlanner planner) : IFie
             request.ColumnPath,
             $"Array({ClickHouseTypeResolver.ResolveScalar(request)})",
             MappingStrategy.Repeat,
-            "proto repeated");
+            "proto repeated",
+            fieldNumberPath: request.Field.FieldNumber.ToString());
 
     private IEnumerable<ClickHouseColumn> MapRepeatedMessage(FieldMappingRequest request)
     {
@@ -42,7 +43,8 @@ public sealed class RepeatedFieldStrategy(DenormalizationPlanner planner) : IFie
                 repeatedType,
                 MappingStrategy.Nested,
                 "proto repeated message",
-                innerColumns.Any(column => column.FlattensGoogleWrapper))
+                innerColumns.Any(column => column.FlattensGoogleWrapper),
+                request.Field.FieldNumber.ToString())
         ];
     }
 }

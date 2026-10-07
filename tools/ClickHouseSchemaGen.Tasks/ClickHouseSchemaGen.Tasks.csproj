@@ -27,6 +27,7 @@
     <ParameterGroup>
       <AssembliesDirectory ParameterType="System.String" Required="true" />
       <ConfigPath ParameterType="System.String" Required="true" />
+      <CheckSnapshot ParameterType="System.Boolean" Required="false" />
     </ParameterGroup>
     <Task>
       <Code Type="Class" Language="cs"><![CDATA[
@@ -44,6 +45,8 @@ public class GenerateClickHouseDdlFromAssemblies : Task
     [Required]
     public string ConfigPath { get; set; }
 
+    public bool CheckSnapshot { get; set; } = true;
+
     public override bool Execute()
     {
         try
@@ -55,7 +58,8 @@ public class GenerateClickHouseDdlFromAssemblies : Task
             var generatorType = generatorAssembly.GetType("ClickHouseSchemaGen.ClickHouseSchemaGenerator", throwOnError: true);
             var planner = Activator.CreateInstance(plannerType);
             var generator = Activator.CreateInstance(generatorType, planner, null);
-            generatorType.GetMethod("GenerateFromConfigFile").Invoke(generator, new object[] { ConfigPath });
+            generatorType.GetMethod("GenerateFromConfigFile", new[] { typeof(string), typeof(bool) })
+                .Invoke(generator, new object[] { ConfigPath, CheckSnapshot });
 
             Log.LogMessage(MessageImportance.High, "Generated ClickHouse DDL from '{0}'.", ConfigPath);
             return true;
@@ -84,6 +88,8 @@ public class GenerateClickHouseDdlFromAssemblies : Task
 
     <PropertyGroup>
       <_CodegenShadowDir>$([System.IO.Path]::Combine($(IntermediateOutputPath), 'codegen-shadow', $([System.Guid]::NewGuid().ToString('N'))))</_CodegenShadowDir>
+      <_CheckSnapshot Condition="'$(SkipClickHouseSnapshotCheck)' == 'true'">false</_CheckSnapshot>
+      <_CheckSnapshot Condition="'$(SkipClickHouseSnapshotCheck)' != 'true'">true</_CheckSnapshot>
     </PropertyGroup>
     <ItemGroup>
       <_CodegenShadowFiles Include="$(TargetDir)*.dll" />
@@ -93,7 +99,7 @@ public class GenerateClickHouseDdlFromAssemblies : Task
     <MakeDir Directories="$(_CodegenShadowDir)" />
     <Copy SourceFiles="@(_CodegenShadowFiles)" DestinationFolder="$(_CodegenShadowDir)" SkipUnchangedFiles="false" />
 
-    <GenerateClickHouseDdlFromAssemblies AssembliesDirectory="$(_CodegenShadowDir)" ConfigPath="$(ClickHouseCodegenConfig)" />
+    <GenerateClickHouseDdlFromAssemblies AssembliesDirectory="$(_CodegenShadowDir)" ConfigPath="$(ClickHouseCodegenConfig)" CheckSnapshot="$(_CheckSnapshot)" />
     <!--
       Do not RemoveDir the shadow copy here: Assembly.LoadFrom keeps DLLs locked in the
       MSBuild/.NET Host node until the process exits (MSB3231). Unique dirs under obj/

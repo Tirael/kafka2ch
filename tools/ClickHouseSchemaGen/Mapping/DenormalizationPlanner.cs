@@ -67,7 +67,7 @@ public sealed class DenormalizationPlanner
     {
         var request = new FieldMappingRequest(field, columnPath, context);
 
-        return TryCreateJsonFallbackColumns(columnPath, context, MappingStrategy.JsonFallback, "json fallback")
+        return TryCreateJsonFallbackColumns(field, columnPath, context, MappingStrategy.JsonFallback, "json fallback")
             ?? MapWithStrategy(request, $"field '{columnPath}'");
     }
 
@@ -78,7 +78,7 @@ public sealed class DenormalizationPlanner
     {
         var request = new FieldMappingRequest(branch, branch.Name, context).WithForceNullable();
 
-        return TryCreateJsonFallbackColumns(branch.Name, context, MappingStrategy.Oneof, $"oneof {oneofName}")
+        return TryCreateJsonFallbackColumns(branch, branch.Name, context, MappingStrategy.Oneof, $"oneof {oneofName}")
             ?? MapWithStrategy(
                 request,
                 $"oneof branch '{branch.Name}'",
@@ -90,6 +90,7 @@ public sealed class DenormalizationPlanner
     }
 
     private static IEnumerable<ClickHouseColumn>? TryCreateJsonFallbackColumns(
+        FieldDescriptor field,
         string columnPath,
         MappingContext context,
         MappingStrategy strategy,
@@ -99,7 +100,8 @@ public sealed class DenormalizationPlanner
                 columnPath,
                 context.GetOverride(columnPath)?.Type ?? "String",
                 strategy,
-                comment)]
+                comment,
+                fieldNumberPath: field.FieldNumber.ToString())]
             : null;
 
     private IEnumerable<ClickHouseColumn> MapWithStrategy(
@@ -132,7 +134,8 @@ public sealed class DenormalizationPlanner
             oneof.Name,
             $"Enum8({presenceEnum})",
             MappingStrategy.Oneof,
-            "oneof presence"));
+            "oneof presence",
+            fieldNumberPath: $"oneof:{oneof.Name}"));
 
         return columns;
     }

@@ -28,6 +28,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Sandbox.Contracts\Sandbox.Contracts.csproj" />
     <ProjectReference Include="..\..\tools\ClickHouseSchemaGen\ClickHouseSchemaGen.csproj" />
+    <ProjectReference Include="..\..\tools\ClickHouseSchemaGen.Migrator\ClickHouseSchemaGen.Migrator.csproj" />
   </ItemGroup>
 
 </Project>

@@ -26,5 +26,9 @@ docker exec clickhouse clickhouse-client --query \
   "SELECT minute, category, sum(orders_count), sum(total_amount) FROM orders_agg_1m GROUP BY minute, category ORDER BY minute DESC LIMIT 5"
 
 echo
+echo "==> schema_migrations"
+docker exec clickhouse clickhouse-client --query "SELECT version, name, checksum FROM schema_migrations ORDER BY version"
+
+echo
 echo "==> kafka consumers"
 docker exec clickhouse clickhouse-client --query "SELECT * FROM system.kafka_consumers FORMAT Vertical"

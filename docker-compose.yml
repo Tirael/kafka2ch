@@ -62,6 +62,24 @@ services:
       retries: 10
       start_period: 30s
 
+  clickhouse-migrate:
+    build:
+      context: .
+      target: migrator
+    container_name: clickhouse-migrate
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+    environment:
+      ClickHouse__Host: clickhouse
+      ClickHouse__Port: 8123
+      ClickHouse__Database: default
+      ClickHouse__Username: default
+      ClickHouse__Password: ${CLICKHOUSE_PASSWORD}
+    volumes:
+      - ./docker/clickhouse/migrations:/migrations:ro
+    restart: "no"
+
   kafka-init:
     image: ${KAFKA_IMAGE}
     container_name: kafka-init
@@ -80,7 +98,9 @@ services:
     restart: "no"
 
   sandbox-app:
-    build: .
+    build:
+      context: .
+      target: runtime
     container_name: sandbox-app
     depends_on:
       kafka:
@@ -90,6 +110,8 @@ services:
       clickhouse:
         condition: service_healthy
       kafka-init:
+        condition: service_completed_successfully
+      clickhouse-migrate:
         condition: service_completed_successfully
     environment:
       Kafka__BootstrapServers: kafka:9092

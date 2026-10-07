@@ -14,8 +14,8 @@ public sealed class DenormalizationPlannerTests
 
         // Assert
         columns.Should().BeEquivalentTo([
-            ClickHouseColumn.Create("nickname", "Nullable(String)", MappingStrategy.Optional, "proto optional"),
-            ClickHouseColumn.Create("bonus_points", "Nullable(Int32)", MappingStrategy.Optional, "proto optional")
+            ClickHouseColumn.Create("nickname", "Nullable(String)", MappingStrategy.Optional, "proto optional", fieldNumberPath: "1"),
+            ClickHouseColumn.Create("bonus_points", "Nullable(Int32)", MappingStrategy.Optional, "proto optional", fieldNumberPath: "2")
         ]);
     }
 

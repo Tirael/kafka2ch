@@ -98,7 +98,31 @@ docker compose down -v
 docker compose up -d --build
 ```
 
-> Init-скрипты ClickHouse (`docker/clickhouse/init/`) выполняются **только при пустом volume**. После изменения DDL нужен `down -v`.
+> Init-скрипты ClickHouse (`docker/clickhouse/init/`) выполняются **только при пустом volume**. После изменения конечной схемы на уже существующем volume используйте миграции (ниже), а не `down -v`, если данные нужно сохранить. Полный сброс: `docker compose down -v`.
+
+## Миграции схемы
+
+Эволюция proto / pipeline без потери данных в MergeTree:
+
+1. Измените `protos/` или `clickhouse.codegen.json`
+2. `dotnet build src/Sandbox.Contracts` — упадёт при drift `schema.snapshot.json`
+3. Сгенерируйте миграцию:
+
+```bash
+dotnet build tools/ClickHouseSchemaGen.Cli
+dotnet exec tools/ClickHouseSchemaGen.Cli/bin/Debug/net8.0/ClickHouseSchemaGen.Cli.dll \
+  migrate --config src/Sandbox.Contracts/clickhouse.codegen.json --name <change_name>
+```
+
+4. Закоммитьте SQL в `docker/clickhouse/migrations/`, обновлённый `schema.snapshot.json` и `99_schema_migrations.sql`
+5. Apply: сервис `clickhouse-migrate` при `docker compose up`, либо вручную:
+
+```bash
+dotnet exec tools/ClickHouseSchemaGen.Migrator/bin/Debug/net8.0/ClickHouseSchemaGen.Migrator.dll \
+  --migrations docker/clickhouse/migrations
+```
+
+В сырых таблицах `orders` / `shipments` сохраняются `kafka_key` (сырые байты protobuf-ключа) и `kafka_headers` (`Map(String, String)`). Подробности — [clickhouse.codegen.md](src/Sandbox.Contracts/clickhouse.codegen.md) и [MIGRATIONS_PLAN.md](MIGRATIONS_PLAN.md).
 
 ## Локальный запуск приложения
 
