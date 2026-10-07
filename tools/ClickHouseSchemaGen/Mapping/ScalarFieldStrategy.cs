@@ -14,7 +14,8 @@ public sealed class ScalarFieldStrategy : IFieldMappingStrategy
                 request.ColumnPath,
                 ClickHouseTypeResolver.ResolveScalar(request),
                 strategy,
-                ResolveComment(request.Field.FieldType, strategy))
+                ResolveComment(request.Field.FieldType, strategy),
+                fieldNumberPath: request.Field.FieldNumber.ToString())
         ];
     }
 

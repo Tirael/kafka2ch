@@ -8,5 +8,10 @@ internal static class FieldMappingHelpers
         string comment) =>
         request.OverrideType is null
             ? null
-            : [ClickHouseColumn.Create(request.ColumnPath, request.OverrideType, strategy, comment)];
+            : [ClickHouseColumn.Create(
+                request.ColumnPath,
+                request.OverrideType,
+                strategy,
+                comment,
+                fieldNumberPath: request.Field.FieldNumber.ToString())];
 }

@@ -19,7 +19,9 @@ public static class MaterializedViewAutoGenerator
     public static IReadOnlyList<MaterializedViewConfig> CreateForAutoColumns(
         IReadOnlyList<MergeTreeTableConfig> originalTables,
         IReadOnlyList<MergeTreeTableConfig> expandedTables,
-        IReadOnlyList<MaterializedViewConfig> explicitViews)
+        IReadOnlyList<MaterializedViewConfig> explicitViews,
+        Func<string, PersistKafkaMetaConfig>? metaForSourceTable = null,
+        Func<string, IReadOnlyList<ClickHouseColumn>>? keyColumnsForSourceTable = null)
     {
         if (originalTables.Count != expandedTables.Count)
         {
@@ -47,18 +49,33 @@ public static class MaterializedViewAutoGenerator
                     "but that name is already used. Rename the existing view or declare this mirror view explicitly.");
             }
 
+            var columns = expandedTables[i].Columns
+                .Select(column => new PipelineColumnMapping
+                {
+                    Source = column.Name,
+                    Target = column.Name
+                })
+                .ToList();
+
+            var meta = metaForSourceTable?.Invoke(original.SourceTable!) ?? new PersistKafkaMetaConfig();
+            if (meta.AnyEnabled)
+            {
+                // Auto mirror uses queue column names for payload; replace kafka_* targets with virtual sources.
+                columns.RemoveAll(mapping => KafkaMetaColumnFactory.IsKafkaMetaPath(
+                    expandedTables[i].Columns
+                        .FirstOrDefault(column => column.Name == mapping.Target)
+                        ?.FieldNumberPath));
+                columns.AddRange(KafkaMetaColumnFactory.CreateMappings(
+                    meta,
+                    keyColumnsForSourceTable?.Invoke(original.SourceTable!)));
+            }
+
             created.Add(new MaterializedViewConfig
             {
                 Name = name,
                 TargetTable = original.TableName,
                 SourceTable = original.SourceTable!,
-                Columns = expandedTables[i].Columns
-                    .Select(column => new PipelineColumnMapping
-                    {
-                        Source = column.Name,
-                        Target = column.Name
-                    })
-                    .ToList()
+                Columns = columns
             });
         }
 

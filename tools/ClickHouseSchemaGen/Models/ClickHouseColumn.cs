@@ -13,13 +13,18 @@ public sealed record ClickHouseColumn
     public string SourceFieldPath { get; init; } = "";
 
     /// <summary>
+    /// Stable identity: proto field-number path (e.g. "3.2") or kafka meta (e.g. "kafka:_key").
+    /// </summary>
+    public string FieldNumberPath { get; init; } = "";
+
+    /// <summary>
     /// True when this column, or a field nested inside it, is a flattened google.protobuf.*Value wrapper.
     /// </summary>
     public bool FlattensGoogleWrapper { get; init; }
 
     /// <summary>
     /// SQL that computes this column from the Kafka message instead of reading a physical queue column
-    /// (decoded protobuf key fields). Materialized views bind it with <c>WITH … AS name</c>.
+    /// (decoded protobuf key fields); substituted into materialized view mappings.
     /// </summary>
     public string? SourceExpression { get; init; }
 
@@ -28,7 +33,8 @@ public sealed record ClickHouseColumn
         string type,
         MappingStrategy strategy,
         string? comment = null,
-        bool flattensGoogleWrapper = false) =>
+        bool flattensGoogleWrapper = false,
+        string fieldNumberPath = "") =>
         new()
         {
             Name = name,
@@ -36,6 +42,7 @@ public sealed record ClickHouseColumn
             Strategy = strategy,
             Comment = comment,
             SourceFieldPath = name,
+            FieldNumberPath = fieldNumberPath,
             FlattensGoogleWrapper = flattensGoogleWrapper
         };
 }

@@ -100,7 +100,7 @@ public sealed class ProtobufKeyDecodingClickHouseIntegrationTests : IAsyncLifeti
 
         try
         {
-            SchemaGeneratorFactory.Create().GenerateFromConfigFile(configPath);
+            SchemaGeneratorFactory.Create().GenerateFromConfigFile(configPath, checkSnapshot: false);
 
             // Act
             foreach (var script in new[] { "01_orders_queue.sql", "02_shipments_queue.sql", "03_pipeline.sql" })
@@ -113,7 +113,7 @@ public sealed class ProtobufKeyDecodingClickHouseIntegrationTests : IAsyncLifeti
 
             // Assert: SQL UDFs are inlined into the stored view definition.
             createViewSql.Should().Contain("[substring(_key, 7)]");
-            createViewSql.Should().Contain("AS `_key.order_id`");
+            createViewSql.Should().Contain("AS `kafka_key.order_id`");
         }
         finally
         {

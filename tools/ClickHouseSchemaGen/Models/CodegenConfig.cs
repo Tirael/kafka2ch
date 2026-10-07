@@ -10,6 +10,17 @@ public sealed class CodegenConfig
         new(StringComparer.OrdinalIgnoreCase);
 
     public PipelineConfig? Pipeline { get; set; }
+
+    public MigrationsConfig Migrations { get; set; } = new();
+}
+
+public sealed class MigrationsConfig
+{
+    public string SnapshotPath { get; set; } = "../../docker/clickhouse/init/schema.snapshot.json";
+
+    public string MigrationsDirectory { get; set; } = "../../docker/clickhouse/migrations";
+
+    public string VersionsOutputPath { get; set; } = "../../docker/clickhouse/init/99_schema_migrations.sql";
 }
 
 public sealed class CodegenDefaults
@@ -23,6 +34,8 @@ public sealed class CodegenDefaults
     public bool OneofPresence { get; set; } = true;
 
     public int EnumMaxValuesForEnum8 { get; set; } = 127;
+
+    public PersistKafkaMetaConfig PersistKafkaMeta { get; set; } = new();
 }
 
 public sealed class KafkaTableConfig
@@ -38,6 +51,8 @@ public sealed class KafkaTableConfig
     public required string OutputPath { get; set; }
 
     public KafkaSettingsConfig Kafka { get; set; } = new();
+
+    public PersistKafkaMetaConfig? PersistKafkaMeta { get; set; }
 
     public KafkaKeyConfig Key { get; set; } = new();
 
@@ -136,6 +151,11 @@ public sealed class MergeTreeTableConfig
     public string? SourceTable { get; set; }
 
     /// <summary>
+    /// When true, appends canonical kafka meta columns even for explicit column lists.
+    /// </summary>
+    public bool? IncludeKafkaMeta { get; set; }
+
+    /// <summary>
     /// Explicit MergeTree columns. When empty, columns are taken from <see cref="SourceTable"/>.
     /// </summary>
     public List<PipelineColumnConfig> Columns { get; set; } = [];
@@ -150,6 +170,11 @@ public sealed class MaterializedViewConfig
     public required string SourceTable { get; set; }
 
     /// <summary>
+    /// When true, appends canonical kafka meta mappings even for explicit column lists.
+    /// </summary>
+    public bool? IncludeKafkaMeta { get; set; }
+
+    /// <summary>
     /// Explicit column mappings. When empty, all columns from <see cref="SourceTable"/>
     /// are mapped 1:1 (<c>source</c> → <c>target</c> with the same name).
     /// </summary>
@@ -161,6 +186,8 @@ public sealed class PipelineColumnConfig
     public required string Name { get; set; }
 
     public required string Type { get; set; }
+
+    public string? FieldNumberPath { get; set; }
 }
 
 public sealed class PipelineColumnMapping

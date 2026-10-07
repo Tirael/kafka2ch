@@ -35,6 +35,7 @@ public sealed class KafkaKeyColumnMapper(DenormalizationPlanner planner)
             {
                 Name = ColumnPrefix + column.Name,
                 SourceFieldPath = ColumnPrefix + column.SourceFieldPath,
+                FieldNumberPath = $"{KafkaMetaColumnFactory.KeyFieldPath}:{column.FieldNumberPath}",
                 Comment = $"key {descriptor.FullName}",
                 SourceExpression = $"CAST({BuildDecodeExpression(table.TableName, descriptor, column, payload)} AS {column.Type})"
             })

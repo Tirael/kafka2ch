@@ -47,9 +47,32 @@ dotnet build src/Sandbox.Contracts
 | `kafkaTables`    | **да** (не пустой) | Kafka Engine таблицы (по одной на message)         |
 | `fieldOverrides` | нет                | Глобальные overrides полей (мержатся с табличными) |
 | `pipeline`       | нет                | MergeTree + materialized views + произвольный SQL  |
+| `migrations`     | нет                | пути снапшота и каталога SQL-миграций              |
 
 
 Имена `tableName` и пути `outputPath` в `kafkaTables` должны быть уникальны.
+
+---
+
+## `persistKafkaMeta` / `includeKafkaMeta`
+
+Сохраняет Kafka message key и headers в MergeTree (виртуальные колонки queue в DDL не объявляются):
+
+- `kafka_key String` ← `_key` (сырые байты ключа)
+- для `kafkaTables[].key.format = "protobuf"` — ещё `kafka_key.<поле>` ← `_key.<поле>` (типизированные поля ключа, см. секцию `key`)
+- `kafka_headers Map(String, String)` ← `mapFromArrays(\`_headers.name\`, \`_headers.value\`)`
+
+Включается в `defaults.persistKafkaMeta` и/или `includeKafkaMeta: true` на MergeTree / MV. Опционально: `topic`, `partition`, `offset`, `timestampMs`.
+
+## Миграции схемы
+
+Секция `migrations` (пути по умолчанию относительно codegen.json):
+
+- `snapshotPath` → `schema.snapshot.json`
+- `migrationsDirectory` → `docker/clickhouse/migrations`
+- `versionsOutputPath` → `99_schema_migrations.sql`
+
+Workflow: правка proto → build падает на drift → `Cli migrate --name …` → review/commit → apply через `clickhouse-migrate` / Migrator. Только BACKWARD-compatible эволюция proto; `SkipClickHouseSnapshotCheck=true` — escape hatch.
 
 ---
 
@@ -196,15 +219,16 @@ dotnet build src/Sandbox.Contracts
 Kafka engine в ClickHouse парсит только value; ключ всегда приходит сырыми байтами в `_key`, а функции разбора protobuf для отдельной колонки в ClickHouse нет. Поэтому генератор:
 
 - маппит поля ключа по тем же правилам, что и value (типы, `optional` -> `Nullable`, enum, flatten вложенных message, `Timestamp` -> `.seconds`/`.nanos`, wrappers, overrides) в колонки `_key.<путь поля>`: `_key.order_id`, `_key.scope.level`;
-- в SQL Kafka-таблицы дописывает SQL UDF `protobufWire*` (разбор wire format) и комментарий со списком колонок ключа; в саму Kafka-таблицу колонки ключа не попадают;
-- в MV, которые ссылаются на `_key.*`, добавляет `WITH <decode> AS \`_key.<поле>\``, поэтому колонки ключа используются в `source` и `expression` как обычные колонки queue:
+- в Kafka-таблицу колонки ключа не попадают (DDL queue не меняется);
+- в MV колонки ключа используются в `source` и `expression` как обычные колонки queue; генератор подставляет вместо них выражение разбора `CAST(<decode over substring(_key, skipBytes + 1)> AS <тип>)`:
 
 ```json
 { "source": "_key.order_id", "target": "order_id" },
 { "source": "_key.scope.level", "target": "scope_level", "expression": "`_key.scope.level` * 10" }
 ```
 
-- автозеркало (`mergeTreeTables[]` с пустым `columns`) включает и колонки ключа под теми же именами (`_key.order_id`).
+- SQL UDF `protobufWire*` (разбор wire format, `CREATE OR REPLACE FUNCTION`) пишутся в pipeline-скрипт перед MV и в миграции перед пересоздаваемыми MV, если MV их использует;
+- при `persistKafkaMeta.key` / `includeKafkaMeta` рядом с сырым `kafka_key String` добавляются типизированные колонки `kafka_key.<путь поля>` (`kafka_key.order_id`, `kafka_key.scope.level`) с маппингом из `_key.<путь поля>`; их FieldNumberPath — `kafka:_key:<номера полей>`, поэтому снапшот/миграции отслеживают их так же, как поля value.
 
 Ограничения protobuf-ключа: поддерживаются singular scalar / enum / nested message / `google.protobuf.*Value`; `repeated`, `map`, `oneof`, `Struct`/`Any` и стратегии `Tuple`/`JsonFallback` дают ошибку генерации. Неизвестный enum-номер в ключе роняет вставку MV (как и для value в `ProtobufSingle`). ClickHouse сохраняет MV с уже развёрнутыми UDF, так что после создания MV от функций не зависит.
 

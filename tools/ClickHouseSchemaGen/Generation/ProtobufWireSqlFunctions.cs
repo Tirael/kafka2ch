@@ -14,11 +14,21 @@ public static class ProtobufWireSqlFunctions
 
     public const string ZigZag = "protobufWireZigZag";
 
+    private const string FunctionPrefix = "protobufWire";
+
+    public static bool IsUsedBy(MaterializedViewConfig view) =>
+        view.Columns.Any(mapping =>
+            mapping.Expression?.Contains(FunctionPrefix, StringComparison.Ordinal) == true);
+
     // SQL UDFs are expanded inline, so an argument used twice is copied twice and nested calls grow
     // the query tree exponentially. Larger arguments are bound once via arrayMap(x -> ..., [arg])[1].
     // Order matters: a UDF must be created after the functions it calls.
+    // No SQL comments: the migration runner skips statements that start with "--".
+    //   protobufWireVarint(m, p)  -> (value, byte length) of the varint at 1-based position p
+    //   protobufWireField(m, n)   -> (next position, value position or 0 when absent, wire type)
+    //   protobufWireBytes(m, n)   -> payload of a length-delimited field (string, bytes, message); '' when absent
+    //   protobufWireBits(m, n)    -> raw 64-bit value of a varint / fixed64 / fixed32 field; 0 when absent
     public const string Definitions = """
-        -- (value, byte length) of the varint at 1-based position p
         CREATE OR REPLACE FUNCTION protobufWireVarint AS (m, p) ->
             arrayFold(
                 (acc, b) -> if(
@@ -36,7 +46,6 @@ public static class ProtobufWireSqlFunctions
                 wire_type = 5, 4,
                 length(m) + 1));
 
-        -- acc: (next position, value position of field_number or 0, its wire type)
         CREATE OR REPLACE FUNCTION protobufWireStep AS (m, field_number, acc, tag) ->
             arrayMap(
                 x -> (
@@ -59,7 +68,6 @@ public static class ProtobufWireSqlFunctions
         CREATE OR REPLACE FUNCTION protobufWireHas AS (m, field_number) ->
             protobufWireField(m, field_number).2 > 0;
 
-        -- Payload of a length-delimited field (string, bytes, nested message); '' when absent.
         CREATE OR REPLACE FUNCTION protobufWireBytes AS (m, field_number) ->
             arrayMap(
                 msg -> arrayMap(
@@ -70,7 +78,6 @@ public static class ProtobufWireSqlFunctions
                     [protobufWireField(msg, field_number)])[1],
                 [m])[1];
 
-        -- Raw 64-bit value of a varint, fixed64 or fixed32 field; 0 when absent.
         CREATE OR REPLACE FUNCTION protobufWireBits AS (m, field_number) ->
             arrayMap(
                 msg -> arrayMap(

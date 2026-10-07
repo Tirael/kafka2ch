@@ -5,17 +5,16 @@ public static class KafkaTableGenerator
     public static string Generate(
         KafkaTableConfig config,
         IReadOnlyList<ClickHouseColumn> columns,
-        IReadOnlyList<ClickHouseColumn>? keyColumns = null)
+        bool ifNotExists = false)
     {
+        var create = ifNotExists
+            ? $"CREATE TABLE IF NOT EXISTS {config.TableName}"
+            : $"CREATE TABLE {config.TableName}";
+
         var builder = new StringBuilder()
             .AppendLine(SqlScriptWriter.GeneratedHeader)
-            .AppendLine();
-
-        if (keyColumns is { Count: > 0 })
-            AppendKeyDecoding(builder, config, keyColumns);
-
-        builder
-            .AppendLine($"CREATE TABLE {config.TableName}")
+            .AppendLine()
+            .AppendLine(create)
             .AppendLine("(");
 
         SqlScriptWriter.AppendColumnDefinitions(builder, columns);
@@ -48,24 +47,6 @@ public static class KafkaTableGenerator
         builder.AppendLine();
 
         return builder.ToString();
-    }
-
-    private static void AppendKeyDecoding(
-        StringBuilder builder,
-        KafkaTableConfig config,
-        IReadOnlyList<ClickHouseColumn> keyColumns)
-    {
-        builder
-            .AppendLine("-- Protobuf wire-format helpers for decoding the Kafka key (_key) in materialized views.")
-            .AppendLine(ProtobufWireSqlFunctions.Definitions.TrimEnd())
-            .AppendLine()
-            .AppendLine($"-- {config.TableName} has a protobuf Kafka key ({config.Key.MessageType}); ClickHouse exposes it only as raw _key String.")
-            .AppendLine("-- Materialized views over this table can map the decoded key columns like value columns:");
-
-        foreach (var column in keyColumns)
-            builder.AppendLine($"--   {SqlColumnFormatter.FormatColumnName(column.Name)} {column.Type}");
-
-        builder.AppendLine();
     }
 
     private static bool IsOneofPresenceColumn(ClickHouseColumn column) =>

@@ -24,6 +24,7 @@ public sealed class MapFieldStrategy : IFieldMappingStrategy
             request.ColumnPath,
             $"Map({keyType}, {valueType})",
             MappingStrategy.Map,
-            "proto map");
+            "proto map",
+            fieldNumberPath: request.Field.FieldNumber.ToString());
     }
 }

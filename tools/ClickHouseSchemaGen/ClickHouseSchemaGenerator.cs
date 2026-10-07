@@ -1,3 +1,5 @@
+using ClickHouseSchemaGen.Planning;
+using ClickHouseSchemaGen.Snapshot;
 using ClickHouseSchemaGen.Validation;
 
 namespace ClickHouseSchemaGen;
@@ -8,12 +10,6 @@ public sealed class ClickHouseSchemaGenerator(
 {
     private readonly CodegenConfigValidator _configValidator = configValidator ?? new();
     private readonly KafkaKeyColumnMapper _keyMapper = new(planner);
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNameCaseInsensitive = true,
-        ReadCommentHandling = JsonCommentHandling.Skip,
-        AllowTrailingCommas = true
-    };
 
     public string GenerateKafkaTableSql(
         KafkaTableConfig config,
@@ -23,78 +19,172 @@ public sealed class ClickHouseSchemaGenerator(
         var descriptor = ProtoDescriptorResolver.ResolveDescriptor(config.MessageType);
         var overrides = MergeFieldOverrides(rootConfig?.FieldOverrides, config.FieldOverrides);
         var columns = planner.MapMessage(descriptor, defaults, overrides);
-        return KafkaTableGenerator.Generate(config, columns, _keyMapper.MapKeyColumns(config, defaults));
+        return KafkaTableGenerator.Generate(config, columns);
     }
 
     public string GenerateKafkaTableSql(KafkaTableConfig config, CodegenDefaults defaults) =>
         GenerateKafkaTableSql(config, defaults, rootConfig: null);
 
-    public void GenerateFromConfigFile(string configPath)
+    public ResolvedSchemaPlan BuildPlan(CodegenConfig config)
+    {
+        _configValidator.ValidateAndThrow(config);
+
+        var kafkaTables = new List<KafkaTablePlan>();
+        var queueColumnsByTable = new Dictionary<string, IReadOnlyList<ClickHouseColumn>>(StringComparer.OrdinalIgnoreCase);
+        var metaByQueue = new Dictionary<string, PersistKafkaMetaConfig>(StringComparer.OrdinalIgnoreCase);
+        var keyColumnsByQueue = new Dictionary<string, IReadOnlyList<ClickHouseColumn>>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var table in config.KafkaTables)
+        {
+            var columns = MapKafkaTableColumns(table, config);
+            queueColumnsByTable[table.TableName] = columns;
+            kafkaTables.Add(new KafkaTablePlan { Config = table, Columns = columns });
+            keyColumnsByQueue[table.TableName] = _keyMapper.MapKeyColumns(table, config.Defaults);
+            metaByQueue[table.TableName] = KafkaMetaColumnFactory.Resolve(
+                config.Defaults.PersistKafkaMeta,
+                table.PersistKafkaMeta,
+                includeKafkaMeta: null);
+        }
+
+        if (config.Pipeline is null)
+        {
+            return new ResolvedSchemaPlan
+            {
+                Config = config,
+                KafkaTables = kafkaTables,
+                MergeTreeTables = [],
+                MaterializedViews = [],
+                TrailingSql = null
+            };
+        }
+
+        var originalMergeTree = config.Pipeline.MergeTreeTables;
+        var expandedTables = originalMergeTree
+            .Select(table =>
+            {
+                var meta = ResolveMetaForMergeTree(table, metaByQueue, config.Defaults.PersistKafkaMeta);
+                var keyColumns = KeyColumnsFor(
+                    table.SourceTable ?? FindViewSourceTable(config.Pipeline, table.TableName),
+                    keyColumnsByQueue);
+                return (
+                    Original: table,
+                    Expanded: PipelineColumnExpander.ExpandMergeTreeTable(table, queueColumnsByTable, meta, keyColumns),
+                    Origin: table.Columns.Count == 0 ? PlanOrigin.Auto : PlanOrigin.Explicit,
+                    Meta: meta);
+            })
+            .ToList();
+
+        foreach (var item in expandedTables)
+            EnsureTtlReferencesKnownColumns(item.Expanded);
+
+        var mergeTreePlans = expandedTables
+            .Select(item => new MergeTreeTablePlan
+            {
+                Config = item.Expanded,
+                Origin = item.Origin
+            })
+            .ToList();
+
+        var expandedByName = expandedTables.ToDictionary(
+            item => item.Expanded.TableName,
+            item => item,
+            StringComparer.OrdinalIgnoreCase);
+
+        var explicitViews = config.Pipeline.MaterializedViews
+            .Select(view =>
+            {
+                expandedByName.TryGetValue(view.TargetTable, out var target);
+                var meta = target.Meta
+                    ?? metaByQueue.GetValueOrDefault(view.SourceTable)
+                    ?? config.Defaults.PersistKafkaMeta;
+                var keyColumns = KeyColumnsFor(view.SourceTable, keyColumnsByQueue);
+                var expanded = PipelineColumnExpander.ExpandMaterializedView(
+                    view,
+                    queueColumnsByTable,
+                    meta,
+                    target.Expanded,
+                    keyColumns);
+                return new MaterializedViewPlan
+                {
+                    Config = KafkaKeyBindings.Apply(expanded, keyColumns),
+                    Origin = PlanOrigin.Explicit
+                };
+            })
+            .ToList();
+
+        var autoViews = MaterializedViewAutoGenerator.CreateForAutoColumns(
+                originalMergeTree,
+                expandedTables.Select(item => item.Expanded).ToList(),
+                config.Pipeline.MaterializedViews,
+                sourceTable => metaByQueue.GetValueOrDefault(sourceTable) ?? config.Defaults.PersistKafkaMeta,
+                sourceTable => KeyColumnsFor(sourceTable, keyColumnsByQueue))
+            .Select(view => new MaterializedViewPlan
+            {
+                Config = KafkaKeyBindings.Apply(view, KeyColumnsFor(view.SourceTable, keyColumnsByQueue)),
+                Origin = PlanOrigin.Auto
+            });
+
+        return new ResolvedSchemaPlan
+        {
+            Config = config,
+            KafkaTables = kafkaTables,
+            MergeTreeTables = mergeTreePlans,
+            MaterializedViews = explicitViews.Concat(autoViews).ToList(),
+            TrailingSql = config.Pipeline.TrailingSql
+        };
+    }
+
+    public void GenerateFromConfigFile(string configPath, bool checkSnapshot = true)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(configPath);
 
         var configDirectory = Path.GetDirectoryName(Path.GetFullPath(configPath))
             ?? throw new InvalidOperationException($"Could not resolve directory for config '{configPath}'.");
 
-        var config = JsonSerializer.Deserialize<CodegenConfig>(File.ReadAllText(configPath), JsonOptions)
-            ?? throw new InvalidOperationException($"Config file '{configPath}' is empty or invalid.");
+        var config = CodegenConfigLoader.Load(configPath);
+        var plan = BuildPlan(config);
+        var scripts = SchemaPlanRenderer.RenderInitScripts(plan);
 
-        _configValidator.ValidateAndThrow(config);
+        foreach (var (outputPath, sql) in scripts)
+            WriteGeneratedSql(configDirectory, outputPath, sql);
 
-        var queueColumnsByTable = new Dictionary<string, IReadOnlyList<ClickHouseColumn>>(StringComparer.OrdinalIgnoreCase);
-
-        foreach (var table in config.KafkaTables)
-        {
-            var columns = MapKafkaTableColumns(table, config);
-            var keyColumns = _keyMapper.MapKeyColumns(table, config.Defaults);
-            queueColumnsByTable[table.TableName] = [.. columns, .. keyColumns];
-            WriteGeneratedSql(configDirectory, table.OutputPath, KafkaTableGenerator.Generate(table, columns, keyColumns));
-        }
-
-        if (config.Pipeline is null)
+        if (!checkSnapshot)
             return;
 
-        WriteGeneratedSql(configDirectory, config.Pipeline.OutputPath, BuildPipelineSql(config.Pipeline, queueColumnsByTable));
+        var snapshotPath = CodegenConfigLoader.ResolvePath(configPath, config.Migrations.SnapshotPath);
+        if (!File.Exists(snapshotPath))
+        {
+            Console.Error.WriteLine(
+                $"ClickHouse schema snapshot not found at '{snapshotPath}'. " +
+                "Run: ClickHouseSchemaGen.Cli migrate init --config <path>");
+            return;
+        }
+
+        SnapshotDriftChecker.Check(plan, SchemaSnapshotSerializer.Load(snapshotPath), configPath);
     }
 
-    private static string BuildPipelineSql(
-        PipelineConfig pipeline,
-        IReadOnlyDictionary<string, IReadOnlyList<ClickHouseColumn>> queueColumnsByTable)
+    private static IReadOnlyList<ClickHouseColumn> KeyColumnsFor(
+        string? sourceTable,
+        IReadOnlyDictionary<string, IReadOnlyList<ClickHouseColumn>> keyColumnsByQueue) =>
+        sourceTable is not null && keyColumnsByQueue.TryGetValue(sourceTable, out var keyColumns)
+            ? keyColumns
+            : [];
+
+    private static string? FindViewSourceTable(PipelineConfig pipeline, string targetTable) =>
+        pipeline.MaterializedViews
+            .FirstOrDefault(view => string.Equals(view.TargetTable, targetTable, StringComparison.OrdinalIgnoreCase))
+            ?.SourceTable;
+
+    private static PersistKafkaMetaConfig ResolveMetaForMergeTree(
+        MergeTreeTableConfig table,
+        IReadOnlyDictionary<string, PersistKafkaMetaConfig> metaByQueue,
+        PersistKafkaMetaConfig defaults)
     {
-        var pipelineBuilder = new StringBuilder()
-            .AppendLine(SqlScriptWriter.GeneratedHeader)
-            .AppendLine();
+        PersistKafkaMetaConfig? fromQueue = null;
+        if (!string.IsNullOrWhiteSpace(table.SourceTable))
+            metaByQueue.TryGetValue(table.SourceTable, out fromQueue);
 
-        var expandedTables = pipeline.MergeTreeTables
-            .Select(mergeTreeTable => PipelineColumnExpander.ExpandMergeTreeTable(mergeTreeTable, queueColumnsByTable))
-            .ToList();
-
-        foreach (var mergeTreeTable in expandedTables)
-            EnsureTtlReferencesKnownColumns(mergeTreeTable);
-
-        foreach (var mergeTreeTable in expandedTables)
-        {
-            pipelineBuilder.Append(MergeTreeTableGenerator.Generate(mergeTreeTable));
-        }
-
-        var materializedViews = pipeline.MaterializedViews
-            .Select(materializedView => PipelineColumnExpander.ExpandMaterializedView(materializedView, queueColumnsByTable))
-            .Concat(MaterializedViewAutoGenerator.CreateForAutoColumns(
-                pipeline.MergeTreeTables,
-                expandedTables,
-                pipeline.MaterializedViews));
-
-        foreach (var materializedView in materializedViews)
-        {
-            pipelineBuilder.Append(MaterializedViewGenerator.Generate(
-                materializedView,
-                queueColumnsByTable.GetValueOrDefault(materializedView.SourceTable)));
-        }
-
-        if (!string.IsNullOrWhiteSpace(pipeline.TrailingSql))
-            pipelineBuilder.AppendLine(pipeline.TrailingSql.Trim());
-
-        return pipelineBuilder.ToString();
+        return KafkaMetaColumnFactory.Resolve(defaults, fromQueue, table.IncludeKafkaMeta);
     }
 
     private static void EnsureTtlReferencesKnownColumns(MergeTreeTableConfig table)

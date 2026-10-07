@@ -1,0 +1,508 @@
+{
+  "version": 1,
+  "parentChecksum": "f84a43c6f1fd716ec8ebb2372f46aee81abdb5e7196490dc4ad105a553109c31",
+  "trailingSqlHash": "9500a38f92d18229d3a4229250bfee0e543d6a94381af383575d3d511e220db8",
+  "kafkaTables": [
+    {
+      "tableName": "orders_queue",
+      "protoFile": "order_event",
+      "messageName": "OrderEvent",
+      "kafka": {
+        "brokerList": "kafka:9092",
+        "topic": "orders",
+        "groupName": "clickhouse-orders",
+        "skipBytes": 6,
+        "numConsumers": 1,
+        "flattenNested": false,
+        "protobufOneofPresence": true,
+        "protobufFlattenGoogleWrappers": true
+      },
+      "persistKafkaMeta": {
+        "key": true,
+        "headers": true,
+        "topic": false,
+        "partition": false,
+        "offset": false,
+        "timestampMs": false,
+        "anyEnabled": true
+      },
+      "columns": [
+        {
+          "name": "order_id",
+          "type": "String",
+          "fieldNumberPath": "1"
+        },
+        {
+          "name": "note",
+          "type": "Nullable(String)",
+          "fieldNumberPath": "10"
+        },
+        {
+          "name": "card.last4",
+          "type": "String",
+          "fieldNumberPath": "11.1"
+        },
+        {
+          "name": "card.network",
+          "type": "String",
+          "fieldNumberPath": "11.2"
+        },
+        {
+          "name": "cash.received",
+          "type": "Float64",
+          "fieldNumberPath": "12.1"
+        },
+        {
+          "name": "wallet.provider",
+          "type": "String",
+          "fieldNumberPath": "13.1"
+        },
+        {
+          "name": "wallet.wallet_id",
+          "type": "String",
+          "fieldNumberPath": "13.2"
+        },
+        {
+          "name": "promo_code",
+          "type": "Nullable(String)",
+          "fieldNumberPath": "14"
+        },
+        {
+          "name": "status_history",
+          "type": "Array(Enum8(\u0027ORDER_STATUS_UNSPECIFIED\u0027 = 0, \u0027ORDER_STATUS_CREATED\u0027 = 1, \u0027ORDER_STATUS_PAID\u0027 = 2))",
+          "fieldNumberPath": "15"
+        },
+        {
+          "name": "loyalty_points",
+          "type": "Nullable(Int32)",
+          "fieldNumberPath": "16"
+        },
+        {
+          "name": "attachments",
+          "type": "Tuple(invoices Array(Tuple(name String, note Nullable(String))), receipts Array(Tuple(name String, note Nullable(String))))",
+          "fieldNumberPath": "17"
+        },
+        {
+          "name": "category",
+          "type": "LowCardinality(String)",
+          "fieldNumberPath": "2"
+        },
+        {
+          "name": "price.currency",
+          "type": "String",
+          "fieldNumberPath": "3.1"
+        },
+        {
+          "name": "price.amount",
+          "type": "Float64",
+          "fieldNumberPath": "3.2"
+        },
+        {
+          "name": "quantity",
+          "type": "UInt32",
+          "fieldNumberPath": "4"
+        },
+        {
+          "name": "event_time.seconds",
+          "type": "Int64",
+          "fieldNumberPath": "5.1"
+        },
+        {
+          "name": "event_time.nanos",
+          "type": "Int32",
+          "fieldNumberPath": "5.2"
+        },
+        {
+          "name": "status",
+          "type": "Enum8(\u0027ORDER_STATUS_UNSPECIFIED\u0027 = 0, \u0027ORDER_STATUS_CREATED\u0027 = 1, \u0027ORDER_STATUS_PAID\u0027 = 2)",
+          "fieldNumberPath": "6"
+        },
+        {
+          "name": "tags",
+          "type": "Array(LowCardinality(String))",
+          "fieldNumberPath": "7"
+        },
+        {
+          "name": "items",
+          "type": "Nested(sku String, qty UInt32, unit_price Float64, line_status Enum8(\u0027ORDER_STATUS_UNSPECIFIED\u0027 = 0, \u0027ORDER_STATUS_CREATED\u0027 = 1, \u0027ORDER_STATUS_PAID\u0027 = 2), parts Array(Tuple(sku String, qty UInt32, weight Nullable(Float64))))",
+          "fieldNumberPath": "8"
+        },
+        {
+          "name": "metadata",
+          "type": "Map(String, String)",
+          "fieldNumberPath": "9"
+        },
+        {
+          "name": "payment",
+          "type": "Enum8(\u0027absent\u0027 = 0, \u0027card\u0027 = 11, \u0027cash\u0027 = 12, \u0027wallet\u0027 = 13)",
+          "fieldNumberPath": "oneof:payment"
+        }
+      ]
+    },
+    {
+      "tableName": "shipments_queue",
+      "protoFile": "shipment_event",
+      "messageName": "ShipmentEvent",
+      "kafka": {
+        "brokerList": "kafka:9092",
+        "topic": "shipments",
+        "groupName": "clickhouse-shipments",
+        "skipBytes": 6,
+        "numConsumers": 1,
+        "flattenNested": false,
+        "protobufOneofPresence": true,
+        "protobufFlattenGoogleWrappers": true
+      },
+      "persistKafkaMeta": {
+        "key": true,
+        "headers": true,
+        "topic": false,
+        "partition": false,
+        "offset": false,
+        "timestampMs": false,
+        "anyEnabled": true
+      },
+      "columns": [
+        {
+          "name": "shipment_id",
+          "type": "String",
+          "fieldNumberPath": "1"
+        },
+        {
+          "name": "failed.reason",
+          "type": "String",
+          "fieldNumberPath": "10.1"
+        },
+        {
+          "name": "failed.retry_count",
+          "type": "Nullable(Int32)",
+          "fieldNumberPath": "10.2"
+        },
+        {
+          "name": "priority",
+          "type": "Nullable(Int32)",
+          "fieldNumberPath": "11"
+        },
+        {
+          "name": "status_history",
+          "type": "Array(Enum8(\u0027SHIPMENT_STATUS_UNSPECIFIED\u0027 = 0, \u0027SHIPMENT_STATUS_CREATED\u0027 = 1, \u0027SHIPMENT_STATUS_IN_TRANSIT\u0027 = 2, \u0027SHIPMENT_STATUS_DELIVERED\u0027 = 3, \u0027SHIPMENT_STATUS_FAILED\u0027 = 4))",
+          "fieldNumberPath": "12"
+        },
+        {
+          "name": "documents",
+          "type": "Tuple(labels Array(Tuple(id String, pages Nullable(Int32))), customs_forms Array(Tuple(id String, pages Nullable(Int32))))",
+          "fieldNumberPath": "13"
+        },
+        {
+          "name": "order_id",
+          "type": "String",
+          "fieldNumberPath": "2"
+        },
+        {
+          "name": "shipped_at.seconds",
+          "type": "Int64",
+          "fieldNumberPath": "3.1"
+        },
+        {
+          "name": "shipped_at.nanos",
+          "type": "Int32",
+          "fieldNumberPath": "3.2"
+        },
+        {
+          "name": "status",
+          "type": "Enum8(\u0027SHIPMENT_STATUS_UNSPECIFIED\u0027 = 0, \u0027SHIPMENT_STATUS_CREATED\u0027 = 1, \u0027SHIPMENT_STATUS_IN_TRANSIT\u0027 = 2, \u0027SHIPMENT_STATUS_DELIVERED\u0027 = 3, \u0027SHIPMENT_STATUS_FAILED\u0027 = 4)",
+          "fieldNumberPath": "4"
+        },
+        {
+          "name": "destination.country",
+          "type": "LowCardinality(String)",
+          "fieldNumberPath": "5.1"
+        },
+        {
+          "name": "destination.city",
+          "type": "LowCardinality(String)",
+          "fieldNumberPath": "5.2"
+        },
+        {
+          "name": "destination.street",
+          "type": "String",
+          "fieldNumberPath": "5.3"
+        },
+        {
+          "name": "destination.postal_code",
+          "type": "String",
+          "fieldNumberPath": "5.4"
+        },
+        {
+          "name": "checkpoints",
+          "type": "Nested(recorded_at_seconds Int64, recorded_at_nanos Int32, location String, status Enum8(\u0027SHIPMENT_STATUS_UNSPECIFIED\u0027 = 0, \u0027SHIPMENT_STATUS_CREATED\u0027 = 1, \u0027SHIPMENT_STATUS_IN_TRANSIT\u0027 = 2, \u0027SHIPMENT_STATUS_DELIVERED\u0027 = 3, \u0027SHIPMENT_STATUS_FAILED\u0027 = 4), scans Array(Tuple(code String, operator_note Nullable(String))))",
+          "fieldNumberPath": "6"
+        },
+        {
+          "name": "carrier_metadata",
+          "type": "Map(String, String)",
+          "fieldNumberPath": "7"
+        },
+        {
+          "name": "instructions",
+          "type": "Nullable(String)",
+          "fieldNumberPath": "8"
+        },
+        {
+          "name": "delivered.delivered_at.seconds",
+          "type": "Int64",
+          "fieldNumberPath": "9.1.1"
+        },
+        {
+          "name": "delivered.delivered_at.nanos",
+          "type": "Int32",
+          "fieldNumberPath": "9.1.2"
+        },
+        {
+          "name": "delivered.signed_by",
+          "type": "String",
+          "fieldNumberPath": "9.2"
+        },
+        {
+          "name": "delivery_outcome",
+          "type": "Enum8(\u0027absent\u0027 = 0, \u0027delivered\u0027 = 9, \u0027failed\u0027 = 10)",
+          "fieldNumberPath": "oneof:delivery_outcome"
+        }
+      ]
+    }
+  ],
+  "mergeTreeTables": [
+    {
+      "tableName": "orders",
+      "origin": "explicit",
+      "orderBy": "(event_time, order_id)",
+      "columns": [
+        {
+          "name": "amount",
+          "type": "Float64",
+          "fieldNumberPath": ""
+        },
+        {
+          "name": "category",
+          "type": "LowCardinality(String)",
+          "fieldNumberPath": ""
+        },
+        {
+          "name": "currency",
+          "type": "LowCardinality(String)",
+          "fieldNumberPath": ""
+        },
+        {
+          "name": "event_time",
+          "type": "DateTime64(3)",
+          "fieldNumberPath": ""
+        },
+        {
+          "name": "kafka_headers",
+          "type": "Map(String, String)",
+          "fieldNumberPath": "kafka:_headers"
+        },
+        {
+          "name": "kafka_key",
+          "type": "String",
+          "fieldNumberPath": "kafka:_key"
+        },
+        {
+          "name": "kafka_key.order_id",
+          "type": "String",
+          "fieldNumberPath": "kafka:_key:1"
+        },
+        {
+          "name": "order_id",
+          "type": "String",
+          "fieldNumberPath": ""
+        },
+        {
+          "name": "payment",
+          "type": "LowCardinality(String)",
+          "fieldNumberPath": ""
+        },
+        {
+          "name": "quantity",
+          "type": "UInt32",
+          "fieldNumberPath": ""
+        },
+        {
+          "name": "status",
+          "type": "LowCardinality(String)",
+          "fieldNumberPath": ""
+        }
+      ]
+    },
+    {
+      "tableName": "shipments",
+      "origin": "explicit",
+      "orderBy": "(shipped_at, shipment_id)",
+      "ttl": "shipped_at \u002B INTERVAL 1 DAY",
+      "columns": [
+        {
+          "name": "city",
+          "type": "LowCardinality(String)",
+          "fieldNumberPath": ""
+        },
+        {
+          "name": "country",
+          "type": "LowCardinality(String)",
+          "fieldNumberPath": ""
+        },
+        {
+          "name": "delivery_outcome",
+          "type": "LowCardinality(String)",
+          "fieldNumberPath": ""
+        },
+        {
+          "name": "kafka_headers",
+          "type": "Map(String, String)",
+          "fieldNumberPath": "kafka:_headers"
+        },
+        {
+          "name": "kafka_key",
+          "type": "String",
+          "fieldNumberPath": "kafka:_key"
+        },
+        {
+          "name": "kafka_key.shipment_id",
+          "type": "String",
+          "fieldNumberPath": "kafka:_key:1"
+        },
+        {
+          "name": "order_id",
+          "type": "String",
+          "fieldNumberPath": ""
+        },
+        {
+          "name": "shipment_id",
+          "type": "String",
+          "fieldNumberPath": ""
+        },
+        {
+          "name": "shipped_at",
+          "type": "DateTime64(3)",
+          "fieldNumberPath": ""
+        },
+        {
+          "name": "status",
+          "type": "LowCardinality(String)",
+          "fieldNumberPath": ""
+        }
+      ]
+    }
+  ],
+  "materializedViews": [
+    {
+      "name": "orders_mv",
+      "origin": "explicit",
+      "sourceTable": "orders_queue",
+      "targetTable": "orders",
+      "columns": [
+        {
+          "source": "price.amount",
+          "target": "amount"
+        },
+        {
+          "source": "category",
+          "target": "category"
+        },
+        {
+          "source": "price.currency",
+          "target": "currency"
+        },
+        {
+          "source": "event_time.seconds",
+          "target": "event_time",
+          "expression": "toDateTime64(event_time.seconds \u002B event_time.nanos / 1000000000.0, 3)"
+        },
+        {
+          "source": "_headers.name",
+          "target": "kafka_headers",
+          "expression": "mapFromArrays(\u0060_headers.name\u0060, \u0060_headers.value\u0060)"
+        },
+        {
+          "source": "_key",
+          "target": "kafka_key"
+        },
+        {
+          "source": "_key.order_id",
+          "target": "kafka_key.order_id",
+          "expression": "CAST(protobufWireBytes(substring(_key, 7), 1) AS String)"
+        },
+        {
+          "source": "order_id",
+          "target": "order_id"
+        },
+        {
+          "source": "payment",
+          "target": "payment",
+          "expression": "toString(payment)"
+        },
+        {
+          "source": "quantity",
+          "target": "quantity"
+        },
+        {
+          "source": "status",
+          "target": "status",
+          "expression": "toString(status)"
+        }
+      ]
+    },
+    {
+      "name": "shipments_mv",
+      "origin": "explicit",
+      "sourceTable": "shipments_queue",
+      "targetTable": "shipments",
+      "columns": [
+        {
+          "source": "destination.city",
+          "target": "city"
+        },
+        {
+          "source": "destination.country",
+          "target": "country"
+        },
+        {
+          "source": "delivery_outcome",
+          "target": "delivery_outcome",
+          "expression": "toString(delivery_outcome)"
+        },
+        {
+          "source": "_headers.name",
+          "target": "kafka_headers",
+          "expression": "mapFromArrays(\u0060_headers.name\u0060, \u0060_headers.value\u0060)"
+        },
+        {
+          "source": "_key",
+          "target": "kafka_key"
+        },
+        {
+          "source": "_key.shipment_id",
+          "target": "kafka_key.shipment_id",
+          "expression": "CAST(protobufWireBytes(substring(_key, 7), 1) AS String)"
+        },
+        {
+          "source": "order_id",
+          "target": "order_id"
+        },
+        {
+          "source": "shipment_id",
+          "target": "shipment_id"
+        },
+        {
+          "source": "shipped_at.seconds",
+          "target": "shipped_at",
+          "expression": "toDateTime64(shipped_at.seconds \u002B shipped_at.nanos / 1000000000.0, 3)"
+        },
+        {
+          "source": "status",
+          "target": "status",
+          "expression": "toString(status)"
+        }
+      ]
+    }
+  ]
+}
