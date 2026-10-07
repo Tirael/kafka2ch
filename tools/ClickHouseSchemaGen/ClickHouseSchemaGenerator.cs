@@ -7,6 +7,7 @@ public sealed class ClickHouseSchemaGenerator(
     CodegenConfigValidator? configValidator = null)
 {
     private readonly CodegenConfigValidator _configValidator = configValidator ?? new();
+    private readonly KafkaKeyColumnMapper _keyMapper = new(planner);
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNameCaseInsensitive = true,
@@ -22,7 +23,7 @@ public sealed class ClickHouseSchemaGenerator(
         var descriptor = ProtoDescriptorResolver.ResolveDescriptor(config.MessageType);
         var overrides = MergeFieldOverrides(rootConfig?.FieldOverrides, config.FieldOverrides);
         var columns = planner.MapMessage(descriptor, defaults, overrides);
-        return KafkaTableGenerator.Generate(config, columns);
+        return KafkaTableGenerator.Generate(config, columns, _keyMapper.MapKeyColumns(config, defaults));
     }
 
     public string GenerateKafkaTableSql(KafkaTableConfig config, CodegenDefaults defaults) =>
@@ -45,8 +46,9 @@ public sealed class ClickHouseSchemaGenerator(
         foreach (var table in config.KafkaTables)
         {
             var columns = MapKafkaTableColumns(table, config);
-            queueColumnsByTable[table.TableName] = columns;
-            WriteGeneratedSql(configDirectory, table.OutputPath, KafkaTableGenerator.Generate(table, columns));
+            var keyColumns = _keyMapper.MapKeyColumns(table, config.Defaults);
+            queueColumnsByTable[table.TableName] = [.. columns, .. keyColumns];
+            WriteGeneratedSql(configDirectory, table.OutputPath, KafkaTableGenerator.Generate(table, columns, keyColumns));
         }
 
         if (config.Pipeline is null)
@@ -84,7 +86,9 @@ public sealed class ClickHouseSchemaGenerator(
 
         foreach (var materializedView in materializedViews)
         {
-            pipelineBuilder.Append(MaterializedViewGenerator.Generate(materializedView));
+            pipelineBuilder.Append(MaterializedViewGenerator.Generate(
+                materializedView,
+                queueColumnsByTable.GetValueOrDefault(materializedView.SourceTable)));
         }
 
         if (!string.IsNullOrWhiteSpace(pipeline.TrailingSql))

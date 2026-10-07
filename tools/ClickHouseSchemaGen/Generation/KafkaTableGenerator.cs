@@ -2,11 +2,19 @@ namespace ClickHouseSchemaGen.Generation;
 
 public static class KafkaTableGenerator
 {
-    public static string Generate(KafkaTableConfig config, IReadOnlyList<ClickHouseColumn> columns)
+    public static string Generate(
+        KafkaTableConfig config,
+        IReadOnlyList<ClickHouseColumn> columns,
+        IReadOnlyList<ClickHouseColumn>? keyColumns = null)
     {
         var builder = new StringBuilder()
             .AppendLine(SqlScriptWriter.GeneratedHeader)
-            .AppendLine()
+            .AppendLine();
+
+        if (keyColumns is { Count: > 0 })
+            AppendKeyDecoding(builder, config, keyColumns);
+
+        builder
             .AppendLine($"CREATE TABLE {config.TableName}")
             .AppendLine("(");
 
@@ -40,6 +48,24 @@ public static class KafkaTableGenerator
         builder.AppendLine();
 
         return builder.ToString();
+    }
+
+    private static void AppendKeyDecoding(
+        StringBuilder builder,
+        KafkaTableConfig config,
+        IReadOnlyList<ClickHouseColumn> keyColumns)
+    {
+        builder
+            .AppendLine("-- Protobuf wire-format helpers for decoding the Kafka key (_key) in materialized views.")
+            .AppendLine(ProtobufWireSqlFunctions.Definitions.TrimEnd())
+            .AppendLine()
+            .AppendLine($"-- {config.TableName} has a protobuf Kafka key ({config.Key.MessageType}); ClickHouse exposes it only as raw _key String.")
+            .AppendLine("-- Materialized views over this table can map the decoded key columns like value columns:");
+
+        foreach (var column in keyColumns)
+            builder.AppendLine($"--   {SqlColumnFormatter.FormatColumnName(column.Name)} {column.Type}");
+
+        builder.AppendLine();
     }
 
     private static bool IsOneofPresenceColumn(ClickHouseColumn column) =>

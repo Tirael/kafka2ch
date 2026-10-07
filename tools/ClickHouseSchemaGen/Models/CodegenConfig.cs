@@ -39,8 +39,44 @@ public sealed class KafkaTableConfig
 
     public KafkaSettingsConfig Kafka { get; set; } = new();
 
+    public KafkaKeyConfig Key { get; set; } = new();
+
     public Dictionary<string, FieldOverrideConfig> FieldOverrides { get; set; } =
         new(StringComparer.OrdinalIgnoreCase);
+}
+
+public static class KafkaKeyFormats
+{
+    public const string String = "string";
+
+    public const string Protobuf = "protobuf";
+
+    public static readonly string[] All = [String, Protobuf];
+}
+
+/// <summary>
+/// Kafka message key contract. ClickHouse exposes the key only as the raw <c>_key</c> String,
+/// so protobuf keys are decoded in materialized views as <c>_key.&lt;field path&gt;</c> columns.
+/// </summary>
+public sealed class KafkaKeyConfig
+{
+    public string Format { get; set; } = KafkaKeyFormats.String;
+
+    /// <summary>
+    /// CLR protobuf key type (<c>FullName, Assembly</c>). Required when <see cref="Format"/> is <c>protobuf</c>.
+    /// </summary>
+    public string? MessageType { get; set; }
+
+    /// <summary>
+    /// Bytes to skip before the key payload. Defaults to <see cref="KafkaSettingsConfig.SkipBytes"/>.
+    /// </summary>
+    public int? SkipBytes { get; set; }
+
+    public Dictionary<string, FieldOverrideConfig> FieldOverrides { get; set; } =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool IsProtobuf => string.Equals(Format, KafkaKeyFormats.Protobuf, StringComparison.OrdinalIgnoreCase);
 }
 
 public sealed class KafkaSettingsConfig

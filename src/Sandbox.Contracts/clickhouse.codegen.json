@@ -23,6 +23,10 @@
         "protobufOneofPresence": true,
         "protobufFlattenGoogleWrappers": true
       },
+      "key": {
+        "format": "protobuf",
+        "messageType": "Sandbox.Contracts.OrderKey, Sandbox.Contracts"
+      },
       "fieldOverrides": {
         "category": { "type": "LowCardinality(String)" },
         "status": { "enum8": true },
@@ -45,6 +49,10 @@
         "flattenNested": false,
         "protobufOneofPresence": true,
         "protobufFlattenGoogleWrappers": true
+      },
+      "key": {
+        "format": "protobuf",
+        "messageType": "Sandbox.Contracts.ShipmentKey, Sandbox.Contracts"
       },
       "fieldOverrides": {
         "status": { "enum8": true },
@@ -92,7 +100,7 @@
         "targetTable": "orders",
         "sourceTable": "orders_queue",
         "columns": [
-          { "source": "order_id", "target": "order_id" },
+          { "source": "_key.order_id", "target": "order_id" },
           { "source": "category", "target": "category" },
           { "source": "price.currency", "target": "currency" },
           { "source": "price.amount", "target": "amount" },
@@ -111,7 +119,7 @@
         "targetTable": "shipments",
         "sourceTable": "shipments_queue",
         "columns": [
-          { "source": "shipment_id", "target": "shipment_id" },
+          { "source": "_key.shipment_id", "target": "shipment_id" },
           { "source": "order_id", "target": "order_id" },
           { "source": "status", "target": "status", "expression": "toString(status)" },
           { "source": "destination.country", "target": "country" },

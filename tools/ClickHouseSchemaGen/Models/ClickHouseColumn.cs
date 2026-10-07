@@ -17,6 +17,12 @@ public sealed record ClickHouseColumn
     /// </summary>
     public bool FlattensGoogleWrapper { get; init; }
 
+    /// <summary>
+    /// SQL that computes this column from the Kafka message instead of reading a physical queue column
+    /// (decoded protobuf key fields). Materialized views bind it with <c>WITH … AS name</c>.
+    /// </summary>
+    public string? SourceExpression { get; init; }
+
     public static ClickHouseColumn Create(
         string name,
         string type,

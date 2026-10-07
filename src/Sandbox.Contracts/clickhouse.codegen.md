@@ -162,6 +162,52 @@ dotnet build src/Sandbox.Contracts
 }
 ```
 
+### `key` (опционально)
+
+Формат ключа Kafka-сообщения. По умолчанию ключ — строка: в MV он доступен как виртуальная колонка `_key` (`String`), например `{ "source": "_key", "target": "message_key" }`.
+
+Если ключ сериализован protobuf (отдельный `.proto`, независимый от value), задайте `format: "protobuf"`:
+
+| Поле             | По умолчанию        | Описание                                                                                 |
+| ---------------- | ------------------- | ---------------------------------------------------------------------------------------- |
+| `format`         | `"string"`          | `string` \| `protobuf`                                                                   |
+| `messageType`    | —                   | CLR-тип ключа `FullName, Assembly`. Обязателен для `protobuf`                            |
+| `skipBytes`      | `kafka.skipBytes`   | Сколько байт пропустить перед payload ключа (Confluent envelope: `6`, «голый» protobuf: `0`) |
+| `fieldOverrides` | `{}`                | Overrides полей ключа (те же свойства, что у value; пути — без префикса `_key.`)          |
+
+```json
+{
+  "messageType": "Sandbox.Contracts.OrderEvent, Sandbox.Contracts",
+  "tableName": "orders_queue",
+  "protoFile": "order_event",
+  "messageName": "OrderEvent",
+  "outputPath": "../../docker/clickhouse/init/01_orders_queue.sql",
+  "key": {
+    "format": "protobuf",
+    "messageType": "Sandbox.Contracts.OrderKey, Sandbox.Contracts",
+    "skipBytes": 6,
+    "fieldOverrides": {
+      "order_id": { "type": "LowCardinality(String)" }
+    }
+  }
+}
+```
+
+Kafka engine в ClickHouse парсит только value; ключ всегда приходит сырыми байтами в `_key`, а функции разбора protobuf для отдельной колонки в ClickHouse нет. Поэтому генератор:
+
+- маппит поля ключа по тем же правилам, что и value (типы, `optional` -> `Nullable`, enum, flatten вложенных message, `Timestamp` -> `.seconds`/`.nanos`, wrappers, overrides) в колонки `_key.<путь поля>`: `_key.order_id`, `_key.scope.level`;
+- в SQL Kafka-таблицы дописывает SQL UDF `protobufWire*` (разбор wire format) и комментарий со списком колонок ключа; в саму Kafka-таблицу колонки ключа не попадают;
+- в MV, которые ссылаются на `_key.*`, добавляет `WITH <decode> AS \`_key.<поле>\``, поэтому колонки ключа используются в `source` и `expression` как обычные колонки queue:
+
+```json
+{ "source": "_key.order_id", "target": "order_id" },
+{ "source": "_key.scope.level", "target": "scope_level", "expression": "`_key.scope.level` * 10" }
+```
+
+- автозеркало (`mergeTreeTables[]` с пустым `columns`) включает и колонки ключа под теми же именами (`_key.order_id`).
+
+Ограничения protobuf-ключа: поддерживаются singular scalar / enum / nested message / `google.protobuf.*Value`; `repeated`, `map`, `oneof`, `Struct`/`Any` и стратегии `Tuple`/`JsonFallback` дают ошибку генерации. Неизвестный enum-номер в ключе роняет вставку MV (как и для value в `ProtobufSingle`). ClickHouse сохраняет MV с уже развёрнутыми UDF, так что после создания MV от функций не зависит.
+
 ---
 
 
@@ -352,7 +398,7 @@ TTL event_time + INTERVAL 90 DAY;
 1. Добавьте `.proto` в `protos/` и убедитесь, что message собирается в `Sandbox.Contracts`.
 2. Добавьте элемент в `kafkaTables` с `messageType`, `protoFile`, `messageName`, `tableName`, `outputPath`.
 3. Заполните `kafka.topic` / `groupName` (и при необходимости `skipBytes`).
-4. При необходимости задайте `fieldOverrides`.
+4. При необходимости задайте `fieldOverrides`. Если ключ сообщения — protobuf, добавьте секцию `key` (`format: "protobuf"`, `messageType`).
 5. Если нужна аналитика - добавьте `mergeTreeTables` + `materializedViews` в `pipeline` (`sourceTable` / `targetTable` должны ссылаться на существующие имена). Для зеркала всех полей queue оставьте `columns` пустым и укажите `sourceTable` у MergeTree: view `{tableName}_mv` будет создан сам, если вы не описали view на эту таблицу.
 6. Выполните `dotnet build src/Sandbox.Contracts` и проверьте сгенерированный SQL.
 7. Пересоздайте ClickHouse init при необходимости (`docker compose` / volume init).
@@ -374,5 +420,7 @@ TTL event_time + INTERVAL 90 DAY;
 - MergeTree `sourceTable` не совпадает с `kafkaTables[].tableName`
 - Автогенерируемое имя view `{tableName}_mv` уже занято другим materialized view
 - TTL ссылается на колонку, которой нет в `columns` (например `event_time` у `shipments`, где есть только `shipped_at`)
+- `key.format` не `string` / `protobuf`; `key.format: protobuf` без `key.messageType`; `key.messageType` / `skipBytes` / `fieldOverrides` при строковом ключе
+- MV ссылается на `_key.<поле>`, которого нет в protobuf-ключе (или ключ строковый)
 - `repeatedMessageStrategy` не из списка `nested`  `arraytuple`  `flatten`
 

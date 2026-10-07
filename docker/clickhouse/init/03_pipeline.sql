@@ -29,8 +29,10 @@ ORDER BY (shipped_at, shipment_id)
 TTL shipped_at + INTERVAL 1 DAY;
 
 CREATE MATERIALIZED VIEW orders_mv TO orders AS
+WITH
+    CAST(protobufWireBytes(substring(_key, 7), 1) AS String) AS `_key.order_id`
 SELECT
-    order_id                     AS order_id,
+    `_key.order_id`              AS order_id,
     category                     AS category,
     `price.currency`             AS currency,
     `price.amount`               AS amount,
@@ -41,8 +43,10 @@ SELECT
 FROM orders_queue;
 
 CREATE MATERIALIZED VIEW shipments_mv TO shipments AS
+WITH
+    CAST(protobufWireBytes(substring(_key, 7), 1) AS String) AS `_key.shipment_id`
 SELECT
-    shipment_id                  AS shipment_id,
+    `_key.shipment_id`           AS shipment_id,
     order_id                     AS order_id,
     toString(status)             AS status,
     `destination.country`        AS country,
