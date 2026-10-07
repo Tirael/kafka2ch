@@ -19,7 +19,8 @@ public sealed class MessageFieldStrategy(DenormalizationPlanner planner) : IFiel
                 wellKnownType,
                 MappingStrategy.WellKnownType,
                 "well-known type",
-                WellKnownTypeRegistry.IsWrapper(request.Field.MessageType));
+                WellKnownTypeRegistry.IsWrapper(request.Field.MessageType),
+                request.Field.FieldNumber.ToString());
         }
 
         var fieldOverride = request.Context.GetOverride(request.ColumnPath);
@@ -35,7 +36,8 @@ public sealed class MessageFieldStrategy(DenormalizationPlanner planner) : IFiel
                 DenormalizationPlanner.BuildTupleType(innerColumns),
                 MappingStrategy.Tuple,
                 "max flatten depth",
-                innerColumns.Any(column => column.FlattensGoogleWrapper));
+                innerColumns.Any(column => column.FlattensGoogleWrapper),
+                request.Field.FieldNumber.ToString());
         }
 
         var flattened = FlattenNestedColumns(request).ToArray();
@@ -61,7 +63,8 @@ public sealed class MessageFieldStrategy(DenormalizationPlanner planner) : IFiel
             DenormalizationPlanner.BuildTupleType(innerColumns),
             MappingStrategy.Tuple,
             "nested message",
-            innerColumns.Any(column => column.FlattensGoogleWrapper));
+            innerColumns.Any(column => column.FlattensGoogleWrapper),
+            request.Field.FieldNumber.ToString());
     }
 
     private static bool IsRepeatedColumn(string type) =>
@@ -73,8 +76,9 @@ public sealed class MessageFieldStrategy(DenormalizationPlanner planner) : IFiel
         string type,
         MappingStrategy strategy,
         string comment,
-        bool flattensGoogleWrapper = false) =>
-        [ClickHouseColumn.Create(columnPath, type, strategy, comment, flattensGoogleWrapper)];
+        bool flattensGoogleWrapper = false,
+        string fieldNumberPath = "") =>
+        [ClickHouseColumn.Create(columnPath, type, strategy, comment, flattensGoogleWrapper, fieldNumberPath)];
 
     private IEnumerable<ClickHouseColumn> FlattenNestedColumns(FieldMappingRequest request)
     {
@@ -86,10 +90,14 @@ public sealed class MessageFieldStrategy(DenormalizationPlanner planner) : IFiel
             request.ColumnPath))
         {
             var nestedPath = $"{request.ColumnPath}.{nestedColumn.Name}";
+            var nestedNumberPath = string.IsNullOrEmpty(nestedColumn.FieldNumberPath)
+                ? request.Field.FieldNumber.ToString()
+                : $"{request.Field.FieldNumber}.{nestedColumn.FieldNumberPath}";
             columns.Add(nestedColumn with
             {
                 Name = nestedPath,
                 SourceFieldPath = nestedPath,
+                FieldNumberPath = nestedNumberPath,
                 Type = DenormalizationPlanner.PromoteEmbeddedNested(nestedColumn.Type),
                 Strategy = MappingStrategy.Flatten,
                 Comment = nestedColumn.Comment ?? "nested message"

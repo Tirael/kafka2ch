@@ -9,7 +9,9 @@ CREATE TABLE orders
     quantity             UInt32,
     status               LowCardinality(String),
     payment              LowCardinality(String),
-    event_time           DateTime64(3)
+    event_time           DateTime64(3),
+    kafka_key            String,
+    kafka_headers        Map(String, String)
 )
 ENGINE = MergeTree
 ORDER BY (event_time, order_id);
@@ -22,7 +24,9 @@ CREATE TABLE shipments
     country              LowCardinality(String),
     city                 LowCardinality(String),
     delivery_outcome     LowCardinality(String),
-    shipped_at           DateTime64(3)
+    shipped_at           DateTime64(3),
+    kafka_key            String,
+    kafka_headers        Map(String, String)
 )
 ENGINE = MergeTree
 ORDER BY (shipped_at, shipment_id)
@@ -37,7 +41,9 @@ SELECT
     quantity                     AS quantity,
     toString(status)             AS status,
     toString(payment)            AS payment,
-    toDateTime64(event_time.seconds + event_time.nanos / 1000000000.0, 3) AS event_time
+    toDateTime64(event_time.seconds + event_time.nanos / 1000000000.0, 3) AS event_time,
+    _key                         AS kafka_key,
+    mapFromArrays(`_headers.name`, `_headers.value`) AS kafka_headers
 FROM orders_queue;
 
 CREATE MATERIALIZED VIEW shipments_mv TO shipments AS
@@ -48,7 +54,9 @@ SELECT
     `destination.country`        AS country,
     `destination.city`           AS city,
     toString(delivery_outcome)   AS delivery_outcome,
-    toDateTime64(shipped_at.seconds + shipped_at.nanos / 1000000000.0, 3) AS shipped_at
+    toDateTime64(shipped_at.seconds + shipped_at.nanos / 1000000000.0, 3) AS shipped_at,
+    _key                         AS kafka_key,
+    mapFromArrays(`_headers.name`, `_headers.value`) AS kafka_headers
 FROM shipments_queue;
 
 CREATE TABLE orders_agg_1m

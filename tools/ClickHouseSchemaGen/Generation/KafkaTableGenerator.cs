@@ -2,12 +2,19 @@ namespace ClickHouseSchemaGen.Generation;
 
 public static class KafkaTableGenerator
 {
-    public static string Generate(KafkaTableConfig config, IReadOnlyList<ClickHouseColumn> columns)
+    public static string Generate(
+        KafkaTableConfig config,
+        IReadOnlyList<ClickHouseColumn> columns,
+        bool ifNotExists = false)
     {
+        var create = ifNotExists
+            ? $"CREATE TABLE IF NOT EXISTS {config.TableName}"
+            : $"CREATE TABLE {config.TableName}";
+
         var builder = new StringBuilder()
             .AppendLine(SqlScriptWriter.GeneratedHeader)
             .AppendLine()
-            .AppendLine($"CREATE TABLE {config.TableName}")
+            .AppendLine(create)
             .AppendLine("(");
 
         SqlScriptWriter.AppendColumnDefinitions(builder, columns);

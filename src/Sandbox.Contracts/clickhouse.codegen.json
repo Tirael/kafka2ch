@@ -4,7 +4,20 @@
     "repeatedMessageStrategy": "nested",
     "optionalAsNullable": true,
     "oneofPresence": true,
-    "enumMaxValuesForEnum8": 127
+    "enumMaxValuesForEnum8": 127,
+    "persistKafkaMeta": {
+      "key": true,
+      "headers": true,
+      "topic": false,
+      "partition": false,
+      "offset": false,
+      "timestampMs": false
+    }
+  },
+  "migrations": {
+    "snapshotPath": "../../docker/clickhouse/init/schema.snapshot.json",
+    "migrationsDirectory": "../../docker/clickhouse/migrations",
+    "versionsOutputPath": "../../docker/clickhouse/init/99_schema_migrations.sql"
   },
   "kafkaTables": [
     {
@@ -60,6 +73,7 @@
       {
         "tableName": "orders",
         "orderBy": "(event_time, order_id)",
+        "includeKafkaMeta": true,
         "columns": [
           { "name": "order_id", "type": "String" },
           { "name": "category", "type": "LowCardinality(String)" },
@@ -75,6 +89,7 @@
         "tableName": "shipments",
         "orderBy": "(shipped_at, shipment_id)",
         "ttl": "shipped_at + INTERVAL 1 DAY",
+        "includeKafkaMeta": true,
         "columns": [
           { "name": "shipment_id", "type": "String" },
           { "name": "order_id", "type": "String" },
@@ -91,6 +106,7 @@
         "name": "orders_mv",
         "targetTable": "orders",
         "sourceTable": "orders_queue",
+        "includeKafkaMeta": true,
         "columns": [
           { "source": "order_id", "target": "order_id" },
           { "source": "category", "target": "category" },
@@ -110,6 +126,7 @@
         "name": "shipments_mv",
         "targetTable": "shipments",
         "sourceTable": "shipments_queue",
+        "includeKafkaMeta": true,
         "columns": [
           { "source": "shipment_id", "target": "shipment_id" },
           { "source": "order_id", "target": "order_id" },

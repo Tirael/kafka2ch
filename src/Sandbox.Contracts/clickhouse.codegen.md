@@ -47,9 +47,31 @@ dotnet build src/Sandbox.Contracts
 | `kafkaTables`    | **да** (не пустой) | Kafka Engine таблицы (по одной на message)         |
 | `fieldOverrides` | нет                | Глобальные overrides полей (мержатся с табличными) |
 | `pipeline`       | нет                | MergeTree + materialized views + произвольный SQL  |
+| `migrations`     | нет                | пути снапшота и каталога SQL-миграций              |
 
 
 Имена `tableName` и пути `outputPath` в `kafkaTables` должны быть уникальны.
+
+---
+
+## `persistKafkaMeta` / `includeKafkaMeta`
+
+Сохраняет Kafka message key и headers в MergeTree (виртуальные колонки queue в DDL не объявляются):
+
+- `kafka_key String` ← `_key` (сырые байты protobuf-ключа)
+- `kafka_headers Map(String, String)` ← `mapFromArrays(\`_headers.name\`, \`_headers.value\`)`
+
+Включается в `defaults.persistKafkaMeta` и/или `includeKafkaMeta: true` на MergeTree / MV. Опционально: `topic`, `partition`, `offset`, `timestampMs`.
+
+## Миграции схемы
+
+Секция `migrations` (пути по умолчанию относительно codegen.json):
+
+- `snapshotPath` → `schema.snapshot.json`
+- `migrationsDirectory` → `docker/clickhouse/migrations`
+- `versionsOutputPath` → `99_schema_migrations.sql`
+
+Workflow: правка proto → build падает на drift → `Cli migrate --name …` → review/commit → apply через `clickhouse-migrate` / Migrator. Только BACKWARD-compatible эволюция proto; `SkipClickHouseSnapshotCheck=true` — escape hatch.
 
 ---
 

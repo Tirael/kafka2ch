@@ -45,6 +45,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ClickHouseSchemaGen.Tests",
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ClickHouseSchemaGen.Tasks", "tools\ClickHouseSchemaGen.Tasks\ClickHouseSchemaGen.Tasks.csproj", "{CAAFE3B9-BAB6-43AC-BB03-EBCBCA2A480C}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ClickHouseSchemaGen.Migrator", "tools\ClickHouseSchemaGen.Migrator\ClickHouseSchemaGen.Migrator.csproj", "{5EE5898E-68C4-4B2A-92F3-1788A1370AD5}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -127,6 +129,18 @@ Global
 		{CAAFE3B9-BAB6-43AC-BB03-EBCBCA2A480C}.Release|x64.Build.0 = Release|Any CPU
 		{CAAFE3B9-BAB6-43AC-BB03-EBCBCA2A480C}.Release|x86.ActiveCfg = Release|Any CPU
 		{CAAFE3B9-BAB6-43AC-BB03-EBCBCA2A480C}.Release|x86.Build.0 = Release|Any CPU
+		{5EE5898E-68C4-4B2A-92F3-1788A1370AD5}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5EE5898E-68C4-4B2A-92F3-1788A1370AD5}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5EE5898E-68C4-4B2A-92F3-1788A1370AD5}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{5EE5898E-68C4-4B2A-92F3-1788A1370AD5}.Debug|x64.Build.0 = Debug|Any CPU
+		{5EE5898E-68C4-4B2A-92F3-1788A1370AD5}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{5EE5898E-68C4-4B2A-92F3-1788A1370AD5}.Debug|x86.Build.0 = Debug|Any CPU
+		{5EE5898E-68C4-4B2A-92F3-1788A1370AD5}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5EE5898E-68C4-4B2A-92F3-1788A1370AD5}.Release|Any CPU.Build.0 = Release|Any CPU
+		{5EE5898E-68C4-4B2A-92F3-1788A1370AD5}.Release|x64.ActiveCfg = Release|Any CPU
+		{5EE5898E-68C4-4B2A-92F3-1788A1370AD5}.Release|x64.Build.0 = Release|Any CPU
+		{5EE5898E-68C4-4B2A-92F3-1788A1370AD5}.Release|x86.ActiveCfg = Release|Any CPU
+		{5EE5898E-68C4-4B2A-92F3-1788A1370AD5}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -141,5 +155,6 @@ Global
 		{221CF56A-6AD3-4946-BACB-DA98ABFA8D25} = {07C2787E-EAC7-C090-1BA3-A61EC2A24D84}
 		{549892F7-1700-4DE7-B947-1D2F3345CC6D} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 		{CAAFE3B9-BAB6-43AC-BB03-EBCBCA2A480C} = {07C2787E-EAC7-C090-1BA3-A61EC2A24D84}
+		{5EE5898E-68C4-4B2A-92F3-1788A1370AD5} = {07C2787E-EAC7-C090-1BA3-A61EC2A24D84}
 	EndGlobalSection
 EndGlobal

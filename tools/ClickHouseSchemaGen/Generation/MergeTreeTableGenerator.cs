@@ -2,10 +2,14 @@ namespace ClickHouseSchemaGen.Generation;
 
 public static class MergeTreeTableGenerator
 {
-    public static string Generate(MergeTreeTableConfig config)
+    public static string Generate(MergeTreeTableConfig config, bool ifNotExists = false)
     {
+        var create = ifNotExists
+            ? $"CREATE TABLE IF NOT EXISTS {config.TableName}"
+            : $"CREATE TABLE {config.TableName}";
+
         var builder = new StringBuilder()
-            .AppendLine($"CREATE TABLE {config.TableName}")
+            .AppendLine(create)
             .AppendLine("(");
 
         SqlScriptWriter.AppendColumnDefinitions(builder, config.Columns);
@@ -22,7 +26,6 @@ public static class MergeTreeTableGenerator
                 .Append($"TTL {config.Ttl.Trim()}");
         }
 
-        // Nested(...) is rejected unless the table disables ClickHouse's default flattening.
         if (RequiresFlattenNested(config.Columns))
         {
             builder
