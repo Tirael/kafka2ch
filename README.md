@@ -227,7 +227,8 @@ dotnet build src/Sandbox.Contracts
 Тесты генератора схем (нужен Docker для integration):
 
 ```bash
-dotnet test tests/ClickHouseSchemaGen.Tests
+dotnet test tests/ClickHouseSchemaGen.UnitTests
+dotnet test tests/ClickHouseSchemaGen.IntegrationTests
 ```
 
 ## Полезные команды

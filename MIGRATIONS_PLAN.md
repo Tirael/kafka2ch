@@ -224,7 +224,7 @@ flowchart LR
 - `Dockerfile`: добавить stage `migrator` (publish `tools/ClickHouseSchemaGen.Migrator` с `SkipClickHouseCodegen=true`), не трогая stage `sandbox-app`.
 - `scripts/verify-pipeline.sh`: вывод `SELECT * FROM schema_migrations`.
 
-## Этап 8. Тесты (`tests/ClickHouseSchemaGen.Tests`)
+## Этап 8. Тесты (`tests/ClickHouseSchemaGen.UnitTests` / `tests/ClickHouseSchemaGen.IntegrationTests`)
 
   - `KafkaMetaColumnFactoryTests` / generator tests: при `persistKafkaMeta.key/headers=true` в MV есть `_key AS kafka_key` и `mapFromArrays(...) AS kafka_headers`; в MergeTree — колонки нужных типов; в DDL queue meta-колонок нет.
   - `FieldNumberPathTests`: для `OrderEvent` все proto-колонки имеют непустой path, `price.amount` -> `3.2`, oneof presence -> `oneof:payment`; meta -> `kafka:_key` / `kafka:_headers`.

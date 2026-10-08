@@ -1,4 +1,4 @@
-namespace ClickHouseSchemaGen.Tests.Integration;
+namespace ClickHouseSchemaGen.IntegrationTests;
 
 public sealed class GeneratedSchemaClickHouseIntegrationTests : IAsyncLifetime
 {

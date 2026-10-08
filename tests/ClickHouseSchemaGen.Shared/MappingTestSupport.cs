@@ -1,6 +1,6 @@
-namespace ClickHouseSchemaGen.Tests.Support;
+namespace ClickHouseSchemaGen.Shared;
 
-internal static class MappingTestSupport
+public static class MappingTestSupport
 {
     public static readonly IReadOnlyDictionary<string, FieldOverrideConfig> EmptyOverrides =
         new Dictionary<string, FieldOverrideConfig>();

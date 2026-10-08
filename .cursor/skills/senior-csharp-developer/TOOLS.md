@@ -38,14 +38,15 @@ Do not add `--no-restore` when package references changed or restore has not suc
 Run one relevant test class or namespace first:
 
 ```bash
-dotnet test tests/ClickHouseSchemaGen.Tests/ClickHouseSchemaGen.Tests.csproj \
+dotnet test tests/ClickHouseSchemaGen.UnitTests/ClickHouseSchemaGen.UnitTests.csproj \
   --filter "FullyQualifiedName~MergeTreeTableGeneratorTests"
 ```
 
 Run the complete generator suite when shared mapping, generation, validation, or test infrastructure changed:
 
 ```bash
-dotnet test tests/ClickHouseSchemaGen.Tests/ClickHouseSchemaGen.Tests.csproj
+dotnet test tests/ClickHouseSchemaGen.UnitTests/ClickHouseSchemaGen.UnitTests.csproj
+dotnet test tests/ClickHouseSchemaGen.IntegrationTests/ClickHouseSchemaGen.IntegrationTests.csproj
 ```
 
 Integration tests require a working Docker daemon because they use Testcontainers. Do not replace a failed real integration test with mocks merely to make verification green.
@@ -53,7 +54,7 @@ Integration tests require a working Docker daemon because they use Testcontainer
 For diagnosis, increase verbosity before changing code based on incomplete output:
 
 ```bash
-dotnet test tests/ClickHouseSchemaGen.Tests/ClickHouseSchemaGen.Tests.csproj \
+dotnet test tests/ClickHouseSchemaGen.UnitTests/ClickHouseSchemaGen.UnitTests.csproj \
   --filter "FullyQualifiedName~TestName" \
   --logger "console;verbosity=detailed"
 ```

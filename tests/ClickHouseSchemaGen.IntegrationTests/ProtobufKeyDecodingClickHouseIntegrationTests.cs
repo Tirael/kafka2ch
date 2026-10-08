@@ -1,4 +1,4 @@
-namespace ClickHouseSchemaGen.Tests.Integration;
+namespace ClickHouseSchemaGen.IntegrationTests;
 
 public sealed class ProtobufKeyDecodingClickHouseIntegrationTests : IAsyncLifetime
 {
@@ -160,7 +160,7 @@ public sealed class ProtobufKeyDecodingClickHouseIntegrationTests : IAsyncLifeti
     }
 
     private static KafkaTableConfig KafkaKeyColumnMapperTestsTable() =>
-        Unit.KafkaKeyColumnMapperTests.CreateCompositeKeyTable();
+        OrdersQueueTestConfig.CreateCompositeKeyTable();
 
     private async Task<string> QueryScalarAsync(string sql) => (await QueryRowAsync(sql))[0];
 

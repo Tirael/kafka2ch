@@ -6,7 +6,7 @@
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
-    <RootNamespace>ClickHouseSchemaGen.Tests</RootNamespace>
+    <RootNamespace>ClickHouseSchemaGen.IntegrationTests</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>
@@ -26,6 +26,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\ClickHouseSchemaGen.Shared\ClickHouseSchemaGen.Shared.csproj" />
     <ProjectReference Include="..\..\src\Sandbox.Contracts\Sandbox.Contracts.csproj" />
     <ProjectReference Include="..\..\tools\ClickHouseSchemaGen\ClickHouseSchemaGen.csproj" />
     <ProjectReference Include="..\..\tools\ClickHouseSchemaGen.Migrator\ClickHouseSchemaGen.Migrator.csproj" />

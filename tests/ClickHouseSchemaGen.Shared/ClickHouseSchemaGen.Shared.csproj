@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>false</IsTestProject>
+    <RootNamespace>ClickHouseSchemaGen.Shared</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Sandbox.Contracts\Sandbox.Contracts.csproj" />
+    <ProjectReference Include="..\..\tools\ClickHouseSchemaGen\ClickHouseSchemaGen.csproj" />
+  </ItemGroup>
+
+</Project>

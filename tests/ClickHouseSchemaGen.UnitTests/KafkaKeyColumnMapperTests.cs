@@ -1,4 +1,4 @@
-namespace ClickHouseSchemaGen.Tests.Unit;
+namespace ClickHouseSchemaGen.UnitTests;
 
 public sealed class KafkaKeyColumnMapperTests
 {
@@ -43,7 +43,7 @@ public sealed class KafkaKeyColumnMapperTests
     public void GivenCompositeKey_WhenMapKeyColumns_ThenUsesValueMappingRulesForTypes()
     {
         // Arrange
-        var table = CreateCompositeKeyTable();
+        var table = OrdersQueueTestConfig.CreateCompositeKeyTable();
 
         // Act
         var columns = _sut.MapKeyColumns(table, OrdersQueueTestConfig.Defaults);
@@ -78,7 +78,7 @@ public sealed class KafkaKeyColumnMapperTests
     public void GivenNestedAndOptionalKeyFields_WhenMapKeyColumns_ThenBuildsPresenceAwareExpressions()
     {
         // Arrange
-        var table = CreateCompositeKeyTable();
+        var table = OrdersQueueTestConfig.CreateCompositeKeyTable();
         table.Key.SkipBytes = 0;
 
         // Act
@@ -111,20 +111,5 @@ public sealed class KafkaKeyColumnMapperTests
 
         // Assert
         act.Should().Throw<NotSupportedException>().WithMessage("*orders_queue*_key.parts*");
-    }
-
-    internal static KafkaTableConfig CreateCompositeKeyTable()
-    {
-        var table = OrdersQueueTestConfig.Create();
-        table.Key = new KafkaKeyConfig
-        {
-            Format = KafkaKeyFormats.Protobuf,
-            MessageType = "Sandbox.Contracts.TestFixtures.CompositeKey, Sandbox.Contracts",
-            FieldOverrides = new Dictionary<string, FieldOverrideConfig>(StringComparer.OrdinalIgnoreCase)
-            {
-                ["tenant"] = new() { Type = "LowCardinality(String)" }
-            }
-        };
-        return table;
     }
 }
