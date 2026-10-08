@@ -27,7 +27,7 @@ docker exec clickhouse clickhouse-client --query \
 
 echo
 echo "==> schema_migrations"
-docker exec clickhouse clickhouse-client --query "SELECT version, name, checksum FROM schema_migrations ORDER BY version"
+docker exec clickhouse clickhouse-client --query "SELECT kind, version, name, checksum, applied_at FROM schema_migrations ORDER BY kind, version"
 
 echo
 echo "==> kafka consumers"

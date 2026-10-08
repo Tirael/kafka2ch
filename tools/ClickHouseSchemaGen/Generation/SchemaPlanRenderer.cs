@@ -8,14 +8,16 @@ public static class SchemaPlanRenderer
 
         foreach (var kafkaTable in plan.KafkaTables)
         {
-            scripts[kafkaTable.Config.OutputPath] = KafkaTableGenerator.Generate(
-                kafkaTable.Config,
-                kafkaTable.Columns);
+            scripts[kafkaTable.Config.OutputPath] = SchemaMigrationsTable.AppendInitRecord(
+                kafkaTable.Config.OutputPath,
+                KafkaTableGenerator.Generate(kafkaTable.Config, kafkaTable.Columns));
         }
 
         if (plan.Config.Pipeline is not null)
         {
-            scripts[plan.Config.Pipeline.OutputPath] = RenderPipelineSql(plan);
+            scripts[plan.Config.Pipeline.OutputPath] = SchemaMigrationsTable.AppendInitRecord(
+                plan.Config.Pipeline.OutputPath,
+                RenderPipelineSql(plan));
         }
 
         return scripts;

@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 using ClickHouse.Client.ADO;
+using ClickHouseSchemaGen.Migration;
 using Microsoft.Extensions.Logging;
 
 namespace ClickHouseSchemaGen.Migrator;
@@ -86,19 +87,12 @@ public sealed class MigrationRunner(ILogger logger, TimeProvider timeProvider)
 
     private static async Task EnsureMigrationsTableAsync(ClickHouseConnection connection, CancellationToken cancellationToken)
     {
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            CREATE TABLE IF NOT EXISTS schema_migrations
-            (
-                version String,
-                name String,
-                checksum String,
-                applied_at DateTime
-            )
-            ENGINE = MergeTree
-            ORDER BY version
-            """;
-        await command.ExecuteNonQueryAsync(cancellationToken);
+        foreach (var statement in SchemaMigrationsTable.UpgradeStatements.Prepend(SchemaMigrationsTable.CreateTableSql))
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandText = statement;
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
     }
 
     private static async Task<Dictionary<string, string>> LoadAppliedAsync(
@@ -106,7 +100,8 @@ public sealed class MigrationRunner(ILogger logger, TimeProvider timeProvider)
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
-        command.CommandText = "SELECT version, checksum FROM schema_migrations";
+        command.CommandText =
+            $"SELECT version, checksum FROM schema_migrations WHERE kind = '{SchemaMigrationsTable.MigrationKind}'";
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         var applied = new Dictionary<string, string>(StringComparer.Ordinal);
         while (await reader.ReadAsync(cancellationToken))
@@ -174,9 +169,12 @@ public sealed class MigrationRunner(ILogger logger, TimeProvider timeProvider)
     {
         await using var command = connection.CreateCommand();
         var appliedAt = timeProvider.GetUtcNow().UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss");
-        command.CommandText =
-            "INSERT INTO schema_migrations (version, name, checksum, applied_at) VALUES (" +
-            $"'{EscapeLiteral(version)}', '{EscapeLiteral(name)}', '{EscapeLiteral(checksum)}', toDateTime('{EscapeLiteral(appliedAt)}'))";
+        command.CommandText = SchemaMigrationsTable.InsertSql(
+            version,
+            name,
+            checksum,
+            SchemaMigrationsTable.MigrationKind,
+            $"toDateTime('{EscapeLiteral(appliedAt)}')");
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
