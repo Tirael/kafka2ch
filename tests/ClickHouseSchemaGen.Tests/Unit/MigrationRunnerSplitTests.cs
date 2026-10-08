@@ -22,4 +22,26 @@ public sealed class MigrationRunnerSplitTests
         statements.Should().Contain(s => s.Contains("ALTER TABLE", StringComparison.Ordinal));
         statements.Should().Contain(s => s.Contains("'a;b'", StringComparison.Ordinal));
     }
+
+    [Fact]
+    public void GivenCommentsBeforeStatements_WhenSplit_ThenEmitsCommentsSeparately()
+    {
+        var sql = """
+            -- header
+            DETACH TABLE IF EXISTS orders_queue;
+            -- await:kafka_consumers_empty orders_queue
+
+            ALTER TABLE orders
+                -- inline note
+                ADD COLUMN IF NOT EXISTS note String DEFAULT '';
+            """;
+
+        var statements = MigrationRunner.SplitStatements(sql).ToList();
+
+        statements.Should().Equal(
+            "-- header",
+            "DETACH TABLE IF EXISTS orders_queue",
+            "-- await:kafka_consumers_empty orders_queue",
+            "ALTER TABLE orders\n    -- inline note\n    ADD COLUMN IF NOT EXISTS note String DEFAULT ''");
+    }
 }

@@ -12,4 +12,3 @@ CREATE TABLE IF NOT EXISTS schema_migrations
 ENGINE = MergeTree
 ORDER BY version;
 
-INSERT INTO schema_migrations (version, name, checksum, applied_at) VALUES ('20261007185106', 'persist_protobuf_kafka_key', '166f5a56bf7bc96887c8aa52c2ae9234371135ceb819e215142d63b2a9320784', toDateTime(0));

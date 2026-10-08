@@ -1,6 +1,5 @@
 {
   "version": 1,
-  "parentChecksum": "f84a43c6f1fd716ec8ebb2372f46aee81abdb5e7196490dc4ad105a553109c31",
   "trailingSqlHash": "9500a38f92d18229d3a4229250bfee0e543d6a94381af383575d3d511e220db8",
   "kafkaTables": [
     {
@@ -308,11 +307,6 @@
           "fieldNumberPath": "kafka:_key"
         },
         {
-          "name": "kafka_key.order_id",
-          "type": "String",
-          "fieldNumberPath": "kafka:_key:1"
-        },
-        {
           "name": "order_id",
           "type": "String",
           "fieldNumberPath": ""
@@ -364,11 +358,6 @@
           "name": "kafka_key",
           "type": "String",
           "fieldNumberPath": "kafka:_key"
-        },
-        {
-          "name": "kafka_key.shipment_id",
-          "type": "String",
-          "fieldNumberPath": "kafka:_key:1"
         },
         {
           "name": "order_id",
@@ -427,11 +416,6 @@
           "target": "kafka_key"
         },
         {
-          "source": "_key.order_id",
-          "target": "kafka_key.order_id",
-          "expression": "CAST(protobufWireBytes(substring(_key, 7), 1) AS String)"
-        },
-        {
           "source": "order_id",
           "target": "order_id"
         },
@@ -478,11 +462,6 @@
         {
           "source": "_key",
           "target": "kafka_key"
-        },
-        {
-          "source": "_key.shipment_id",
-          "target": "kafka_key.shipment_id",
-          "expression": "CAST(protobufWireBytes(substring(_key, 7), 1) AS String)"
         },
         {
           "source": "order_id",
