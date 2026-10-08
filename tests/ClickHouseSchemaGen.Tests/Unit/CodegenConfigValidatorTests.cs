@@ -273,6 +273,83 @@ public sealed class CodegenConfigValidatorTests
             error.ErrorMessage.Contains("unknown Kafka source table 'missing_queue'", StringComparison.Ordinal));
     }
 
+    [Fact]
+    public void GivenProtobufKeyWithMessageType_WhenValidate_ThenSucceeds()
+    {
+        var config = CreateValidConfig();
+        config.KafkaTables[0].Key = new KafkaKeyConfig
+        {
+            Format = "Protobuf",
+            MessageType = "Sandbox.Contracts.OrderKey, Sandbox.Contracts",
+            SkipBytes = 6,
+            FieldOverrides = new Dictionary<string, FieldOverrideConfig>
+            {
+                ["order_id"] = new() { Type = "LowCardinality(String)" }
+            }
+        };
+
+        var result = _sut.Validate(config);
+
+        result.IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public void GivenUnknownKeyFormat_WhenValidate_ThenFails()
+    {
+        var config = CreateValidConfig();
+        config.KafkaTables[0].Key.Format = "avro";
+
+        var result = _sut.Validate(config);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(error => error.PropertyName == "KafkaTables[0].Key.Format");
+    }
+
+    [Fact]
+    public void GivenProtobufKeyWithoutMessageType_WhenValidate_ThenFails()
+    {
+        var config = CreateValidConfig();
+        config.KafkaTables[0].Key.Format = KafkaKeyFormats.Protobuf;
+
+        var result = _sut.Validate(config);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(error =>
+            error.ErrorMessage == "messageType is required when key format is protobuf.");
+    }
+
+    [Fact]
+    public void GivenStringKeyWithProtobufSettings_WhenValidate_ThenFails()
+    {
+        var config = CreateValidConfig();
+        config.KafkaTables[0].Key.MessageType = "Sandbox.Contracts.OrderKey, Sandbox.Contracts";
+
+        var result = _sut.Validate(config);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(error =>
+            error.ErrorMessage.Contains("only valid when key format is protobuf", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void GivenInvalidKeyOverridePathOrNegativeSkipBytes_WhenValidate_ThenFails()
+    {
+        var config = CreateValidConfig();
+        config.KafkaTables[0].Key = new KafkaKeyConfig
+        {
+            Format = KafkaKeyFormats.Protobuf,
+            MessageType = "Sandbox.Contracts.OrderKey, Sandbox.Contracts",
+            SkipBytes = -1,
+            FieldOverrides = new Dictionary<string, FieldOverrideConfig> { ["bad path"] = new() }
+        };
+
+        var result = _sut.Validate(config);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(error => error.PropertyName == "KafkaTables[0].Key.SkipBytes");
+        result.Errors.Should().Contain(error => error.ErrorMessage == "Field override key must be a valid field path.");
+    }
+
     private static CodegenConfig CreateValidConfig() => new()
     {
         Defaults = OrdersQueueTestConfig.Defaults,

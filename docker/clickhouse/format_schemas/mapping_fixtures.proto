@@ -2,6 +2,7 @@ syntax = "proto3";
 package sandbox.test.v1;
 
 import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
 
 option csharp_namespace = "Sandbox.Contracts.TestFixtures";
 
@@ -33,4 +34,36 @@ enum SampleStatus {
   SAMPLE_STATUS_UNSPECIFIED = 0;
   SAMPLE_STATUS_ACTIVE = 1;
   SAMPLE_STATUS_ARCHIVED = 2;
+}
+
+message KeyScope {
+  string name = 1;
+  int32 level = 2;
+}
+
+message CompositeKey {
+  string tenant = 1;
+  int32 int32_value = 2;
+  int64 int64_value = 3;
+  uint32 uint32_value = 4;
+  uint64 uint64_value = 5;
+  sint32 sint32_value = 6;
+  sint64 sint64_value = 7;
+  fixed32 fixed32_value = 8;
+  fixed64 fixed64_value = 9;
+  sfixed32 sfixed32_value = 10;
+  sfixed64 sfixed64_value = 11;
+  bool flag = 12;
+  float ratio = 13;
+  double score = 14;
+  bytes raw = 15;
+  SampleStatus status = 16;
+  optional string region = 17;
+  KeyScope scope = 18;
+  google.protobuf.Timestamp issued_at = 19;
+  google.protobuf.StringValue label = 20;
+}
+
+message RepeatedKey {
+  repeated string parts = 1;
 }

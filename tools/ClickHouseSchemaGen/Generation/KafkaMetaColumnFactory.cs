@@ -44,7 +44,10 @@ public static class KafkaMetaColumnFactory
         return resolved;
     }
 
-    public static IReadOnlyList<PipelineColumnConfig> CreateMergeTreeColumns(PersistKafkaMetaConfig meta)
+    /// <param name="keyColumns">Decoded protobuf key columns (<c>_key.*</c>) of the source queue, if any.</param>
+    public static IReadOnlyList<PipelineColumnConfig> CreateMergeTreeColumns(
+        PersistKafkaMetaConfig meta,
+        IReadOnlyList<ClickHouseColumn>? keyColumns = null)
     {
         List<PipelineColumnConfig> columns = [];
 
@@ -56,6 +59,13 @@ public static class KafkaMetaColumnFactory
                 Type = "String",
                 FieldNumberPath = KeyFieldPath
             });
+
+            columns.AddRange((keyColumns ?? []).Select(keyColumn => new PipelineColumnConfig
+            {
+                Name = ToKeyTargetName(keyColumn.Name),
+                Type = keyColumn.Type,
+                FieldNumberPath = keyColumn.FieldNumberPath
+            }));
         }
 
         if (meta.Headers)
@@ -111,7 +121,10 @@ public static class KafkaMetaColumnFactory
         return columns;
     }
 
-    public static IReadOnlyList<PipelineColumnMapping> CreateMappings(PersistKafkaMetaConfig meta)
+    /// <param name="keyColumns">Decoded protobuf key columns (<c>_key.*</c>) of the source queue, if any.</param>
+    public static IReadOnlyList<PipelineColumnMapping> CreateMappings(
+        PersistKafkaMetaConfig meta,
+        IReadOnlyList<ClickHouseColumn>? keyColumns = null)
     {
         List<PipelineColumnMapping> mappings = [];
 
@@ -122,6 +135,12 @@ public static class KafkaMetaColumnFactory
                 Source = "_key",
                 Target = KeyColumnName
             });
+
+            mappings.AddRange((keyColumns ?? []).Select(keyColumn => new PipelineColumnMapping
+            {
+                Source = keyColumn.Name,
+                Target = ToKeyTargetName(keyColumn.Name)
+            }));
         }
 
         if (meta.Headers)
@@ -172,6 +191,10 @@ public static class KafkaMetaColumnFactory
 
         return mappings;
     }
+
+    /// <summary><c>_key.order_id</c> -> <c>kafka_key.order_id</c>.</summary>
+    public static string ToKeyTargetName(string keyColumnName) =>
+        $"{KeyColumnName}.{keyColumnName[KafkaKeyColumnMapper.ColumnPrefix.Length..]}";
 
     public static bool IsKafkaMetaPath(string? fieldNumberPath) =>
         !string.IsNullOrEmpty(fieldNumberPath)

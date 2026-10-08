@@ -47,12 +47,19 @@ public sealed class SchemaMigrationsHistoryIntegrationTests : IAsyncLifetime
         await CreateRunner().ApplyAsync(_clickHouse.GetConnectionString(), _migrationsDirectory, CancellationToken.None);
 
         // Assert
+        var committedMigrations = SchemaMigrationsScriptGenerator
+            .ReadFromDirectory(Path.Combine(RepoPaths.RepositoryRoot, "docker", "clickhouse", "migrations"))
+            .Select(migration => (migration.Version, migration.Name, "migration"));
         var rows = await ReadHistoryAsync();
         rows.Should().Equal(
-            ("01", "01_orders_queue.sql", "init"),
-            ("02", "02_shipments_queue.sql", "init"),
-            ("03", "03_pipeline.sql", "init"),
-            ("20990101000000", "20990101000000_add_note.sql", "migration"));
+            new[]
+            {
+                ("01", "01_orders_queue.sql", "init"),
+                ("02", "02_shipments_queue.sql", "init"),
+                ("03", "03_pipeline.sql", "init")
+            }
+            .Concat(committedMigrations)
+            .Append(("20990101000000", "20990101000000_add_note.sql", "migration")));
     }
 
     [Fact]

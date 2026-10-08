@@ -124,6 +124,7 @@ public static partial class MigrationSqlGenerator
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(v => v, StringComparer.Ordinal)
             .ToList();
+        var attachedQueues = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var viewName in viewsToRecreate)
         {
@@ -144,9 +145,14 @@ public static partial class MigrationSqlGenerator
                 builder.AppendLine();
             }
 
+            // ClickHouse cannot create a view over a detached table; an attached Kafka table without views
+            // has no consumers, so attaching before CREATE does not start consumption early.
+            if (!recreateKafka && metaOnlyQueues.Contains(queue) && attachedQueues.Add(queue))
+                builder.AppendLine($"ATTACH TABLE {queue};");
+
             builder.Append(MaterializedViewGenerator.Generate(view.Config));
 
-            if (recreateKafka || metaOnlyQueues.Contains(queue))
+            if (recreateKafka)
                 builder.AppendLine($"ATTACH TABLE {queue};");
 
             builder.AppendLine();

@@ -9,6 +9,7 @@ public sealed class ClickHouseSchemaGenerator(
     CodegenConfigValidator? configValidator = null)
 {
     private readonly CodegenConfigValidator _configValidator = configValidator ?? new();
+    private readonly KafkaKeyColumnMapper _keyMapper = new(planner);
 
     public string GenerateKafkaTableSql(
         KafkaTableConfig config,
@@ -31,12 +32,14 @@ public sealed class ClickHouseSchemaGenerator(
         var kafkaTables = new List<KafkaTablePlan>();
         var queueColumnsByTable = new Dictionary<string, IReadOnlyList<ClickHouseColumn>>(StringComparer.OrdinalIgnoreCase);
         var metaByQueue = new Dictionary<string, PersistKafkaMetaConfig>(StringComparer.OrdinalIgnoreCase);
+        var keyColumnsByQueue = new Dictionary<string, IReadOnlyList<ClickHouseColumn>>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var table in config.KafkaTables)
         {
             var columns = MapKafkaTableColumns(table, config);
             queueColumnsByTable[table.TableName] = columns;
             kafkaTables.Add(new KafkaTablePlan { Config = table, Columns = columns });
+            keyColumnsByQueue[table.TableName] = _keyMapper.MapKeyColumns(table, config.Defaults);
             metaByQueue[table.TableName] = KafkaMetaColumnFactory.Resolve(
                 config.Defaults.PersistKafkaMeta,
                 table.PersistKafkaMeta,
@@ -60,9 +63,12 @@ public sealed class ClickHouseSchemaGenerator(
             .Select(table =>
             {
                 var meta = ResolveMetaForMergeTree(table, metaByQueue, config.Defaults.PersistKafkaMeta);
+                var keyColumns = KeyColumnsFor(
+                    table.SourceTable ?? FindViewSourceTable(config.Pipeline, table.TableName),
+                    keyColumnsByQueue);
                 return (
                     Original: table,
-                    Expanded: PipelineColumnExpander.ExpandMergeTreeTable(table, queueColumnsByTable, meta),
+                    Expanded: PipelineColumnExpander.ExpandMergeTreeTable(table, queueColumnsByTable, meta, keyColumns),
                     Origin: table.Columns.Count == 0 ? PlanOrigin.Auto : PlanOrigin.Explicit,
                     Meta: meta);
             })
@@ -91,13 +97,16 @@ public sealed class ClickHouseSchemaGenerator(
                 var meta = target.Meta
                     ?? metaByQueue.GetValueOrDefault(view.SourceTable)
                     ?? config.Defaults.PersistKafkaMeta;
+                var keyColumns = KeyColumnsFor(view.SourceTable, keyColumnsByQueue);
+                var expanded = PipelineColumnExpander.ExpandMaterializedView(
+                    view,
+                    queueColumnsByTable,
+                    meta,
+                    target.Expanded,
+                    keyColumns);
                 return new MaterializedViewPlan
                 {
-                    Config = PipelineColumnExpander.ExpandMaterializedView(
-                        view,
-                        queueColumnsByTable,
-                        meta,
-                        target.Expanded),
+                    Config = KafkaKeyBindings.Apply(expanded, keyColumns),
                     Origin = PlanOrigin.Explicit
                 };
             })
@@ -107,10 +116,11 @@ public sealed class ClickHouseSchemaGenerator(
                 originalMergeTree,
                 expandedTables.Select(item => item.Expanded).ToList(),
                 config.Pipeline.MaterializedViews,
-                sourceTable => metaByQueue.GetValueOrDefault(sourceTable) ?? config.Defaults.PersistKafkaMeta)
+                sourceTable => metaByQueue.GetValueOrDefault(sourceTable) ?? config.Defaults.PersistKafkaMeta,
+                sourceTable => KeyColumnsFor(sourceTable, keyColumnsByQueue))
             .Select(view => new MaterializedViewPlan
             {
-                Config = view,
+                Config = KafkaKeyBindings.Apply(view, KeyColumnsFor(view.SourceTable, keyColumnsByQueue)),
                 Origin = PlanOrigin.Auto
             });
 
@@ -152,6 +162,18 @@ public sealed class ClickHouseSchemaGenerator(
 
         SnapshotDriftChecker.Check(plan, SchemaSnapshotSerializer.Load(snapshotPath), configPath);
     }
+
+    private static IReadOnlyList<ClickHouseColumn> KeyColumnsFor(
+        string? sourceTable,
+        IReadOnlyDictionary<string, IReadOnlyList<ClickHouseColumn>> keyColumnsByQueue) =>
+        sourceTable is not null && keyColumnsByQueue.TryGetValue(sourceTable, out var keyColumns)
+            ? keyColumns
+            : [];
+
+    private static string? FindViewSourceTable(PipelineConfig pipeline, string targetTable) =>
+        pipeline.MaterializedViews
+            .FirstOrDefault(view => string.Equals(view.TargetTable, targetTable, StringComparison.OrdinalIgnoreCase))
+            ?.SourceTable;
 
     private static PersistKafkaMetaConfig ResolveMetaForMergeTree(
         MergeTreeTableConfig table,

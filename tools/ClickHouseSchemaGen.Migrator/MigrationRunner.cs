@@ -202,6 +202,18 @@ public sealed class MigrationRunner(ILogger logger, TimeProvider timeProvider)
 
             if (!inSingleQuote && current == '-' && next == '-')
             {
+                // A comment before a statement is emitted on its own: otherwise the statement would be
+                // skipped as a comment and await markers would not match.
+                if (string.IsNullOrWhiteSpace(builder.ToString()))
+                {
+                    var lineEnd = sql.IndexOf('\n', i);
+                    var end = lineEnd < 0 ? sql.Length : lineEnd;
+                    statements.Add(sql[i..end].TrimEnd());
+                    builder.Clear();
+                    i = end;
+                    continue;
+                }
+
                 inLineComment = true;
                 builder.Append(current);
                 continue;

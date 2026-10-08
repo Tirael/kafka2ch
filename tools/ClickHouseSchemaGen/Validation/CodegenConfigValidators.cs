@@ -63,8 +63,44 @@ internal sealed class KafkaTableConfigValidator : AbstractValidator<KafkaTableCo
             .WithMessage("Must be a valid protobuf message name.");
         RuleFor(table => table.OutputPath).NotEmpty();
         RuleFor(table => table.Kafka).SetValidator(new KafkaSettingsConfigValidator());
+        RuleFor(table => table.Key).NotNull().SetValidator(new KafkaKeyConfigValidator());
 
         RuleForEach(table => table.FieldOverrides)
+            .ChildRules(overrides =>
+            {
+                overrides.RuleFor(entry => entry.Key)
+                    .Must(ValidationRules.IsFieldPath)
+                    .WithMessage("Field override key must be a valid field path.");
+                overrides.RuleFor(entry => entry.Value)
+                    .SetValidator(new FieldOverrideConfigValidator());
+            });
+    }
+}
+
+internal sealed class KafkaKeyConfigValidator : AbstractValidator<KafkaKeyConfig>
+{
+    public KafkaKeyConfigValidator()
+    {
+        RuleFor(key => key.Format)
+            .NotEmpty()
+            .Must(format => KafkaKeyFormats.All.Contains(format, StringComparer.OrdinalIgnoreCase))
+            .WithMessage($"Must be one of: {string.Join(", ", KafkaKeyFormats.All)}.");
+
+        RuleFor(key => key.MessageType)
+            .NotEmpty()
+            .WithMessage("messageType is required when key format is protobuf.")
+            .When(key => key.IsProtobuf);
+
+        RuleFor(key => key)
+            .Must(key => key.MessageType is null && key.SkipBytes is null && key.FieldOverrides.Count == 0)
+            .WithMessage("messageType, skipBytes and fieldOverrides are only valid when key format is protobuf.")
+            .When(key => !key.IsProtobuf);
+
+        RuleFor(key => key.SkipBytes)
+            .GreaterThanOrEqualTo(0)
+            .When(key => key.SkipBytes.HasValue);
+
+        RuleForEach(key => key.FieldOverrides)
             .ChildRules(overrides =>
             {
                 overrides.RuleFor(entry => entry.Key)

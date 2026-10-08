@@ -13,7 +13,8 @@ public static class PipelineColumnExpander
     public static MergeTreeTableConfig ExpandMergeTreeTable(
         MergeTreeTableConfig table,
         IReadOnlyDictionary<string, IReadOnlyList<ClickHouseColumn>> queueColumnsByTable,
-        PersistKafkaMetaConfig meta)
+        PersistKafkaMetaConfig meta,
+        IReadOnlyList<ClickHouseColumn>? keyColumns = null)
     {
         List<PipelineColumnConfig> columns;
 
@@ -30,7 +31,7 @@ public static class PipelineColumnExpander
                 .ToList();
 
             if (table.IncludeKafkaMeta == true)
-                AppendMissingMetaColumns(columns, meta);
+                AppendMissingMetaColumns(columns, meta, keyColumns);
         }
         else
         {
@@ -49,7 +50,7 @@ public static class PipelineColumnExpander
                 .ToList();
 
             if (meta.AnyEnabled)
-                AppendMissingMetaColumns(columns, meta);
+                AppendMissingMetaColumns(columns, meta, keyColumns);
         }
 
         return new MergeTreeTableConfig
@@ -72,7 +73,8 @@ public static class PipelineColumnExpander
         MaterializedViewConfig view,
         IReadOnlyDictionary<string, IReadOnlyList<ClickHouseColumn>> queueColumnsByTable,
         PersistKafkaMetaConfig meta,
-        MergeTreeTableConfig? targetTable)
+        MergeTreeTableConfig? targetTable,
+        IReadOnlyList<ClickHouseColumn>? keyColumns = null)
     {
         List<PipelineColumnMapping> columns;
 
@@ -82,7 +84,7 @@ public static class PipelineColumnExpander
             var includeMeta = view.IncludeKafkaMeta == true
                 || (view.IncludeKafkaMeta is null && targetTable?.IncludeKafkaMeta == true);
             if (includeMeta)
-                AppendMissingMetaMappings(columns, meta);
+                AppendMissingMetaMappings(columns, meta, keyColumns);
         }
         else
         {
@@ -100,7 +102,7 @@ public static class PipelineColumnExpander
                 .ToList();
 
             if (meta.AnyEnabled)
-                AppendMissingMetaMappings(columns, meta);
+                AppendMissingMetaMappings(columns, meta, keyColumns);
         }
 
         return new MaterializedViewConfig
@@ -113,20 +115,26 @@ public static class PipelineColumnExpander
         };
     }
 
-    private static void AppendMissingMetaColumns(List<PipelineColumnConfig> columns, PersistKafkaMetaConfig meta)
+    private static void AppendMissingMetaColumns(
+        List<PipelineColumnConfig> columns,
+        PersistKafkaMetaConfig meta,
+        IReadOnlyList<ClickHouseColumn>? keyColumns)
     {
         var existing = columns.Select(column => column.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        foreach (var metaColumn in KafkaMetaColumnFactory.CreateMergeTreeColumns(meta))
+        foreach (var metaColumn in KafkaMetaColumnFactory.CreateMergeTreeColumns(meta, keyColumns))
         {
             if (existing.Add(metaColumn.Name))
                 columns.Add(metaColumn);
         }
     }
 
-    private static void AppendMissingMetaMappings(List<PipelineColumnMapping> columns, PersistKafkaMetaConfig meta)
+    private static void AppendMissingMetaMappings(
+        List<PipelineColumnMapping> columns,
+        PersistKafkaMetaConfig meta,
+        IReadOnlyList<ClickHouseColumn>? keyColumns)
     {
         var existingTargets = columns.Select(column => column.Target).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        foreach (var mapping in KafkaMetaColumnFactory.CreateMappings(meta))
+        foreach (var mapping in KafkaMetaColumnFactory.CreateMappings(meta, keyColumns))
         {
             if (existingTargets.Add(mapping.Target))
                 columns.Add(mapping);

@@ -341,6 +341,236 @@ public sealed class ClickHouseSchemaGeneratorTests
         }
     }
 
+    [Fact]
+    public void GivenProtobufKey_WhenGenerateKafkaTableSql_ThenQueueDdlHasNoKeyColumns()
+    {
+        // Arrange
+        var config = OrdersQueueTestConfig.Create();
+        config.Key = new KafkaKeyConfig
+        {
+            Format = KafkaKeyFormats.Protobuf,
+            MessageType = "Sandbox.Contracts.OrderKey, Sandbox.Contracts"
+        };
+
+        // Act
+        var sql = _sut.GenerateKafkaTableSql(config, OrdersQueueTestConfig.Defaults);
+
+        // Assert
+        sql.Should().NotContain("_key");
+        sql.Should().NotContain("CREATE OR REPLACE FUNCTION");
+    }
+
+    [Fact]
+    public void GivenMaterializedViewMappingKeyColumns_WhenGenerateFromConfigFile_ThenInlinesDecodeExpressions()
+    {
+        var outputDirectory = Path.Combine(Path.GetTempPath(), $"clickhouse-schema-gen-{Guid.NewGuid():N}");
+        var configPath = Path.Combine(outputDirectory, "clickhouse.codegen.json");
+        Directory.CreateDirectory(outputDirectory);
+
+        var config = CreateProtobufKeyConfig(
+            new MergeTreeTableConfig
+            {
+                TableName = "orders",
+                OrderBy = "(tenant, order_id)",
+                Columns =
+                [
+                    new PipelineColumnConfig { Name = "order_id", Type = "String" },
+                    new PipelineColumnConfig { Name = "tenant", Type = "LowCardinality(String)" },
+                    new PipelineColumnConfig { Name = "scope_level", Type = "Int32" }
+                ]
+            },
+            new MaterializedViewConfig
+            {
+                Name = "orders_mv",
+                SourceTable = "orders_queue",
+                TargetTable = "orders",
+                Columns =
+                [
+                    new PipelineColumnMapping { Source = "order_id", Target = "order_id" },
+                    new PipelineColumnMapping { Source = "_key.tenant", Target = "tenant" },
+                    new PipelineColumnMapping
+                    {
+                        Source = "_key.scope.level",
+                        Target = "scope_level",
+                        Expression = "`_key.scope.level` * 10"
+                    }
+                ]
+            });
+
+        File.WriteAllText(configPath, JsonSerializer.Serialize(config, new JsonSerializerOptions { WriteIndented = true }));
+
+        try
+        {
+            _sut.GenerateFromConfigFile(configPath, checkSnapshot: false);
+
+            var queueSql = File.ReadAllText(Path.Combine(outputDirectory, "generated_orders_queue.sql"));
+            var pipelineSql = File.ReadAllText(Path.Combine(outputDirectory, "generated_pipeline.sql"));
+
+            queueSql.Should().NotContain("CREATE OR REPLACE FUNCTION");
+            pipelineSql.Split("CREATE OR REPLACE FUNCTION protobufWireField AS").Should().HaveCount(2);
+            pipelineSql.IndexOf("CREATE OR REPLACE FUNCTION protobufWireBits AS", StringComparison.Ordinal)
+                .Should().BeLessThan(pipelineSql.IndexOf("CREATE MATERIALIZED VIEW orders_mv", StringComparison.Ordinal));
+            pipelineSql.Should().Contain(
+                "CAST(protobufWireBytes(substring(_key, 7), 1) AS LowCardinality(String)) AS tenant,");
+            pipelineSql.Should().Contain(
+                "(CAST(reinterpretAsInt32(toUInt32(protobufWireBits(protobufWireBytes(substring(_key, 7), 18), 2))) AS Int32)) * 10 AS scope_level");
+            pipelineSql.Should().NotContain("`_key.");
+        }
+        finally
+        {
+            if (Directory.Exists(outputDirectory))
+                Directory.Delete(outputDirectory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void GivenPersistedKafkaKeyWithProtobufKey_WhenBuildPlan_ThenAddsTypedKafkaKeyColumns()
+    {
+        // Arrange
+        var config = CreateProtobufKeyConfig(new MergeTreeTableConfig
+        {
+            TableName = "orders_raw",
+            SourceTable = "orders_queue",
+            OrderBy = "(`kafka_key.tenant`, order_id)"
+        });
+        config.Defaults.PersistKafkaMeta = new PersistKafkaMetaConfig { Key = true };
+
+        // Act
+        var plan = _sut.BuildPlan(config);
+
+        // Assert
+        var table = plan.MergeTreeTables.Single().Config;
+        table.Columns.Should().ContainSingle(column => column.Name == "kafka_key" && column.Type == "String");
+        table.Columns.Should().ContainSingle(column =>
+            column.Name == "kafka_key.tenant"
+            && column.Type == "LowCardinality(String)"
+            && column.FieldNumberPath == "kafka:_key:1");
+        table.Columns.Should().ContainSingle(column =>
+            column.Name == "kafka_key.scope.level" && column.FieldNumberPath == "kafka:_key:18.2");
+        table.Columns.Should().NotContain(column => column.Name.StartsWith("_key", StringComparison.Ordinal));
+
+        var view = plan.MaterializedViews.Single().Config;
+        view.Columns.Should().ContainSingle(mapping => mapping.Source == "_key" && mapping.Target == "kafka_key");
+        view.Columns.Single(mapping => mapping.Target == "kafka_key.tenant").Expression
+            .Should().Be("CAST(protobufWireBytes(substring(_key, 7), 1) AS LowCardinality(String))");
+        view.Columns.Select(mapping => mapping.Target).Should().OnlyHaveUniqueItems();
+    }
+
+    [Fact]
+    public void GivenProtobufKeyWithoutPersistedKafkaKey_WhenBuildPlan_ThenMirrorHasNoKeyColumns()
+    {
+        // Arrange
+        var config = CreateProtobufKeyConfig(new MergeTreeTableConfig
+        {
+            TableName = "orders_raw",
+            SourceTable = "orders_queue",
+            OrderBy = "order_id"
+        });
+
+        // Act
+        var plan = _sut.BuildPlan(config);
+
+        // Assert
+        plan.MergeTreeTables.Single().Config.Columns
+            .Should().NotContain(column => column.Name.Contains("key", StringComparison.Ordinal));
+        ProtobufWireSqlFunctions.IsUsedBy(plan.MaterializedViews.Single().Config).Should().BeFalse();
+    }
+
+    [Fact]
+    public void GivenStringKeyAndKeyColumnMapping_WhenBuildPlan_ThenThrows()
+    {
+        // Arrange
+        var config = CreateProtobufKeyConfig(
+            new MergeTreeTableConfig
+            {
+                TableName = "orders",
+                OrderBy = "order_id",
+                Columns = [new PipelineColumnConfig { Name = "order_id", Type = "String" }]
+            },
+            new MaterializedViewConfig
+            {
+                Name = "orders_mv",
+                SourceTable = "orders_queue",
+                TargetTable = "orders",
+                Columns = [new PipelineColumnMapping { Source = "_key.order_id", Target = "order_id" }]
+            });
+        config.KafkaTables[0].Key = new KafkaKeyConfig();
+
+        // Act
+        var act = () => _sut.BuildPlan(config);
+
+        // Assert
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*orders_mv*_key.order_id*orders_queue*protobuf*");
+    }
+
+    [Fact]
+    public void GivenMaterializedViewUsingKeyFunctions_WhenGenerateStandalone_ThenPrependsFunctionDefinitions()
+    {
+        var view = new MaterializedViewConfig
+        {
+            Name = "orders_mv",
+            SourceTable = "orders_queue",
+            TargetTable = "orders",
+            Columns =
+            [
+                new PipelineColumnMapping
+                {
+                    Source = "_key.order_id",
+                    Target = "order_id",
+                    Expression = "CAST(protobufWireBytes(substring(_key, 7), 1) AS String)"
+                }
+            ]
+        };
+
+        var standalone = MaterializedViewGenerator.Generate(view);
+        var withoutDefinitions = MaterializedViewGenerator.Generate(view, includeFunctionDefinitions: false);
+
+        standalone.Should().StartWith("CREATE OR REPLACE FUNCTION protobufWireVarint AS");
+        withoutDefinitions.Should().StartWith("CREATE MATERIALIZED VIEW orders_mv TO orders AS");
+    }
+
+    [Fact]
+    public void GivenStringKey_WhenMappingRawKeyColumn_ThenSelectsVirtualKeyColumn()
+    {
+        var sql = MaterializedViewGenerator.Generate(new MaterializedViewConfig
+        {
+            Name = "orders_mv",
+            SourceTable = "orders_queue",
+            TargetTable = "orders",
+            Columns = [new PipelineColumnMapping { Source = "_key", Target = "message_key" }]
+        });
+
+        sql.Should().NotContain("FUNCTION");
+        sql.Should().Contain("_key                         AS message_key");
+    }
+
+    private static CodegenConfig CreateProtobufKeyConfig(
+        MergeTreeTableConfig mergeTreeTable,
+        MaterializedViewConfig? materializedView = null)
+    {
+        var table = CreateKafkaTable(
+            "Sandbox.Contracts.OrderEvent, Sandbox.Contracts",
+            "orders_queue",
+            "order_event",
+            "OrderEvent",
+            "orders",
+            new Dictionary<string, FieldOverrideConfig>(StringComparer.OrdinalIgnoreCase));
+        table.Key = KafkaKeyColumnMapperTests.CreateCompositeKeyTable().Key;
+
+        return new CodegenConfig
+        {
+            Defaults = OrdersQueueTestConfig.Defaults,
+            KafkaTables = [table],
+            Pipeline = new PipelineConfig
+            {
+                OutputPath = "generated_pipeline.sql",
+                MergeTreeTables = [mergeTreeTable],
+                MaterializedViews = materializedView is null ? [] : [materializedView]
+            }
+        };
+    }
+
     private static KafkaTableConfig CreateKafkaTable(
         string messageType,
         string tableName,

@@ -2,9 +2,20 @@ namespace ClickHouseSchemaGen.Generation;
 
 public static class MaterializedViewGenerator
 {
-    public static string Generate(MaterializedViewConfig config)
+    /// <param name="includeFunctionDefinitions">
+    /// Prepend the protobuf key UDFs the view uses, so the statement list is self-contained (migrations).
+    /// </param>
+    public static string Generate(MaterializedViewConfig config, bool includeFunctionDefinitions = true)
     {
-        var builder = new StringBuilder()
+        var builder = new StringBuilder();
+        if (includeFunctionDefinitions && ProtobufWireSqlFunctions.IsUsedBy(config))
+        {
+            builder
+                .AppendLine(ProtobufWireSqlFunctions.Definitions.TrimEnd())
+                .AppendLine();
+        }
+
+        builder
             .AppendLine($"CREATE MATERIALIZED VIEW {config.Name} TO {config.TargetTable} AS")
             .AppendLine("SELECT");
 

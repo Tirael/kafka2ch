@@ -20,7 +20,8 @@ public static class MaterializedViewAutoGenerator
         IReadOnlyList<MergeTreeTableConfig> originalTables,
         IReadOnlyList<MergeTreeTableConfig> expandedTables,
         IReadOnlyList<MaterializedViewConfig> explicitViews,
-        Func<string, PersistKafkaMetaConfig>? metaForSourceTable = null)
+        Func<string, PersistKafkaMetaConfig>? metaForSourceTable = null,
+        Func<string, IReadOnlyList<ClickHouseColumn>>? keyColumnsForSourceTable = null)
     {
         if (originalTables.Count != expandedTables.Count)
         {
@@ -64,7 +65,9 @@ public static class MaterializedViewAutoGenerator
                     expandedTables[i].Columns
                         .FirstOrDefault(column => column.Name == mapping.Target)
                         ?.FieldNumberPath));
-                columns.AddRange(KafkaMetaColumnFactory.CreateMappings(meta));
+                columns.AddRange(KafkaMetaColumnFactory.CreateMappings(
+                    meta,
+                    keyColumnsForSourceTable?.Invoke(original.SourceTable!)));
             }
 
             created.Add(new MaterializedViewConfig
