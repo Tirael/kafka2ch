@@ -50,6 +50,30 @@ public sealed class CodegenConfigValidator : AbstractValidator<CodegenConfig>
             .WithMessage(config => BuildAutoMaterializedViewNameError(config))
             .When(config => config.Pipeline?.MergeTreeTables.Any(table =>
                 MaterializedViewAutoGenerator.ShouldCreate(table, config.Pipeline.MaterializedViews)) == true);
+
+        RuleFor(config => config)
+            .Must(VersionsScriptSortsBeforeInitScripts)
+            .WithMessage(config =>
+                $"Migrations versions script '{Path.GetFileName(config.Migrations.VersionsOutputPath)}' must sort " +
+                "before every init script (e.g. '00_schema_migrations.sql'): init scripts record themselves " +
+                "into schema_migrations.");
+    }
+
+    private static bool VersionsScriptSortsBeforeInitScripts(CodegenConfig config)
+    {
+        var versionsFileName = Path.GetFileName(config.Migrations.VersionsOutputPath);
+        return InitScriptOutputPaths(config)
+            .Select(Path.GetFileName)
+            .All(fileName => string.CompareOrdinal(versionsFileName, fileName) < 0);
+    }
+
+    private static IEnumerable<string> InitScriptOutputPaths(CodegenConfig config)
+    {
+        foreach (var table in config.KafkaTables)
+            yield return table.OutputPath;
+
+        if (config.Pipeline is not null)
+            yield return config.Pipeline.OutputPath;
     }
 
     private static bool HasValidMaterializedViewReferences(CodegenConfig config)

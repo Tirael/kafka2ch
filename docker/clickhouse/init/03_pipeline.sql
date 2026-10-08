@@ -166,3 +166,5 @@ SELECT
     count()                     AS shipments_count
 FROM shipments
 GROUP BY minute, status;
+
+INSERT INTO schema_migrations (version, name, checksum, applied_at, kind) VALUES ('03', '03_pipeline.sql', '5f14cbb4219c967846a9d365dcb68f2bffc98452450a45ce0f18f0ea05d56a67', now(), 'init');

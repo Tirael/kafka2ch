@@ -17,7 +17,7 @@
   "migrations": {
     "snapshotPath": "../../docker/clickhouse/init/schema.snapshot.json",
     "migrationsDirectory": "../../docker/clickhouse/migrations",
-    "versionsOutputPath": "../../docker/clickhouse/init/99_schema_migrations.sql"
+    "versionsOutputPath": "../../docker/clickhouse/init/00_schema_migrations.sql"
   },
   "kafkaTables": [
     {

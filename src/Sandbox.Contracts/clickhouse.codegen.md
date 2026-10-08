@@ -70,7 +70,9 @@ dotnet build src/Sandbox.Contracts
 
 - `snapshotPath` → `schema.snapshot.json`
 - `migrationsDirectory` → `docker/clickhouse/migrations`
-- `versionsOutputPath` → `99_schema_migrations.sql`
+- `versionsOutputPath` → `00_schema_migrations.sql`
+
+`00_schema_migrations.sql` создаёт таблицу `schema_migrations` и записывает baseline-миграции (`kind = 'migration'`). Префикс `00` зарезервирован: файл обязан идти раньше любого init-скрипта (валидатор конфига падает иначе), потому что каждый сгенерированный init-скрипт (`01_*`, `02_*`, …) в конце записывает себя строкой `kind = 'init'` (version — префикс файла, checksum — SHA-256 тела скрипта без этой строки). Сама таблица версий не числится миграцией: её создаёт и обновляет (`ALTER … ADD COLUMN IF NOT EXISTS kind`) Migrator до применения миграций, по аналогии с `VersionInfo` в FluentMigrator. Migrator учитывает только `kind = 'migration'`.
 
 Workflow: правка proto → build падает на drift → `Cli migrate --name …` → review/commit → apply через `clickhouse-migrate` / Migrator. Только BACKWARD-compatible эволюция proto; `SkipClickHouseSnapshotCheck=true` — escape hatch.
 

@@ -102,7 +102,7 @@ docker compose up -d --build
 
 ## Миграции схемы
 
-Эволюция proto / pipeline без потери данных в MergeTree:
+Эволюция proto / pipeline без потери данных в MergeTree. История — в таблице `schema_migrations`: стартовые init-скрипты пишутся с `kind = 'init'`, миграции — с `kind = 'migration'` (`SELECT * FROM schema_migrations ORDER BY kind, version`).
 
 1. Измените `protos/` или `clickhouse.codegen.json`
 2. `dotnet build src/Sandbox.Contracts` — упадёт при drift `schema.snapshot.json`
@@ -114,7 +114,7 @@ dotnet exec tools/ClickHouseSchemaGen.Cli/bin/Debug/net8.0/ClickHouseSchemaGen.C
   migrate --config src/Sandbox.Contracts/clickhouse.codegen.json --name <change_name>
 ```
 
-4. Закоммитьте SQL в `docker/clickhouse/migrations/`, обновлённый `schema.snapshot.json` и `99_schema_migrations.sql`
+4. Закоммитьте SQL в `docker/clickhouse/migrations/`, обновлённый `schema.snapshot.json` и `00_schema_migrations.sql`
 5. Apply: сервис `clickhouse-migrate` при `docker compose up`, либо вручную:
 
 ```bash

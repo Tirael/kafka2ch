@@ -20,7 +20,8 @@ public sealed class MigrationsConfig
 
     public string MigrationsDirectory { get; set; } = "../../docker/clickhouse/migrations";
 
-    public string VersionsOutputPath { get; set; } = "../../docker/clickhouse/init/99_schema_migrations.sql";
+    public string VersionsOutputPath { get; set; } = 
+        $"../../docker/clickhouse/init/{SchemaMigrationsTable.DefaultScriptFileName}";
 }
 
 public sealed class CodegenDefaults

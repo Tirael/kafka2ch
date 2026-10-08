@@ -15,6 +15,34 @@ public sealed class CodegenConfigValidatorTests
     }
 
     [Fact]
+    public void GivenVersionsScriptSortedAfterInitScripts_WhenValidate_ThenFails()
+    {
+        var config = CreateValidConfig();
+        config.KafkaTables[0].OutputPath = "init/01_orders_queue.sql";
+        config.Pipeline!.OutputPath = "init/03_pipeline.sql";
+        config.Migrations.VersionsOutputPath = "init/99_schema_migrations.sql";
+
+        var result = _sut.Validate(config);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(error =>
+            error.ErrorMessage.Contains("99_schema_migrations.sql", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void GivenVersionsScriptWithReservedZeroPrefix_WhenValidate_ThenSucceeds()
+    {
+        var config = CreateValidConfig();
+        config.KafkaTables[0].OutputPath = "init/01_orders_queue.sql";
+        config.Pipeline!.OutputPath = "init/99_pipeline.sql";
+        config.Migrations.VersionsOutputPath = "init/00_schema_migrations.sql";
+
+        var result = _sut.Validate(config);
+
+        result.IsValid.Should().BeTrue();
+    }
+
+    [Fact]
     public void GivenEmptyKafkaTables_WhenValidate_ThenFails()
     {
         var config = CreateValidConfig();
