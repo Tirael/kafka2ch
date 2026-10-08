@@ -1,6 +1,6 @@
-namespace ClickHouseSchemaGen.Tests.Support;
+namespace ClickHouseSchemaGen.Shared;
 
-internal static class SchemaGeneratorFactory
+public static class SchemaGeneratorFactory
 {
     public static ClickHouseSchemaGenerator Create() => new(new DenormalizationPlanner());
 }

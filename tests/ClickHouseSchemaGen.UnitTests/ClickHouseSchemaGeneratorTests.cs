@@ -1,4 +1,4 @@
-namespace ClickHouseSchemaGen.Tests.Unit;
+namespace ClickHouseSchemaGen.UnitTests;
 
 public sealed class ClickHouseSchemaGeneratorTests
 {
@@ -556,7 +556,7 @@ public sealed class ClickHouseSchemaGeneratorTests
             "OrderEvent",
             "orders",
             new Dictionary<string, FieldOverrideConfig>(StringComparer.OrdinalIgnoreCase));
-        table.Key = KafkaKeyColumnMapperTests.CreateCompositeKeyTable().Key;
+        table.Key = OrdersQueueTestConfig.CreateCompositeKeyTable().Key;
 
         return new CodegenConfig
         {

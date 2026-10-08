@@ -238,7 +238,7 @@ protos/**/*.proto → Grpc.Tools → MessageDescriptor
 
 Overrides в `clickhouse.codegen.json`: `defaults` (maxFlattenDepth, repeatedMessageStrategy, …) + `fieldOverrides` per field.
 
-Тесты: [`tests/ClickHouseSchemaGen.Tests/`](tests/ClickHouseSchemaGen.Tests/) — xUnit + AwesomeAssertions + Testcontainers (15 tests).
+Тесты: [`tests/ClickHouseSchemaGen.UnitTests/`](tests/ClickHouseSchemaGen.UnitTests/), [`tests/ClickHouseSchemaGen.IntegrationTests/`](tests/ClickHouseSchemaGen.IntegrationTests/) (+ shared helpers в [`tests/ClickHouseSchemaGen.Shared/`](tests/ClickHouseSchemaGen.Shared/)) — xUnit + AwesomeAssertions + Testcontainers.
 
 ## Sandbox-приложение (.NET 8, vertical slice architecture)
 
@@ -275,7 +275,9 @@ tools/
   ClickHouseSchemaGen.Tasks/  # shadow-copy + RoslynCodeTaskFactory codegen (AppLocker / no bin lock)
   ClickHouseSchemaGen.Cli/
 tests/
-  ClickHouseSchemaGen.Tests/
+  ClickHouseSchemaGen.Shared/
+  ClickHouseSchemaGen.UnitTests/
+  ClickHouseSchemaGen.IntegrationTests/
 docker/
   clickhouse/init/
     01_orders_queue.sql       # generated
@@ -391,4 +393,4 @@ kafka-init:
 - В логах `sandbox-app` видно и публикацию событий, и периодический вывод поминутных агрегатов по категориям.
 - `SELECT count() FROM orders` растёт; суммы в `orders_agg_1m` (через GROUP BY) сходятся с `orders`.
 - В Schema Registry зарегистрированы схемы `orders-key`, `orders-value` и reference-схема импорта (фактическое имя subject задокументировано в README); связь value-схемы с импортом видна в `references`.
-- `dotnet test tests/ClickHouseSchemaGen.Tests` — все тесты green (Docker для integration); `dotnet build src/Sandbox.Contracts` регенерирует init SQL без ручных правок.
+- `dotnet test tests/ClickHouseSchemaGen.UnitTests` и `dotnet test tests/ClickHouseSchemaGen.IntegrationTests` — все тесты green (Docker для integration); `dotnet build src/Sandbox.Contracts` регенерирует init SQL без ручных правок.

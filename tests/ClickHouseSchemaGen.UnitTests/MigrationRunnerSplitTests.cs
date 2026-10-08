@@ -1,6 +1,6 @@
 using ClickHouseSchemaGen.Migrator;
 
-namespace ClickHouseSchemaGen.Tests.Unit;
+namespace ClickHouseSchemaGen.UnitTests;
 
 public sealed class MigrationRunnerSplitTests
 {

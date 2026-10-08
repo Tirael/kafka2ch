@@ -1,6 +1,6 @@
-namespace ClickHouseSchemaGen.Tests.Support;
+namespace ClickHouseSchemaGen.Shared;
 
-internal static class OrdersQueueTestConfig
+public static class OrdersQueueTestConfig
 {
     public static CodegenDefaults Defaults => new()
     {
@@ -35,4 +35,19 @@ internal static class OrdersQueueTestConfig
             ["status_history"] = new() { Enum8 = true }
         }
     };
+
+    public static KafkaTableConfig CreateCompositeKeyTable()
+    {
+        var table = Create();
+        table.Key = new KafkaKeyConfig
+        {
+            Format = KafkaKeyFormats.Protobuf,
+            MessageType = "Sandbox.Contracts.TestFixtures.CompositeKey, Sandbox.Contracts",
+            FieldOverrides = new Dictionary<string, FieldOverrideConfig>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["tenant"] = new() { Type = "LowCardinality(String)" }
+            }
+        };
+        return table;
+    }
 }

@@ -1,6 +1,6 @@
-namespace ClickHouseSchemaGen.Tests.Support;
+namespace ClickHouseSchemaGen.Shared;
 
-internal static class RepoPaths
+public static class RepoPaths
 {
     public static string RepositoryRoot =>
         Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));

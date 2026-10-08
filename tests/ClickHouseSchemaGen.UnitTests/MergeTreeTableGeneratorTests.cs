@@ -1,4 +1,4 @@
-namespace ClickHouseSchemaGen.Tests.Unit;
+namespace ClickHouseSchemaGen.UnitTests;
 
 public sealed class MergeTreeTableGeneratorTests
 {
