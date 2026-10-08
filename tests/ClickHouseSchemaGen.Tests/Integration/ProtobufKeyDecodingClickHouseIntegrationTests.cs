@@ -102,6 +102,9 @@ public sealed class ProtobufKeyDecodingClickHouseIntegrationTests : IAsyncLifeti
         {
             SchemaGeneratorFactory.Create().GenerateFromConfigFile(configPath, checkSnapshot: false);
 
+            var bootstrap = await _clickHouse.ExecScriptAsync(SchemaMigrationsTable.CreateTableSql);
+            bootstrap.ExitCode.Should().Be(0, bootstrap.Stderr);
+
             // Act
             foreach (var script in new[] { "01_orders_queue.sql", "02_shipments_queue.sql", "03_pipeline.sql" })
             {
