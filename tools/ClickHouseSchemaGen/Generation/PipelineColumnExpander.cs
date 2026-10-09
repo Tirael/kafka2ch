@@ -58,6 +58,7 @@ public static class PipelineColumnExpander
             TableName = table.TableName,
             OrderBy = table.OrderBy,
             Ttl = table.Ttl,
+            ShardingKey = table.ShardingKey,
             SourceTable = table.SourceTable,
             IncludeKafkaMeta = table.IncludeKafkaMeta,
             Columns = columns

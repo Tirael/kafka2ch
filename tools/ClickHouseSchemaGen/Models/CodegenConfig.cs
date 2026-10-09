@@ -2,6 +2,19 @@ namespace ClickHouseSchemaGen.Models;
 
 public sealed class CodegenConfig
 {
+    /// <summary>
+    /// Base config merged under this one (objects deep-merged, arrays and scalars replaced).
+    /// Relative to this file. Relative paths of the merged config resolve against this file.
+    /// </summary>
+    public string? Extends { get; set; }
+
+    /// <summary>
+    /// When set, every init script is written here under the file name of its <c>outputPath</c>.
+    /// </summary>
+    public string? OutputDirectory { get; set; }
+
+    public ClusterConfig Cluster { get; set; } = new();
+
     public CodegenDefaults Defaults { get; set; } = new();
 
     public List<KafkaTableConfig> KafkaTables { get; set; } = [];
@@ -145,6 +158,11 @@ public sealed class MergeTreeTableConfig
     public required string OrderBy { get; set; }
 
     public string? Ttl { get; set; }
+
+    /// <summary>
+    /// Cluster mode only: sharding key of the <c>Distributed</c> table. Defaults to <see cref="ClusterConfig.ShardingKey"/>.
+    /// </summary>
+    public string? ShardingKey { get; set; }
 
     /// <summary>
     /// Kafka queue table to copy columns from when <see cref="Columns"/> is empty.
