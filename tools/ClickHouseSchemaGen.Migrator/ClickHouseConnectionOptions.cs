@@ -1,3 +1,5 @@
+using ClickHouseSchemaGen.Models;
+
 namespace ClickHouseSchemaGen.Migrator;
 
 public sealed class ClickHouseConnectionOptions
@@ -16,6 +18,26 @@ public sealed class ClickHouseConnectionOptions
 
     public string Password { get; init; } =
         Environment.GetEnvironmentVariable("ClickHouse__Password") ?? "";
+
+    /// <summary>Cluster name; empty means a single node.</summary>
+    public string? Cluster { get; init; } = Environment.GetEnvironmentVariable("ClickHouse__Cluster");
+
+    public string HistoryReplicatedPath { get; init; } =
+        Environment.GetEnvironmentVariable("ClickHouse__HistoryReplicatedPath") is { Length: > 0 } path
+            ? path
+            : ClusterConfig.DefaultHistoryReplicatedPath;
+
+    public string HistoryReplicaName { get; init; } =
+        Environment.GetEnvironmentVariable("ClickHouse__HistoryReplicaName") is { Length: > 0 } replica
+            ? replica
+            : ClusterConfig.DefaultHistoryReplicaName;
+
+    public ClusterConfig ToClusterConfig() => new()
+    {
+        Name = Cluster,
+        HistoryReplicatedPath = HistoryReplicatedPath,
+        HistoryReplicaName = HistoryReplicaName
+    };
 
     public string ConnectionString
     {

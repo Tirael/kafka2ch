@@ -3,7 +3,12 @@ using Microsoft.Extensions.Logging;
 
 if (args.Contains("--help") || args.Contains("-h") || args.Length == 0)
 {
-    Console.WriteLine("Usage: ClickHouseSchemaGen.Migrator --migrations <dir>");
+    Console.WriteLine("""
+        Usage: ClickHouseSchemaGen.Migrator --migrations <dir> [--cluster <name>]
+          --cluster <name>   apply to a ClickHouse cluster (env ClickHouse__Cluster); schema_migrations
+                             is created ON CLUSTER as a ReplicatedMergeTree spanning every node
+                             (Keeper path: env ClickHouse__HistoryReplicatedPath, replica: ClickHouse__HistoryReplicaName)
+        """);
     return args.Length == 0 ? 1 : 0;
 }
 
@@ -15,19 +20,34 @@ if (migrationsIndex < 0 || migrationsIndex + 1 >= args.Length)
 }
 
 var migrationsDirectory = args[migrationsIndex + 1];
-using var loggerFactory = LoggerFactory.Create(builder => builder.AddSimpleConsole(options =>
+var options = new ClickHouseConnectionOptions();
+var clusterIndex = Array.IndexOf(args, "--cluster");
+if (clusterIndex >= 0)
 {
-    options.SingleLine = true;
-    options.TimestampFormat = "HH:mm:ss ";
+    if (clusterIndex + 1 >= args.Length)
+    {
+        Console.Error.WriteLine("Missing value for --cluster.");
+        return 1;
+    }
+
+    options = new ClickHouseConnectionOptions { Cluster = args[clusterIndex + 1] };
+}
+
+using var loggerFactory = LoggerFactory.Create(builder => builder.AddSimpleConsole(simpleConsole =>
+{
+    simpleConsole.SingleLine = true;
+    simpleConsole.TimestampFormat = "HH:mm:ss ";
 }));
 var logger = loggerFactory.CreateLogger("Migrator");
-var options = new ClickHouseConnectionOptions();
-var runner = new MigrationRunner(logger, TimeProvider.System);
+var runner = new MigrationRunner(logger, TimeProvider.System, options.ToClusterConfig());
 
 try
 {
     await runner.ApplyAsync(options.ConnectionString, migrationsDirectory, CancellationToken.None);
-    logger.LogInformation("Migrations applied from {Directory}", migrationsDirectory);
+    logger.LogInformation(
+        "Migrations applied from {Directory}{Cluster}",
+        migrationsDirectory,
+        string.IsNullOrWhiteSpace(options.Cluster) ? string.Empty : $" on cluster {options.Cluster}");
     return 0;
 }
 catch (Exception exception)

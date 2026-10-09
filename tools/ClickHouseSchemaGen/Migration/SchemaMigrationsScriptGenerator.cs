@@ -2,7 +2,7 @@ namespace ClickHouseSchemaGen.Migration;
 
 public static class SchemaMigrationsScriptGenerator
 {
-    public static string Generate(IReadOnlyList<MigrationFileInfo> migrations)
+    public static string Generate(IReadOnlyList<MigrationFileInfo> migrations, ClusterDdl? cluster = null)
     {
         ArgumentNullException.ThrowIfNull(migrations);
 
@@ -10,7 +10,7 @@ public static class SchemaMigrationsScriptGenerator
             .AppendLine(SqlScriptWriter.GeneratedHeader)
             .AppendLine("-- Must sort before every init script: they record themselves into this table.")
             .AppendLine()
-            .Append(SchemaMigrationsTable.CreateTableSql).AppendLine(";")
+            .Append(SchemaMigrationsTable.CreateTableSqlFor(cluster ?? ClusterDdl.SingleNode)).AppendLine(";")
             .AppendLine();
 
         foreach (var migration in migrations.OrderBy(m => m.Version, StringComparer.Ordinal))

@@ -19,6 +19,7 @@ public static partial class MigrationSqlGenerator
         ArgumentException.ThrowIfNullOrWhiteSpace(migrationName);
         ArgumentException.ThrowIfNullOrWhiteSpace(targetChecksum);
 
+        var cluster = ClusterDdl.For(newPlan.Config);
         var builder = new StringBuilder();
         AppendHeader(builder, migrationName, generatedAt, parentChecksum, targetChecksum, plan.Warnings);
 
@@ -32,18 +33,18 @@ public static partial class MigrationSqlGenerator
 
         foreach (var queue in detachedQueues)
         {
-            builder.AppendLine($"DETACH TABLE IF EXISTS {queue};");
-            builder.AppendLine($"-- await:kafka_consumers_empty {queue}");
+            builder.AppendLine($"DETACH TABLE IF EXISTS {queue}{cluster.OnCluster};");
+            builder.AppendLine(cluster.AwaitKafkaConsumersEmpty(queue));
         }
 
         if (detachedQueues.Count > 0)
             builder.AppendLine();
 
-        AppendMergeTreeAutomaticChanges(builder, plan, newPlan);
-        AppendNewMergeTreeTables(builder, plan, newPlan);
-        AppendPipelineRecreates(builder, plan, oldPlan, newPlan, kafkaRecreates, metaOnlyQueues);
+        AppendMergeTreeAutomaticChanges(builder, plan, cluster);
+        AppendNewMergeTreeTables(builder, plan, newPlan, cluster);
+        AppendPipelineRecreates(builder, plan, newPlan, kafkaRecreates, metaOnlyQueues, cluster);
 
-        AppendManualBlock(builder, plan);
+        AppendManualBlock(builder, plan, cluster);
 
         return builder.ToString();
     }
@@ -71,22 +72,28 @@ public static partial class MigrationSqlGenerator
     private static void AppendMergeTreeAutomaticChanges(
         StringBuilder builder,
         MigrationPlan plan,
-        ResolvedSchemaPlan newPlan)
+        ClusterDdl cluster)
     {
         foreach (var change in plan.AutomaticChanges.OrderBy(c => c, ChangeComparer.Instance))
         {
             switch (change)
             {
                 case ColumnAdded added:
-                    builder.AppendLine(BuildAddColumnStatement(added));
+                    AppendAlter(builder, cluster, added.TableName, BuildAddColumnClause(added));
                     break;
                 case ColumnRenamed renamed:
-                    builder.AppendLine(
-                        $"ALTER TABLE {renamed.TableName} RENAME COLUMN IF EXISTS {SqlColumnFormatter.FormatColumnName(renamed.OldName)} TO {SqlColumnFormatter.FormatColumnName(renamed.NewName)};");
+                    AppendAlter(
+                        builder,
+                        cluster,
+                        renamed.TableName,
+                        $"RENAME COLUMN IF EXISTS {SqlColumnFormatter.FormatColumnName(renamed.OldName)} TO {SqlColumnFormatter.FormatColumnName(renamed.NewName)}");
                     break;
                 case ColumnTypeChanged { Kind: TypeChangeKind.Safe or TypeChangeKind.Rewrite } typeChanged:
-                    builder.AppendLine(
-                        $"ALTER TABLE {typeChanged.TableName} MODIFY COLUMN {SqlColumnFormatter.FormatColumnName(typeChanged.ColumnName)} {typeChanged.NewType};");
+                    AppendAlter(
+                        builder,
+                        cluster,
+                        typeChanged.TableName,
+                        $"MODIFY COLUMN {SqlColumnFormatter.FormatColumnName(typeChanged.ColumnName)} {typeChanged.NewType}");
                     break;
             }
         }
@@ -95,27 +102,41 @@ public static partial class MigrationSqlGenerator
             builder.AppendLine();
     }
 
+    /// <summary>
+    /// A column change of MergeTree table <c>t</c>: on a cluster the storage table <c>t_local</c> is altered
+    /// first, then the <c>Distributed</c> table <c>t</c> whose structure must match it.
+    /// </summary>
+    private static void AppendAlter(StringBuilder builder, ClusterDdl cluster, string tableName, string clause)
+    {
+        foreach (var target in AlterTargets(cluster, tableName))
+            builder.AppendLine($"ALTER TABLE {target}{cluster.OnCluster} {clause};");
+    }
+
+    private static IEnumerable<string> AlterTargets(ClusterDdl cluster, string tableName) =>
+        cluster.Enabled ? [cluster.StorageTable(tableName), tableName] : [tableName];
+
     private static void AppendNewMergeTreeTables(
         StringBuilder builder,
         MigrationPlan plan,
-        ResolvedSchemaPlan newPlan)
+        ResolvedSchemaPlan newPlan,
+        ClusterDdl cluster)
     {
         foreach (var added in plan.AutomaticChanges.OfType<TableAdded>().Where(t => t.Engine == "MergeTree"))
         {
             var table = newPlan.MergeTreeTables.First(t =>
                 string.Equals(t.Config.TableName, added.TableName, StringComparison.OrdinalIgnoreCase));
             builder.AppendLine("-- New MergeTree table; consider a new kafka_group_name for backfill if needed.");
-            builder.Append(MergeTreeTableGenerator.Generate(table.Config, ifNotExists: true));
+            builder.Append(MergeTreeTableGenerator.Generate(table.Config, ifNotExists: true, cluster));
         }
     }
 
     private static void AppendPipelineRecreates(
         StringBuilder builder,
         MigrationPlan plan,
-        ResolvedSchemaPlan oldPlan,
         ResolvedSchemaPlan newPlan,
         HashSet<string> kafkaRecreates,
-        HashSet<string> metaOnlyQueues)
+        HashSet<string> metaOnlyQueues,
+        ClusterDdl cluster)
     {
         var viewsToRecreate = plan.AutomaticChanges
             .OfType<ViewChanged>()
@@ -133,27 +154,27 @@ public static partial class MigrationSqlGenerator
             var queue = view.Config.SourceTable;
             var recreateKafka = kafkaRecreates.Contains(queue);
 
-            builder.AppendLine($"DROP VIEW IF EXISTS {view.Config.Name};");
+            builder.AppendLine($"DROP VIEW IF EXISTS {view.Config.Name}{cluster.OnCluster};");
 
             if (recreateKafka)
             {
-                builder.AppendLine($"DROP TABLE IF EXISTS {queue};");
+                builder.AppendLine($"DROP TABLE IF EXISTS {queue}{cluster.OnCluster};");
 
                 var kafkaPlan = newPlan.KafkaTables.First(t =>
                     string.Equals(t.Config.TableName, queue, StringComparison.OrdinalIgnoreCase));
-                builder.Append(KafkaTableGenerator.Generate(kafkaPlan.Config, kafkaPlan.Columns, ifNotExists: false));
+                builder.Append(KafkaTableGenerator.Generate(kafkaPlan.Config, kafkaPlan.Columns, ifNotExists: false, cluster));
                 builder.AppendLine();
             }
 
             // ClickHouse cannot create a view over a detached table; an attached Kafka table without views
             // has no consumers, so attaching before CREATE does not start consumption early.
             if (!recreateKafka && metaOnlyQueues.Contains(queue) && attachedQueues.Add(queue))
-                builder.AppendLine($"ATTACH TABLE {queue};");
+                builder.AppendLine($"ATTACH TABLE {queue}{cluster.OnCluster};");
 
-            builder.Append(MaterializedViewGenerator.Generate(view.Config));
+            builder.Append(MaterializedViewGenerator.Generate(view.Config, cluster: cluster));
 
             if (recreateKafka)
-                builder.AppendLine($"ATTACH TABLE {queue};");
+                builder.AppendLine($"ATTACH TABLE {queue}{cluster.OnCluster};");
 
             builder.AppendLine();
         }
@@ -173,16 +194,16 @@ public static partial class MigrationSqlGenerator
                 continue;
             }
 
-            builder.AppendLine($"DROP TABLE IF EXISTS {queue};");
+            builder.AppendLine($"DROP TABLE IF EXISTS {queue}{cluster.OnCluster};");
             var kafkaPlan = newPlan.KafkaTables.First(t =>
                 string.Equals(t.Config.TableName, queue, StringComparison.OrdinalIgnoreCase));
-            builder.Append(KafkaTableGenerator.Generate(kafkaPlan.Config, kafkaPlan.Columns, ifNotExists: false));
-            builder.AppendLine($"ATTACH TABLE {queue};");
+            builder.Append(KafkaTableGenerator.Generate(kafkaPlan.Config, kafkaPlan.Columns, ifNotExists: false, cluster));
+            builder.AppendLine($"ATTACH TABLE {queue}{cluster.OnCluster};");
             builder.AppendLine();
         }
     }
 
-    private static void AppendManualBlock(StringBuilder builder, MigrationPlan plan)
+    private static void AppendManualBlock(StringBuilder builder, MigrationPlan plan, ClusterDdl cluster)
     {
         if (plan.ManualChanges.Count == 0)
             return;
@@ -193,12 +214,20 @@ public static partial class MigrationSqlGenerator
             switch (change)
             {
                 case ColumnRemoved removed:
-                    builder.AppendLine(
-                        $"-- ALTER TABLE {removed.TableName} DROP COLUMN IF EXISTS {SqlColumnFormatter.FormatColumnName(removed.ColumnName)};");
+                    foreach (var target in AlterTargets(cluster, removed.TableName))
+                    {
+                        builder.AppendLine(
+                            $"-- ALTER TABLE {target}{cluster.OnCluster} DROP COLUMN IF EXISTS {SqlColumnFormatter.FormatColumnName(removed.ColumnName)};");
+                    }
+
                     break;
                 case ColumnTypeChanged typeChanged:
-                    builder.AppendLine(
-                        $"-- ALTER TABLE {typeChanged.TableName} MODIFY COLUMN {SqlColumnFormatter.FormatColumnName(typeChanged.ColumnName)} {typeChanged.NewType}; -- {typeChanged.Kind}");
+                    foreach (var target in AlterTargets(cluster, typeChanged.TableName))
+                    {
+                        builder.AppendLine(
+                            $"-- ALTER TABLE {target}{cluster.OnCluster} MODIFY COLUMN {SqlColumnFormatter.FormatColumnName(typeChanged.ColumnName)} {typeChanged.NewType}; -- {typeChanged.Kind}");
+                    }
+
                     break;
                 case OrderByOrTtlChanged order:
                     builder.AppendLine(
@@ -212,8 +241,12 @@ public static partial class MigrationSqlGenerator
                     builder.AppendLine(
                         $"-- Manual trailingSql update required (hash {trailing.OldHash ?? "<empty>"} -> {trailing.NewHash ?? "<empty>"}).");
                     break;
+                case TableRemoved { Engine: "MergeTree" } removed when cluster.Enabled:
+                    builder.AppendLine($"-- DROP TABLE IF EXISTS {removed.TableName}{cluster.OnCluster};");
+                    builder.AppendLine($"-- DROP TABLE IF EXISTS {cluster.StorageTable(removed.TableName)}{cluster.OnCluster} SYNC;");
+                    break;
                 case TableRemoved removed:
-                    builder.AppendLine($"-- DROP TABLE IF EXISTS {removed.TableName};");
+                    builder.AppendLine($"-- DROP TABLE IF EXISTS {removed.TableName}{cluster.OnCluster};");
                     break;
                 default:
                     builder.AppendLine($"-- {change.GetType().Name}: {change}");
@@ -224,7 +257,7 @@ public static partial class MigrationSqlGenerator
         builder.AppendLine();
     }
 
-    private static string BuildAddColumnStatement(ColumnAdded added)
+    private static string BuildAddColumnClause(ColumnAdded added)
     {
         var defaultClause = BuildDefaultClause(added.ColumnType);
         var afterClause = string.IsNullOrWhiteSpace(added.AfterColumn)
@@ -232,8 +265,8 @@ public static partial class MigrationSqlGenerator
             : $" AFTER {SqlColumnFormatter.FormatColumnName(added.AfterColumn)}";
 
         return defaultClause is null
-            ? $"ALTER TABLE {added.TableName} ADD COLUMN IF NOT EXISTS {SqlColumnFormatter.FormatBareDefinition(added.ColumnName, added.ColumnType)}{afterClause};"
-            : $"ALTER TABLE {added.TableName} ADD COLUMN IF NOT EXISTS {SqlColumnFormatter.FormatBareDefinition(added.ColumnName, added.ColumnType)} DEFAULT {defaultClause}{afterClause};";
+            ? $"ADD COLUMN IF NOT EXISTS {SqlColumnFormatter.FormatBareDefinition(added.ColumnName, added.ColumnType)}{afterClause}"
+            : $"ADD COLUMN IF NOT EXISTS {SqlColumnFormatter.FormatBareDefinition(added.ColumnName, added.ColumnType)} DEFAULT {defaultClause}{afterClause}";
     }
 
     internal static string? BuildDefaultClause(string columnType)

@@ -25,9 +25,22 @@ public static class SchemaMigrationsTable
 
     // Upgrades for tables created by older releases. They are detected by schema, not recorded as rows,
     // so they must stay idempotent.
-    public static IReadOnlyList<string> UpgradeStatements { get; } =
+    public static IReadOnlyList<string> UpgradeStatements { get; } = UpgradeStatementsFor(ClusterDdl.SingleNode);
+
+    /// <summary>
+    /// In cluster mode the history is one replicated table spanning every node (no <c>{shard}</c> in its path),
+    /// so the migrator sees the same rows whichever node it connects to.
+    /// </summary>
+    public static string CreateTableSqlFor(ClusterDdl cluster) =>
+        cluster.Enabled
+            ? CreateTableSql
+                .Replace($"EXISTS {TableName}", $"EXISTS {TableName}{cluster.OnCluster}", StringComparison.Ordinal)
+                .Replace("ENGINE = MergeTree", $"ENGINE = {cluster.HistoryEngine("MergeTree")}", StringComparison.Ordinal)
+            : CreateTableSql;
+
+    public static IReadOnlyList<string> UpgradeStatementsFor(ClusterDdl cluster) =>
     [
-        "ALTER TABLE schema_migrations ADD COLUMN IF NOT EXISTS kind LowCardinality(String) DEFAULT 'migration'"
+        $"ALTER TABLE {TableName}{cluster.OnCluster} ADD COLUMN IF NOT EXISTS kind LowCardinality(String) DEFAULT 'migration'"
     ];
 
     public static string InsertSql(
