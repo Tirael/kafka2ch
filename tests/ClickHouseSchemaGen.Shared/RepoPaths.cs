@@ -10,4 +10,10 @@ public static class RepoPaths
 
     public static string CodegenConfigPath =>
         Path.Combine(RepositoryRoot, "src", "Sandbox.Contracts", "clickhouse.codegen.json");
+
+    public static string ClusterCodegenConfigPath =>
+        Path.Combine(RepositoryRoot, "src", "Sandbox.Contracts", "clickhouse.codegen.cluster.json");
+
+    public static string ClusterInitDirectory =>
+        Path.Combine(RepositoryRoot, "docker", "clickhouse-cluster", "init");
 }
