@@ -21,7 +21,10 @@
     <Copy SourceFiles="@(ProtoSchema)" DestinationFiles="@(ProtoSchema->'$(MSBuildProjectDirectory)/../../docker/clickhouse/format_schemas/%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
   </Target>
 
-
+  <!--
+    In-repo: MSBuild local Tasks (no NuGet pack required). Escape: SkipClickHouseCodegen=true.
+    External: PackageReference ClickHouseSchemaGen.Tasks — see README.
+  -->
   <Target Name="GenerateClickHouseDdl" AfterTargets="SyncProtoSchemas" Condition="'$(SkipClickHouseCodegen)' != 'true'">
     <PropertyGroup>
       <_ClickHouseSchemaGenTasksProject>$(MSBuildProjectDirectory)/../../tools/ClickHouseSchemaGen.Tasks/ClickHouseSchemaGen.Tasks.csproj</_ClickHouseSchemaGenTasksProject>

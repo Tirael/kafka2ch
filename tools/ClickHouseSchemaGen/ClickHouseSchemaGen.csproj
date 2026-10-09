@@ -2,6 +2,9 @@
 
   <PropertyGroup>
     <RootNamespace>ClickHouseSchemaGen</RootNamespace>
+    <IsPackable>true</IsPackable>
+    <PackageId>ClickHouseSchemaGen</PackageId>
+    <Description>Proto3 → ClickHouse DDL generator (Kafka engine, MergeTree, materialized views, schema migrations).</Description>
   </PropertyGroup>
 
   <ItemGroup>

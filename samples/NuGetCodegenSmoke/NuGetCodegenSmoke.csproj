@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Smoke consumer for the ClickHouseSchemaGen.Tasks NuGet package.
+    Message types come from Sandbox.Contracts (built with SkipClickHouseCodegen);
+    DDL generation runs via the packaged MSBuild targets into ./generated/.
+  -->
+
+  <PropertyGroup>
+    <RootNamespace>NuGetCodegenSmoke</RootNamespace>
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+    <ClickHouseCodegenConfig>$(MSBuildProjectDirectory)/clickhouse.codegen.json</ClickHouseCodegenConfig>
+    <ClickHouseCodegenRunOnBuild>true</ClickHouseCodegenRunOnBuild>
+    <SkipClickHouseSnapshotCheck>true</SkipClickHouseSnapshotCheck>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ClickHouseSchemaGen.Tasks" Version="0.1.0" PrivateAssets="all" />
+    <PackageReference Include="Google.Protobuf" Version="3.36.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Sandbox.Contracts\Sandbox.Contracts.csproj"
+                      GlobalPropertiesToRemove="ClickHouseCodegenConfig;ClickHouseCodegenRunOnBuild;SkipClickHouseSnapshotCheck"
+                      AdditionalProperties="SkipClickHouseCodegen=true" />
+  </ItemGroup>
+
+  <Target Name="SetClickHouseCodegenAssemblies" BeforeTargets="ClickHouseSchemaGen_GenerateOnBuild">
+    <PropertyGroup>
+      <ClickHouseCodegenAssemblies>$(TargetDir)Sandbox.Contracts.dll</ClickHouseCodegenAssemblies>
+    </PropertyGroup>
+    <Error Condition="!Exists('$(ClickHouseCodegenAssemblies)')"
+           Text="Sandbox.Contracts.dll was not copied to $(TargetDir). Ensure the ProjectReference builds first." />
+  </Target>
+
+</Project>

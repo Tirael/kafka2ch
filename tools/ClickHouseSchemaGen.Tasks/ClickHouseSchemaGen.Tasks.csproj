@@ -6,118 +6,38 @@
     <UseAppHost>false</UseAppHost>
     <SkipClickHouseCodegen>true</SkipClickHouseCodegen>
     <ProduceReferenceAssembly>false</ProduceReferenceAssembly>
+
+    <IsPackable>true</IsPackable>
+    <PackageId>ClickHouseSchemaGen.Tasks</PackageId>
+    <Description>MSBuild tasks that generate ClickHouse Kafka/MergeTree DDL from protobuf message assemblies and clickhouse.codegen.json.</Description>
+    <DevelopmentDependency>true</DevelopmentDependency>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
+    <TargetsForTfmSpecificContentInPackage>$(TargetsForTfmSpecificContentInPackage);_ClickHouseSchemaGen_PackTaskAssemblies</TargetsForTfmSpecificContentInPackage>
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\ClickHouseSchemaGen\ClickHouseSchemaGen.csproj" />
+    <ProjectReference Include="..\ClickHouseSchemaGen\ClickHouseSchemaGen.csproj" PrivateAssets="all" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Include="build\ClickHouseSchemaGen.Tasks.targets" Pack="true" PackagePath="build\" />
+  </ItemGroup>
 
-  <UsingTask TaskName="GenerateClickHouseDdlFromAssemblies"
-             TaskFactory="RoslynCodeTaskFactory"
-             AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll">
-    <ParameterGroup>
-      <AssembliesDirectory ParameterType="System.String" Required="true" />
-      <MessageAssemblies ParameterType="System.String" Required="true" />
-      <ConfigPath ParameterType="System.String" Required="true" />
-      <CheckSnapshot ParameterType="System.Boolean" Required="false" />
-    </ParameterGroup>
-    <Task>
-      <Code Type="Class" Language="cs"><![CDATA[
-using System;
-using System.IO;
-using System.Reflection;
-using Microsoft.Build.Framework;
-using Microsoft.Build.Utilities;
+  <Import Project="build\ClickHouseSchemaGen.Tasks.targets" Condition="'$(ClickHouseSchemaGenTasksTargetsImported)' != 'true'" />
 
-public class GenerateClickHouseDdlFromAssemblies : Task
-{
-    [Required]
-    public string AssembliesDirectory { get; set; }
-
-    /// <summary>Semicolon-separated absolute paths of assemblies that define the protobuf message types.</summary>
-    [Required]
-    public string MessageAssemblies { get; set; }
-
-    [Required]
-    public string ConfigPath { get; set; }
-
-    public bool CheckSnapshot { get; set; } = true;
-
-    public override bool Execute()
-    {
-        try
-        {
-            foreach (var path in MessageAssemblies.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries))
-            {
-                var trimmed = path.Trim();
-                if (trimmed.Length == 0)
-                    continue;
-
-                var shadowPath = Path.Combine(AssembliesDirectory, Path.GetFileName(trimmed));
-                Assembly.LoadFrom(File.Exists(shadowPath) ? shadowPath : trimmed);
-            }
-
-            var generatorAssembly = Assembly.LoadFrom(Path.Combine(AssembliesDirectory, "ClickHouseSchemaGen.dll"));
-
-            var plannerType = generatorAssembly.GetType("ClickHouseSchemaGen.Mapping.DenormalizationPlanner", throwOnError: true);
-            var generatorType = generatorAssembly.GetType("ClickHouseSchemaGen.ClickHouseSchemaGenerator", throwOnError: true);
-            var planner = Activator.CreateInstance(plannerType);
-            var generator = Activator.CreateInstance(generatorType, planner, null);
-            generatorType.GetMethod("GenerateFromConfigFile", new[] { typeof(string), typeof(bool) })
-                .Invoke(generator, new object[] { ConfigPath, CheckSnapshot });
-
-            Log.LogMessage(MessageImportance.High, "Generated ClickHouse DDL from '{0}'.", ConfigPath);
-            return true;
-        }
-        catch (Exception exception)
-        {
-            var failure = exception is TargetInvocationException tie && tie.InnerException != null
-                ? tie.InnerException
-                : exception;
-            Log.LogErrorFromException(failure, showStackTrace: true);
-            return false;
-        }
-    }
-}
-]]></Code>
-    </Task>
-  </UsingTask>
-
-  <Target Name="GenerateClickHouseDdl">
-    <Error Condition="'$(ClickHouseCodegenConfig)' == ''"
-           Text="Property ClickHouseCodegenConfig is required (path to clickhouse.codegen.json)." />
-    <Error Condition="'$(ClickHouseCodegenAssemblies)' == ''"
-           Text="Property ClickHouseCodegenAssemblies is required (semicolon-separated paths to assemblies with protobuf message types)." />
-    <Error Condition="!Exists('$(TargetDir)ClickHouseSchemaGen.dll')"
-           Text="ClickHouseSchemaGen.dll is missing under $(TargetDir). Build this project before running GenerateClickHouseDdl." />
-
+  <!-- In-repo MSBuild of this project: generator DLLs live in $(TargetDir), not the package tools/ folder. -->
+  <Target Name="_SetClickHouseSchemaGenTasksAssemblyDir" BeforeTargets="GenerateClickHouseDdl">
     <PropertyGroup>
-      <_CodegenShadowDir>$([System.IO.Path]::Combine($(IntermediateOutputPath), 'codegen-shadow', $([System.Guid]::NewGuid().ToString('N'))))</_CodegenShadowDir>
-      <_CheckSnapshot Condition="'$(SkipClickHouseSnapshotCheck)' == 'true'">false</_CheckSnapshot>
-      <_CheckSnapshot Condition="'$(SkipClickHouseSnapshotCheck)' != 'true'">true</_CheckSnapshot>
+      <ClickHouseSchemaGenTasksAssemblyDir>$(TargetDir)</ClickHouseSchemaGenTasksAssemblyDir>
     </PropertyGroup>
+  </Target>
+
+  <Target Name="_ClickHouseSchemaGen_PackTaskAssemblies" DependsOnTargets="Build">
     <ItemGroup>
-      <_CodegenShadowFiles Include="$(TargetDir)*.dll" />
-      <_CodegenShadowFiles Include="$(TargetDir)*.json" />
-      <_CodegenMessageAssemblies Include="$(ClickHouseCodegenAssemblies)" />
-      <_CodegenShadowFiles Include="@(_CodegenMessageAssemblies)" Condition="Exists('%(Identity)')" />
+      <TfmSpecificPackageFile Include="$(TargetDir)*.dll" PackagePath="tools\net8.0\" />
+      <TfmSpecificPackageFile Include="$(TargetDir)*.json" PackagePath="tools\net8.0\" Condition="Exists('%(Identity)')" />
     </ItemGroup>
-
-    <Error Condition="'@(_CodegenMessageAssemblies)' == ''"
-           Text="ClickHouseCodegenAssemblies did not expand to any paths." />
-    <Error Condition="!Exists('%(_CodegenMessageAssemblies.Identity)')"
-           Text="ClickHouseCodegenAssemblies entry '%(_CodegenMessageAssemblies.Identity)' was not found." />
-
-    <MakeDir Directories="$(_CodegenShadowDir)" />
-    <Copy SourceFiles="@(_CodegenShadowFiles)" DestinationFolder="$(_CodegenShadowDir)" SkipUnchangedFiles="false" />
-
-    <GenerateClickHouseDdlFromAssemblies
-      AssembliesDirectory="$(_CodegenShadowDir)"
-      MessageAssemblies="$(ClickHouseCodegenAssemblies)"
-      ConfigPath="$(ClickHouseCodegenConfig)"
-      CheckSnapshot="$(_CheckSnapshot)" />
-
   </Target>
 
 </Project>
