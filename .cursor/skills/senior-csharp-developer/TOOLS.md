@@ -81,8 +81,7 @@ This intentionally updates:
 
 - `docker/clickhouse/format_schemas`
 - `docker/clickhouse/init/01_orders_queue.sql`
-- `docker/clickhouse/init/02_shipments_queue.sql`
-- `docker/clickhouse/init/03_pipeline.sql`
+- `docker/clickhouse/init/02_pipeline.sql`
 
 If `schema.snapshot.json` exists and the plan drifted, the build fails. Generate a migration:
 
