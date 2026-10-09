@@ -140,7 +140,7 @@ docker compose -f docker-compose.yml -f docker-compose.cluster.yml \
   -f docker-compose.cluster.replicated-db.yml up -d --build
 ```
 
-Overlay [`docker-compose.cluster.yml`](docker-compose.cluster.yml): `clickhouse` = шард 1 / реплика 1 (порты те же), плюс `clickhouse-02..04`, `clickhouse-keeper-01..03`, `clickhouse-cluster-init`, топики на 4 партиции.
+Overlay [`docker-compose.cluster.yml`](docker-compose.cluster.yml): `clickhouse` = шард 1 / реплика 1 (порты те же), плюс `clickhouse-02..04`, `clickhouse-keeper-01..03`, `clickhouse-cluster-init`, топики на 4 партиции. На всех нодах (и на single-node) монтируется [`docker/clickhouse/config/kafka.xml`](docker/clickhouse/config/kafka.xml) (`session_timeout_ms` / `heartbeat_interval_ms` для Kafka engine).
 
 | Нода | Шард | Реплика |
 |---|---|---|
