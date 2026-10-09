@@ -237,8 +237,8 @@ public sealed class ClusterModeGenerationTests
             SourceTable = "orders_queue",
             Columns =
             [
-                new MaterializedViewColumnConfig { Source = "order_id", Target = "order_id" },
-                new MaterializedViewColumnConfig
+                new PipelineColumnMapping { Source = "order_id", Target = "order_id" },
+                new PipelineColumnMapping
                 {
                     Source = "event_time.seconds",
                     Target = "event_time",

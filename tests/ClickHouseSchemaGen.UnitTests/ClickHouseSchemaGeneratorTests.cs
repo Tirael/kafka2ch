@@ -189,8 +189,8 @@ public sealed class ClickHouseSchemaGeneratorTests
             var ordersQueueSql = File.ReadAllText(Path.Combine(outputDirectory, "generated_orders_queue.sql"));
             var pipelineSql = File.ReadAllText(Path.Combine(outputDirectory, "generated_pipeline.sql"));
 
-            ordersQueueSql.Should().Contain("category LowCardinality(String)");
-            ordersQueueSql.Should().Contain("`price.currency` LowCardinality(String)");
+            ordersQueueSql.Should().Contain("category             LowCardinality(String)");
+            ordersQueueSql.Should().Contain("`price.currency`     LowCardinality(String)");
             pipelineSql.Should().Contain("TTL toDateTime(`event_time.seconds`) + INTERVAL 1 DAY");
             pipelineSql.Should().Contain("SETTINGS flatten_nested = 0;");
             pipelineSql.Should().Contain("CREATE MATERIALIZED VIEW orders_mv TO orders AS");
