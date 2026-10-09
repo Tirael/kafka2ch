@@ -1,0 +1,55 @@
+{
+  "extends": "clickhouse.codegen.cluster.json",
+  "outputDirectory": "../../docker/clickhouse-cluster/init-replicated-db",
+  "cluster": {
+    "name": "kafka2ch",
+    "ddlMode": "replicatedDatabase",
+    "replicatedDatabaseName": "kafka2ch",
+    "replicatedDatabasePath": "/clickhouse/databases/{uuid}",
+    "replicatedDatabaseReplicaName": "{replica}",
+    "materializedViewsWriteThroughDistributed": true
+  },
+  "pipeline": {
+    "mergeTreeTables": [
+      {
+        "tableName": "orders",
+        "orderBy": "(event_time, order_id)",
+        "includeKafkaMeta": true,
+        "shardingKey": "cityHash64(order_id)",
+        "materializedViewsWriteThroughDistributed": true,
+        "columns": [
+          { "name": "order_id", "type": "String" },
+          { "name": "category", "type": "LowCardinality(String)" },
+          { "name": "currency", "type": "LowCardinality(String)" },
+          { "name": "amount", "type": "Float64" },
+          { "name": "quantity", "type": "UInt32" },
+          { "name": "status", "type": "LowCardinality(String)" },
+          { "name": "payment", "type": "LowCardinality(String)" },
+          { "name": "event_time", "type": "DateTime64(3)" }
+        ]
+      },
+      {
+        "tableName": "shipments",
+        "orderBy": "(shipped_at, shipment_id)",
+        "ttl": "shipped_at + INTERVAL 1 DAY",
+        "includeKafkaMeta": true,
+        "shardingKey": "cityHash64(order_id)",
+        "materializedViewsWriteThroughDistributed": true,
+        "columns": [
+          { "name": "shipment_id", "type": "String" },
+          { "name": "order_id", "type": "String" },
+          { "name": "status", "type": "LowCardinality(String)" },
+          { "name": "country", "type": "LowCardinality(String)" },
+          { "name": "city", "type": "LowCardinality(String)" },
+          { "name": "delivery_outcome", "type": "LowCardinality(String)" },
+          { "name": "shipped_at", "type": "DateTime64(3)" }
+        ]
+      }
+    ]
+  },
+  "migrations": {
+    "snapshotPath": "../../docker/clickhouse-cluster/init-replicated-db/schema.snapshot.json",
+    "migrationsDirectory": "../../docker/clickhouse-cluster/migrations-replicated-db",
+    "versionsOutputPath": "../../docker/clickhouse-cluster/init-replicated-db/00_schema_migrations.sql"
+  }
+}

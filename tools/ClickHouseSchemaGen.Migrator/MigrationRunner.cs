@@ -8,10 +8,7 @@ using Microsoft.Extensions.Logging;
 
 namespace ClickHouseSchemaGen.Migrator;
 
-/// <param name="cluster">
-/// Cluster mode: <c>schema_migrations</c> is created <c>ON CLUSTER</c> as a table replicated to every node.
-/// Null or disabled keeps the single-node table.
-/// </param>
+
 public sealed class MigrationRunner(ILogger logger, TimeProvider timeProvider, ClusterConfig? cluster = null)
 {
     private static readonly Regex AwaitConsumersMarker = new(
@@ -104,13 +101,13 @@ public sealed class MigrationRunner(ILogger logger, TimeProvider timeProvider, C
         }
     }
 
-    private static async Task<Dictionary<string, string>> LoadAppliedAsync(
+    private async Task<Dictionary<string, string>> LoadAppliedAsync(
         ClickHouseConnection connection,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
         command.CommandText =
-            $"SELECT version, checksum FROM schema_migrations WHERE kind = '{SchemaMigrationsTable.MigrationKind}'";
+            $"SELECT version, checksum FROM {_cluster.HistoryTableName} WHERE kind = '{SchemaMigrationsTable.MigrationKind}'";
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         var applied = new Dictionary<string, string>(StringComparer.Ordinal);
         while (await reader.ReadAsync(cancellationToken))
@@ -147,7 +144,7 @@ public sealed class MigrationRunner(ILogger logger, TimeProvider timeProvider, C
         }
     }
 
-    /// <param name="clusterName">When set, consumers are counted on every replica of the cluster.</param>
+
     private async Task WaitForConsumersEmptyAsync(
         ClickHouseConnection connection,
         string tableName,
@@ -203,7 +200,8 @@ public sealed class MigrationRunner(ILogger logger, TimeProvider timeProvider, C
             name,
             checksum,
             SchemaMigrationsTable.MigrationKind,
-            $"toDateTime('{EscapeLiteral(appliedAt)}')");
+            $"toDateTime('{EscapeLiteral(appliedAt)}')",
+            _cluster.HistoryTableName);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 

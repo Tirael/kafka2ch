@@ -2,10 +2,7 @@ using System.Text.RegularExpressions;
 
 namespace ClickHouseSchemaGen.Generation;
 
-/// <summary>
-/// Replaces references to decoded key columns (<c>_key.order_id</c>) in materialized view mappings
-/// with their decode SQL, so the view, snapshot and migrations all carry the same expression.
-/// </summary>
+
 public static partial class KafkaKeyBindings
 {
     [GeneratedRegex(@"`(?<name>_key\.[^`]+)`")]

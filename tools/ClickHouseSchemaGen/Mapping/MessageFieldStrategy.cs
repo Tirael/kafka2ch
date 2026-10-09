@@ -41,8 +41,8 @@ public sealed class MessageFieldStrategy(DenormalizationPlanner planner) : IFiel
         }
 
         var flattened = FlattenNestedColumns(request).ToArray();
-        // ClickHouse treats array columns that share a dotted prefix as one Nested structure
-        // and requires equal array sizes. Independent repeated fields must stay inside one Tuple.
+
+
         if (flattened.Count(column => IsRepeatedColumn(column.Type)) > 1)
         {
             return CreateStructTuple(request, maxDepth);

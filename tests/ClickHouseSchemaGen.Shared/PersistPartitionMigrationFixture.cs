@@ -2,10 +2,7 @@ using ClickHouseSchemaGen.Migration;
 
 namespace ClickHouseSchemaGen.Shared;
 
-/// <summary>
-/// Generates the migration for enabling <c>persistKafkaMeta.partition</c> on a repo config: a new
-/// <c>kafka_partition</c> column on both raw tables plus view recreates behind detached queues.
-/// </summary>
+
 public static class PersistPartitionMigrationFixture
 {
     public const string Version = "20990101000000";

@@ -2,9 +2,8 @@ namespace ClickHouseSchemaGen.Generation;
 
 public static class SqlStatementSplitter
 {
-    /// <summary>
-    /// Splits on <c>;</c> outside single quotes. A <c>--</c> comment line before a statement is returned as its own item.
-    /// </summary>
+
+
     public static IReadOnlyList<string> Split(string sql)
     {
         var statements = new List<string>();
@@ -27,8 +26,8 @@ public static class SqlStatementSplitter
 
             if (!inSingleQuote && current == '-' && next == '-')
             {
-                // A comment before a statement is emitted on its own: otherwise the statement would be
-                // skipped as a comment and await markers would not match.
+
+
                 if (string.IsNullOrWhiteSpace(builder.ToString()))
                 {
                     var lineEnd = sql.IndexOf('\n', i);

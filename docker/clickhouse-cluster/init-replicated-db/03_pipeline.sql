@@ -1,4 +1,6 @@
-CREATE TABLE orders
+USE kafka2ch;
+
+CREATE TABLE orders_local
 (
     order_id             String,
     category             LowCardinality(String),
@@ -12,10 +14,13 @@ CREATE TABLE orders
     `kafka_key.order_id` String,
     kafka_headers        Map(String, String)
 )
-ENGINE = MergeTree
+ENGINE = ReplicatedMergeTree
 ORDER BY (event_time, order_id);
 
-CREATE TABLE shipments
+CREATE TABLE orders AS orders_local
+ENGINE = Distributed('kafka2ch', currentDatabase(), orders_local, cityHash64(order_id));
+
+CREATE TABLE shipments_local
 (
     shipment_id          String,
     order_id             String,
@@ -28,9 +33,12 @@ CREATE TABLE shipments
     `kafka_key.shipment_id` String,
     kafka_headers        Map(String, String)
 )
-ENGINE = MergeTree
+ENGINE = ReplicatedMergeTree
 ORDER BY (shipped_at, shipment_id)
 TTL shipped_at + INTERVAL 1 DAY;
+
+CREATE TABLE shipments AS shipments_local
+ENGINE = Distributed('kafka2ch', currentDatabase(), shipments_local, cityHash64(order_id));
 
 CREATE OR REPLACE FUNCTION protobufWireVarint AS (m, p) ->
     arrayFold(
@@ -127,7 +135,7 @@ SELECT
     mapFromArrays(`_headers.name`, `_headers.value`) AS kafka_headers
 FROM shipments_queue;
 
-CREATE TABLE orders_agg_1m
+CREATE TABLE orders_agg_1m_local
 (
     minute        DateTime,
     category      LowCardinality(String),
@@ -135,8 +143,11 @@ CREATE TABLE orders_agg_1m
     total_amount  Float64,
     total_qty     UInt64
 )
-ENGINE = SummingMergeTree
+ENGINE = ReplicatedSummingMergeTree
 ORDER BY (minute, category);
+
+CREATE TABLE orders_agg_1m AS orders_agg_1m_local
+ENGINE = Distributed('kafka2ch', currentDatabase(), orders_agg_1m_local, rand());
 
 CREATE MATERIALIZED VIEW orders_agg_mv TO orders_agg_1m AS
 SELECT
@@ -145,24 +156,27 @@ SELECT
     count()                     AS orders_count,
     sum(amount)                 AS total_amount,
     sum(quantity)               AS total_qty
-FROM orders
+FROM orders_local
 GROUP BY minute, category;
 
-CREATE TABLE shipments_agg_1m
+CREATE TABLE shipments_agg_1m_local
 (
     minute           DateTime,
     status           LowCardinality(String),
     shipments_count  UInt64
 )
-ENGINE = SummingMergeTree
+ENGINE = ReplicatedSummingMergeTree
 ORDER BY (minute, status);
+
+CREATE TABLE shipments_agg_1m AS shipments_agg_1m_local
+ENGINE = Distributed('kafka2ch', currentDatabase(), shipments_agg_1m_local, rand());
 
 CREATE MATERIALIZED VIEW shipments_agg_mv TO shipments_agg_1m AS
 SELECT
     toStartOfMinute(shipped_at) AS minute,
     status,
     count()                     AS shipments_count
-FROM shipments
+FROM shipments_local
 GROUP BY minute, status;
 
-INSERT INTO schema_migrations (version, name, checksum, applied_at, kind) VALUES ('03', '03_pipeline.sql', 'c06bfb2dc7c44327058060439d7eb8be87d5d7002c2d6a64eb7973ff09220fe8', now(), 'init');
+INSERT INTO default.schema_migrations (version, name, checksum, applied_at, kind) VALUES ('03', '03_pipeline.sql', 'a17c65b1553714887b0a90d120bb9471f594f04f55e4997b275188e11e58c6e6', now(), 'init');

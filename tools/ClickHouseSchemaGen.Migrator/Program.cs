@@ -1,13 +1,16 @@
 using ClickHouseSchemaGen.Migrator;
+using ClickHouseSchemaGen.Models;
 using Microsoft.Extensions.Logging;
 
 if (args.Contains("--help") || args.Contains("-h") || args.Length == 0)
 {
     Console.WriteLine("""
-        Usage: ClickHouseSchemaGen.Migrator --migrations <dir> [--cluster <name>]
-          --cluster <name>   apply to a ClickHouse cluster (env ClickHouse__Cluster); schema_migrations
-                             is created ON CLUSTER as a ReplicatedMergeTree spanning every node
-                             (Keeper path: env ClickHouse__HistoryReplicatedPath, replica: ClickHouse__HistoryReplicaName)
+        Usage: ClickHouseSchemaGen.Migrator --migrations <dir> [--cluster <name>] [--ddl-mode onCluster|replicatedDatabase]
+          --cluster <name>     ClickHouse cluster (env ClickHouse__Cluster)
+          --ddl-mode <mode>    onCluster (default): schema_migrations ON CLUSTER;
+                               replicatedDatabase: DDL without ON CLUSTER in a Replicated database
+                               (env ClickHouse__DdlMode). History Keeper path/replica:
+                               ClickHouse__HistoryReplicatedPath / ClickHouse__HistoryReplicaName
         """);
     return args.Length == 0 ? 1 : 0;
 }
@@ -20,18 +23,45 @@ if (migrationsIndex < 0 || migrationsIndex + 1 >= args.Length)
 }
 
 var migrationsDirectory = args[migrationsIndex + 1];
-var options = new ClickHouseConnectionOptions();
-var clusterIndex = Array.IndexOf(args, "--cluster");
-if (clusterIndex >= 0)
-{
-    if (clusterIndex + 1 >= args.Length)
-    {
-        Console.Error.WriteLine("Missing value for --cluster.");
-        return 1;
-    }
+string? cluster = null;
+string? ddlMode = null;
 
-    options = new ClickHouseConnectionOptions { Cluster = args[clusterIndex + 1] };
+for (var i = 0; i < args.Length; i++)
+{
+    if (args[i] == "--cluster")
+    {
+        if (i + 1 >= args.Length)
+        {
+            Console.Error.WriteLine("Missing value for --cluster.");
+            return 1;
+        }
+
+        cluster = args[++i];
+    }
+    else if (args[i] == "--ddl-mode")
+    {
+        if (i + 1 >= args.Length)
+        {
+            Console.Error.WriteLine("Missing value for --ddl-mode.");
+            return 1;
+        }
+
+        ddlMode = args[++i];
+    }
 }
+
+if (ddlMode is not null
+    && !ClusterDdlModes.All.Contains(ddlMode, StringComparer.OrdinalIgnoreCase))
+{
+    Console.Error.WriteLine($"Invalid --ddl-mode '{ddlMode}'. Expected: {string.Join(", ", ClusterDdlModes.All)}.");
+    return 1;
+}
+
+var options = new ClickHouseConnectionOptions
+{
+    Cluster = cluster ?? new ClickHouseConnectionOptions().Cluster,
+    DdlMode = ddlMode ?? new ClickHouseConnectionOptions().DdlMode
+};
 
 using var loggerFactory = LoggerFactory.Create(builder => builder.AddSimpleConsole(simpleConsole =>
 {

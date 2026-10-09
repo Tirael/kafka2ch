@@ -37,9 +37,7 @@ public static class CodegenConfigLoader
         return Path.GetFullPath(Path.Combine(configDirectory, relativePath));
     }
 
-    /// <summary>
-    /// Init script path relative to the config directory, relocated under <see cref="CodegenConfig.OutputDirectory"/> when set.
-    /// </summary>
+
     public static string ResolveInitScriptPath(CodegenConfig config, string outputPath) =>
         string.IsNullOrWhiteSpace(config.OutputDirectory)
             ? outputPath

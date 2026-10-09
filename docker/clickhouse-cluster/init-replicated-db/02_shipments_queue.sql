@@ -1,3 +1,5 @@
+USE kafka2ch;
+
 CREATE TABLE shipments_queue
 (
     shipment_id          String,
@@ -35,4 +37,4 @@ SETTINGS
     input_format_protobuf_oneof_presence = 1,
     input_format_protobuf_flatten_google_wrappers = 1;
 
-INSERT INTO schema_migrations (version, name, checksum, applied_at, kind) VALUES ('02', '02_shipments_queue.sql', 'bf9a0acf76f273b8753b858dd672c38501efb3ef6cfb1799198f9036a8c3c7fc', now(), 'init');
+INSERT INTO default.schema_migrations (version, name, checksum, applied_at, kind) VALUES ('02', '02_shipments_queue.sql', 'ea5ff9cc11e8d2f220d50f7c6921414d5b4ebc9001ea86510db181cfd730a8e5', now(), 'init');

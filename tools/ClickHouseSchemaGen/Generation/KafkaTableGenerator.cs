@@ -14,8 +14,6 @@ public static class KafkaTableGenerator
             : $"CREATE TABLE {config.TableName}{cluster.OnCluster}";
 
         var builder = new StringBuilder()
-            .AppendLine(SqlScriptWriter.GeneratedHeader)
-            .AppendLine()
             .AppendLine(create)
             .AppendLine("(");
 

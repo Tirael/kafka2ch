@@ -2,12 +2,6 @@ using System.Text.RegularExpressions;
 
 namespace ClickHouseSchemaGen.Generation;
 
-/// <summary>
-/// Renders the topology-dependent parts of DDL. In cluster mode every statement runs <c>ON CLUSTER</c>,
-/// a configured MergeTree table <c>t</c> becomes a per-node <c>Replicated*MergeTree</c> table <c>t_local</c>
-/// plus a <c>Distributed</c> table <c>t</c>, and Kafka queues / materialized views exist on every node.
-/// Single-node rendering is the identity.
-/// </summary>
 public sealed partial class ClusterDdl
 {
     private readonly ClusterConfig? _config;
@@ -25,18 +19,46 @@ public sealed partial class ClusterDdl
 
     public string? Name => _config?.Name?.Trim();
 
-    /// <summary>Clause to append after the object name, with a leading space; empty on a single node.</summary>
-    public string OnCluster => Enabled ? $" ON CLUSTER {Name}" : string.Empty;
+    public bool UsesOnCluster => _config?.UsesOnCluster == true;
 
-    /// <summary>Name of the table that physically stores rows of the configured table.</summary>
+    public bool UsesReplicatedDatabase => _config?.UsesReplicatedDatabase == true;
+
+    public bool MaterializedViewsWriteThroughDistributed =>
+        _config?.MaterializedViewsWriteThroughDistributed == true;
+
+    public string? ReplicatedDatabaseName =>
+        UsesReplicatedDatabase ? _config!.ReplicatedDatabaseName.Trim() : null;
+
+    public string OnCluster => UsesOnCluster ? $" ON CLUSTER {Name}" : string.Empty;
+
+    public string HistoryOnCluster => Enabled ? $" ON CLUSTER {Name}" : string.Empty;
+
+    public string HistoryTableName =>
+        UsesReplicatedDatabase ? $"default.{SchemaMigrationsTable.TableName}" : SchemaMigrationsTable.TableName;
+
     public string StorageTable(string tableName) =>
         Enabled ? tableName + _config!.LocalTableSuffix : tableName;
 
+    public string MaterializedViewTarget(string tableName, bool? writeThroughDistributed = null)
+    {
+        if (!Enabled)
+            return tableName;
+
+        var through = writeThroughDistributed ?? _config!.MaterializedViewsWriteThroughDistributed;
+        return through ? tableName : StorageTable(tableName);
+    }
+
     public string StorageEngine(string engine) =>
-        Enabled ? Replicated(engine, _config!.ReplicatedPath, _config.ReplicaName) : engine;
+        !Enabled
+            ? engine
+            : UsesReplicatedDatabase
+                ? BareReplicated(engine)
+                : Replicated(engine, _config!.ReplicatedPath, _config.ReplicaName);
 
     public string HistoryEngine(string engine) =>
-        Enabled ? Replicated(engine, _config!.HistoryReplicatedPath, _config.HistoryReplicaName) : engine;
+        !Enabled
+            ? engine
+            : Replicated(engine, _config!.HistoryReplicatedPath, _config.HistoryReplicaName);
 
     public string DistributedEngine(string tableName, string? shardingKey)
     {
@@ -45,9 +67,6 @@ public sealed partial class ClusterDdl
         return $"Distributed('{EscapeLiteral(Name!)}', currentDatabase(), {StorageTable(tableName)}, {key})";
     }
 
-    /// <summary>
-    /// <c>CREATE TABLE t ON CLUSTER c AS t_local ENGINE = Distributed(...)</c>; empty on a single node.
-    /// </summary>
     public string DistributedTableStatement(string tableName, string? shardingKey, bool ifNotExists)
     {
         if (!Enabled)
@@ -58,36 +77,84 @@ public sealed partial class ClusterDdl
                $"ENGINE = {DistributedEngine(tableName, shardingKey)};" + Environment.NewLine;
     }
 
-    /// <summary>Marker the migrator turns into a wait for detached Kafka consumers (on every replica in cluster mode).</summary>
-    public string AwaitKafkaConsumersEmpty(string queueName) =>
-        $"-- await:kafka_consumers_empty {queueName}{OnCluster}";
+    public string CreateReplicatedDatabaseSql()
+    {
+        if (!UsesReplicatedDatabase)
+            return string.Empty;
+
+        var database = _config!.ReplicatedDatabaseName.Trim();
+        var path = _config.ReplicatedDatabasePath.Trim();
+        var replica = _config.ReplicatedDatabaseReplicaName.Trim();
+        return $"CREATE DATABASE IF NOT EXISTS {database} ON CLUSTER {Name}" + Environment.NewLine +
+               $"ENGINE = Replicated('{EscapeLiteral(path)}', '{EscapeLiteral(replica)}');" + Environment.NewLine;
+    }
+
+    public string UseReplicatedDatabaseSql() =>
+        UsesReplicatedDatabase ? $"USE {ReplicatedDatabaseName};" + Environment.NewLine : string.Empty;
+
+    public string WithDatabaseContext(string sql) =>
+        UsesReplicatedDatabase ? UseReplicatedDatabaseSql() + Environment.NewLine + sql : sql;
+
+    public string DetachTableSql(string tableName) =>
+        UsesReplicatedDatabase
+            ? $"DETACH TABLE IF EXISTS {tableName} PERMANENTLY;"
+            : $"DETACH TABLE IF EXISTS {tableName}{OnCluster};";
+
+    public string AttachTableSql(string tableName) =>
+        $"ATTACH TABLE {tableName}{OnCluster};";
+
+    public string AwaitKafkaConsumersEmpty(string queueName)
+    {
+        var clusterSuffix = Enabled && Name is not null ? $" ON CLUSTER {Name}" : string.Empty;
+        return $"-- await:kafka_consumers_empty {queueName}{clusterSuffix}";
+    }
 
     public string ProtobufWireFunctionDefinitions() =>
-        Enabled
+        UsesOnCluster
             ? CreateFunctionRegex().Replace(ProtobufWireSqlFunctions.Definitions, match => match.Value + OnCluster)
             : ProtobufWireSqlFunctions.Definitions;
 
-    /// <summary>
-    /// <c>XMergeTree[(args)]</c> → <c>ReplicatedXMergeTree('path', 'replica'[, args])</c>. Already replicated engines are kept.
-    /// </summary>
     public static string Replicated(string engine, string path, string replicaName)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(engine);
 
-        var trimmed = engine.Trim();
-        var open = trimmed.IndexOf('(');
-        var name = (open < 0 ? trimmed : trimmed[..open]).Trim();
+        var (name, arguments) = ParseMergeTreeEngine(engine);
         if (name.StartsWith("Replicated", StringComparison.Ordinal))
-            return trimmed;
+            return engine.Trim();
 
-        if (!name.EndsWith("MergeTree", StringComparison.Ordinal))
-            throw new InvalidOperationException($"Engine '{engine}' is not a MergeTree-family engine.");
-
-        var arguments = open < 0 ? string.Empty : trimmed[(open + 1)..trimmed.LastIndexOf(')')].Trim();
         var replicated = $"'{EscapeLiteral(path)}', '{EscapeLiteral(replicaName)}'";
         return arguments.Length == 0
             ? $"Replicated{name}({replicated})"
             : $"Replicated{name}({replicated}, {arguments})";
+    }
+
+    public static string BareReplicated(string engine)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(engine);
+
+        var (name, arguments) = ParseMergeTreeEngine(engine);
+        if (name.StartsWith("Replicated", StringComparison.Ordinal))
+        {
+            var bareName = name;
+            return arguments.Length == 0 ? bareName : $"{bareName}({arguments})";
+        }
+
+        return arguments.Length == 0 ? $"Replicated{name}" : $"Replicated{name}({arguments})";
+    }
+
+    private static (string Name, string Arguments) ParseMergeTreeEngine(string engine)
+    {
+        var trimmed = engine.Trim();
+        var open = trimmed.IndexOf('(');
+        var name = (open < 0 ? trimmed : trimmed[..open]).Trim();
+        if (!name.EndsWith("MergeTree", StringComparison.Ordinal)
+            && !name.StartsWith("Replicated", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException($"Engine '{engine}' is not a MergeTree-family engine.");
+        }
+
+        var arguments = open < 0 ? string.Empty : trimmed[(open + 1)..trimmed.LastIndexOf(')')].Trim();
+        return (name, arguments);
     }
 
     private void EnsureEnabled()

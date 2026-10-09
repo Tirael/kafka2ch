@@ -27,7 +27,7 @@ public sealed class SchemaMigrationsHistoryIntegrationTests : IAsyncLifetime
     [Fact]
     public async Task GivenCommittedInitScripts_WhenBootstrappedAndMigrated_ThenHistoryHasInitAndMigrationRows()
     {
-        // Arrange
+
         var initDirectory = Path.Combine(RepoPaths.RepositoryRoot, "docker", "clickhouse", "init");
         var initScripts = Directory.GetFiles(initDirectory, "*.sql")
             .OrderBy(path => Path.GetFileName(path), StringComparer.Ordinal)
@@ -42,11 +42,11 @@ public sealed class SchemaMigrationsHistoryIntegrationTests : IAsyncLifetime
             Path.Combine(_migrationsDirectory, "20990101000000_add_note.sql"),
             "ALTER TABLE orders ADD COLUMN IF NOT EXISTS migration_note String DEFAULT '';\n");
 
-        // Act
+
         await CreateRunner().ApplyAsync(_clickHouse.GetConnectionString(), _migrationsDirectory, CancellationToken.None);
         await CreateRunner().ApplyAsync(_clickHouse.GetConnectionString(), _migrationsDirectory, CancellationToken.None);
 
-        // Assert
+
         var committedMigrations = SchemaMigrationsScriptGenerator
             .ReadFromDirectory(Path.Combine(RepoPaths.RepositoryRoot, "docker", "clickhouse", "migrations"))
             .Select(migration => (migration.Version, migration.Name, "migration"));
@@ -65,7 +65,7 @@ public sealed class SchemaMigrationsHistoryIntegrationTests : IAsyncLifetime
     [Fact]
     public async Task GivenLegacyTableWithoutKind_WhenApply_ThenUpgradesTableAndKeepsAppliedMigrations()
     {
-        // Arrange
+
         const string migrationSql = "CREATE TABLE IF NOT EXISTS legacy_t (id String) ENGINE = MergeTree ORDER BY id;\n";
         var migrationPath = Path.Combine(_migrationsDirectory, "20260101000000_legacy.sql");
         await File.WriteAllTextAsync(migrationPath, migrationSql);
@@ -86,10 +86,10 @@ public sealed class SchemaMigrationsHistoryIntegrationTests : IAsyncLifetime
         var execResult = await _clickHouse.ExecScriptAsync(legacySetup);
         execResult.ExitCode.Should().Be(0, execResult.Stderr);
 
-        // Act
+
         await CreateRunner().ApplyAsync(_clickHouse.GetConnectionString(), _migrationsDirectory, CancellationToken.None);
 
-        // Assert
+
         var rows = await ReadHistoryAsync();
         rows.Should().Equal(("20260101000000", "20260101000000_legacy.sql", "migration"));
         Convert.ToInt32(await ScalarAsync("EXISTS TABLE legacy_t"))

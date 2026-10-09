@@ -1,4 +1,3 @@
-<!-- Shared by every node of the compose cluster; per-node values come from the environment. -->
 <clickhouse>
     <remote_servers>
         <kafka2ch>
@@ -37,9 +36,19 @@
 
     <zookeeper>
         <node>
-            <host>clickhouse-keeper</host>
+            <host>clickhouse-keeper-01</host>
             <port>9181</port>
         </node>
+        <node>
+            <host>clickhouse-keeper-02</host>
+            <port>9181</port>
+        </node>
+        <node>
+            <host>clickhouse-keeper-03</host>
+            <port>9181</port>
+        </node>
+        <session_timeout_ms>30000</session_timeout_ms>
+        <operation_timeout_ms>10000</operation_timeout_ms>
     </zookeeper>
 
     <macros>

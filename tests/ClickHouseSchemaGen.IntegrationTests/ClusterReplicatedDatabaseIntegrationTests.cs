@@ -6,20 +6,20 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ClickHouseSchemaGen.IntegrationTests;
 
-
-public sealed class ClusterSchemaClickHouseIntegrationTests : IAsyncLifetime
+public sealed class ClusterReplicatedDatabaseIntegrationTests : IAsyncLifetime
 {
     private const string Image = "clickhouse/clickhouse-server:25.11";
     private const string ClusterName = "kafka2ch";
+    private const string DatabaseName = "kafka2ch";
 
     private readonly INetwork _network = new NetworkBuilder().Build();
     private readonly IContainer _keeper;
     private readonly ClickHouseContainer _shard1;
     private readonly ClickHouseContainer _shard2;
     private readonly string _migrationsDirectory =
-        Path.Combine(Path.GetTempPath(), $"kafka2ch-cluster-migrations-{Guid.NewGuid():N}");
+        Path.Combine(Path.GetTempPath(), $"kafka2ch-rdb-migrations-{Guid.NewGuid():N}");
 
-    public ClusterSchemaClickHouseIntegrationTests()
+    public ClusterReplicatedDatabaseIntegrationTests()
     {
         _keeper = new ContainerBuilder(Image)
             .WithNetwork(_network)
@@ -50,64 +50,56 @@ public sealed class ClusterSchemaClickHouseIntegrationTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task GivenCommittedClusterInitScripts_WhenBootstrappedAndMigrated_ThenSchemaAndHistoryExistOnEveryNode()
+    public async Task GivenReplicatedDatabaseInit_WhenBootstrappedAndMigrated_ThenDdlReplicatesWithoutOnCluster()
     {
-
-        foreach (var script in Directory.GetFiles(RepoPaths.ClusterInitDirectory, "*.sql").Order(StringComparer.Ordinal))
+        foreach (var script in Directory.GetFiles(RepoPaths.ClusterReplicatedDbInitDirectory, "*.sql")
+                     .Order(StringComparer.Ordinal))
         {
             var execResult = await _shard1.ExecScriptAsync(await File.ReadAllTextAsync(script));
             execResult.ExitCode.Should().Be(0, $"{Path.GetFileName(script)}: {execResult.Stderr}");
         }
 
+        var migrationSql = PersistPartitionMigrationFixture.GenerateSql(RepoPaths.ClusterReplicatedDbCodegenConfigPath);
+        migrationSql.Should().Contain("-- await:kafka_consumers_empty orders_queue ON CLUSTER kafka2ch");
+        migrationSql.Should().Contain("DETACH TABLE IF EXISTS orders_queue PERMANENTLY;");
+        migrationSql.Should().NotContain("DETACH TABLE IF EXISTS orders_queue ON CLUSTER");
+        migrationSql.Should().NotContain("ALTER TABLE orders_local ON CLUSTER");
+        migrationSql.Should().Contain("CREATE MATERIALIZED VIEW orders_mv TO orders AS");
         await File.WriteAllTextAsync(
             Path.Combine(_migrationsDirectory, PersistPartitionMigrationFixture.FileName),
-            PersistPartitionMigrationFixture.GenerateSql(RepoPaths.ClusterCodegenConfigPath));
+            migrationSql);
 
-        await using var connection = new ClickHouseConnection(_shard2.GetConnectionString());
+        await using var connection = new ClickHouseConnection(ConnectionString(_shard2));
         await connection.OpenAsync();
         await ExecuteAsync(connection,
             "INSERT INTO orders (order_id, category, amount, quantity, event_time) " +
             "SELECT toString(number), 'books', 1.5, 2, now64(3) FROM numbers(200) " +
             "SETTINGS distributed_foreground_insert = 1");
 
+        await CreateRunner().ApplyAsync(ConnectionString(_shard1), _migrationsDirectory, CancellationToken.None);
+        await CreateRunner().ApplyAsync(ConnectionString(_shard2), _migrationsDirectory, CancellationToken.None);
 
-        await CreateRunner().ApplyAsync(_shard2.GetConnectionString(), _migrationsDirectory, CancellationToken.None);
-        await CreateRunner().ApplyAsync(_shard1.GetConnectionString(), _migrationsDirectory, CancellationToken.None);
-
-
-        (await QueryRowsAsync(connection,
-                "SELECT getMacro('replica'), name, engine FROM clusterAllReplicas('kafka2ch', system.tables) " +
-                "WHERE database = currentDatabase() AND name IN ('orders_local', 'orders', 'orders_queue', 'orders_mv', " +
-                "'orders_agg_1m_local', 'orders_agg_1m', 'schema_migrations') ORDER BY 1, 2"))
-            .Select(row => $"{row[0]}:{row[1]}:{row[2]}")
-            .Should().Equal(
-                new[] { "ch1", "ch2" }.SelectMany(host => new[]
-                {
-                    $"{host}:orders:Distributed",
-                    $"{host}:orders_agg_1m:Distributed",
-                    $"{host}:orders_agg_1m_local:ReplicatedSummingMergeTree",
-                    $"{host}:orders_local:ReplicatedMergeTree",
-                    $"{host}:orders_mv:MaterializedView",
-                    $"{host}:orders_queue:Kafka",
-                    $"{host}:schema_migrations:ReplicatedMergeTree"
-                }));
-
-        (await QueryRowsAsync(connection,
-                "SELECT getMacro('replica'), count() FROM clusterAllReplicas('kafka2ch', currentDatabase(), orders_local) GROUP BY 1 ORDER BY 1"))
-            .Should().HaveCount(2).And.OnlyContain(row => Convert.ToInt64(row[1]) > 0);
         (await ScalarAsync(connection, "SELECT count() FROM orders")).Should().Be(200);
         (await ScalarAsync(connection, "SELECT sum(orders_count) FROM orders_agg_1m")).Should().Be(200);
 
+        (await QueryRowsAsync(connection,
+                "SELECT getMacro('replica'), engine FROM clusterAllReplicas('kafka2ch', system.tables) " +
+                $"WHERE database = '{DatabaseName}' AND name = 'orders_mv' ORDER BY 1"))
+            .Select(row => $"{row[0]}:{row[1]}")
+            .Should().Equal("ch1:MaterializedView", "ch2:MaterializedView");
+
         (await ScalarAsync(connection,
-                "SELECT count() FROM clusterAllReplicas('kafka2ch', system.columns) WHERE database = currentDatabase() " +
-                $"AND table IN ('orders_local', 'orders') AND name = '{PersistPartitionMigrationFixture.AddedColumn}'"))
+                "SELECT count() FROM clusterAllReplicas('kafka2ch', system.columns) " +
+                $"WHERE database = '{DatabaseName}' AND table IN ('orders_local', 'orders') " +
+                $"AND name = '{PersistPartitionMigrationFixture.AddedColumn}'"))
             .Should().Be(4);
 
         (await QueryRowsAsync(connection,
-                "SELECT getMacro('replica'), count(), countIf(kind = 'init'), countIf(version = '" + PersistPartitionMigrationFixture.Version + "') " +
-                "FROM clusterAllReplicas('kafka2ch', currentDatabase(), schema_migrations) GROUP BY 1 ORDER BY 1"))
-            .Select(row => $"{row[0]}:{row[1]}:{row[2]}:{row[3]}")
-            .Should().Equal("ch1:4:3:1", "ch2:4:3:1");
+                "SELECT getMacro('replica'), countIf(kind = 'init'), countIf(version = '" +
+                PersistPartitionMigrationFixture.Version + "') " +
+                "FROM clusterAllReplicas('kafka2ch', default.schema_migrations) GROUP BY 1 ORDER BY 1"))
+            .Select(row => $"{row[0]}:{row[1]}:{row[2]}")
+            .Should().Equal("ch1:3:1", "ch2:3:1");
     }
 
     private ClickHouseContainer CreateNode(string host, string shard) =>
@@ -119,6 +111,9 @@ public sealed class ClusterSchemaClickHouseIntegrationTests : IAsyncLifetime
             .WithBindMount(RepoPaths.FormatSchemasDirectory, "/var/lib/clickhouse/format_schemas")
             .WithResourceMapping(Encoding.UTF8.GetBytes(ClusterXml), "/etc/clickhouse-server/config.d/cluster.xml")
             .Build();
+
+    private static string ConnectionString(ClickHouseContainer container) =>
+        container.GetConnectionString() + $";Database={DatabaseName}";
 
     private static string ClusterXml => $"""
         <clickhouse>
@@ -139,7 +134,12 @@ public sealed class ClusterSchemaClickHouseIntegrationTests : IAsyncLifetime
         """;
 
     private static MigrationRunner CreateRunner() =>
-        new(NullLogger.Instance, TimeProvider.System, new ClusterConfig { Name = ClusterName });
+        new(NullLogger.Instance, TimeProvider.System, new ClusterConfig
+        {
+            Name = ClusterName,
+            DdlMode = ClusterDdlModes.ReplicatedDatabase,
+            ReplicatedDatabaseName = DatabaseName
+        });
 
     private static async Task ExecuteAsync(ClickHouseConnection connection, string sql)
     {

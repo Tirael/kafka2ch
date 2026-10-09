@@ -1,10 +1,9 @@
 #!/bin/sh
-# Applies the generated ON CLUSTER init scripts once, from a single node.
-# docker-entrypoint-initdb.d is not used: it would run the same ON CLUSTER DDL from every node.
 set -eu
 
 CLUSTER="${CLICKHOUSE_CLUSTER:-kafka2ch}"
 INIT_DIR="${INIT_DIR:-/cluster/init}"
+DATABASE="${CLICKHOUSE_DATABASE:-default}"
 
 ch() {
     clickhouse-client --host "${CLICKHOUSE_HOST:-clickhouse}" --password "${CLICKHOUSE_PASSWORD}" "$@"
@@ -21,15 +20,22 @@ until ch --query "SELECT count() FROM clusterAllReplicas('${CLUSTER}', system.on
     sleep 2
 done
 
-if [ "$(ch --query "EXISTS TABLE schema_migrations")" = "1" ] \
-    && [ "$(ch --query "SELECT count() FROM schema_migrations WHERE kind = 'init'")" -gt 0 ]; then
+history_db="$DATABASE"
+if [ "$(ch --query "EXISTS TABLE ${DATABASE}.schema_migrations")" = "1" ] \
+    && [ "$(ch --query "SELECT count() FROM ${DATABASE}.schema_migrations WHERE kind = 'init'")" -gt 0 ]; then
     echo "Init scripts already applied; skipping."
     exit 0
 fi
 
+first=1
 for script in $(ls "${INIT_DIR}"/*.sql | sort); do
     echo "Applying $(basename "${script}")"
-    ch --multiquery < "${script}"
+    if [ "${first}" -eq 1 ]; then
+        ch --multiquery < "${script}"
+        first=0
+    else
+        ch --database "${DATABASE}" --multiquery < "${script}"
+    fi
 done
 
-echo "Cluster '${CLUSTER}' initialized."
+echo "Cluster '${CLUSTER}' initialized (database=${DATABASE})."

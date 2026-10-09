@@ -19,8 +19,12 @@ public sealed class ClickHouseConnectionOptions
     public string Password { get; init; } =
         Environment.GetEnvironmentVariable("ClickHouse__Password") ?? "";
 
-    /// <summary>Cluster name; empty means a single node.</summary>
     public string? Cluster { get; init; } = Environment.GetEnvironmentVariable("ClickHouse__Cluster");
+
+    public string DdlMode { get; init; } =
+        Environment.GetEnvironmentVariable("ClickHouse__DdlMode") is { Length: > 0 } mode
+            ? mode
+            : ClusterDdlModes.OnCluster;
 
     public string HistoryReplicatedPath { get; init; } =
         Environment.GetEnvironmentVariable("ClickHouse__HistoryReplicatedPath") is { Length: > 0 } path
@@ -35,8 +39,10 @@ public sealed class ClickHouseConnectionOptions
     public ClusterConfig ToClusterConfig() => new()
     {
         Name = Cluster,
+        DdlMode = string.IsNullOrWhiteSpace(Cluster) ? ClusterDdlModes.OnCluster : DdlMode,
         HistoryReplicatedPath = HistoryReplicatedPath,
-        HistoryReplicaName = HistoryReplicaName
+        HistoryReplicaName = HistoryReplicaName,
+        ReplicatedDatabaseName = Database
     };
 
     public string ConnectionString

@@ -12,14 +12,7 @@
     <ProjectReference Include="..\ClickHouseSchemaGen\ClickHouseSchemaGen.csproj" />
   </ItemGroup>
 
-  <!--
-    RoslynCodeTaskFactory runs inside MSBuild (AppLocker-safe: no new process).
-    Assemblies are loaded from a unique shadow copy under obj/, so bin/ is never
-    locked by the MSBuild/.NET Host node across incremental builds (MSB3027).
 
-    Message assemblies (protobuf contracts) are supplied by the caller via
-    ClickHouseCodegenAssemblies — this project must not reference them.
-  -->
   <UsingTask TaskName="GenerateClickHouseDdlFromAssemblies"
              TaskFactory="RoslynCodeTaskFactory"
              AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll">
@@ -124,11 +117,7 @@ public class GenerateClickHouseDdlFromAssemblies : Task
       MessageAssemblies="$(ClickHouseCodegenAssemblies)"
       ConfigPath="$(ClickHouseCodegenConfig)"
       CheckSnapshot="$(_CheckSnapshot)" />
-    <!--
-      Do not RemoveDir the shadow copy here: Assembly.LoadFrom keeps DLLs locked in the
-      MSBuild/.NET Host node until the process exits (MSB3231). Unique dirs under obj/
-      are removed by `dotnet clean` / deleting obj.
-    -->
+
   </Target>
 
 </Project>

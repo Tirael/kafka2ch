@@ -74,13 +74,15 @@ public sealed class ClusterConfigTests : IDisposable
     }
 
     [Theory]
-    [InlineData("bad-name", null, null, "Cluster name")]
-    [InlineData("c", "/clickhouse/tables/{shard}", null, "replicatedPath")]
-    [InlineData("c", null, "/clickhouse/{shard}/schema_migrations", "historyReplicatedPath")]
+    [InlineData("bad-name", null, null, null, "Cluster name")]
+    [InlineData("c", "/clickhouse/tables/{shard}", null, null, "replicatedPath")]
+    [InlineData("c", null, "/clickhouse/{shard}/schema_migrations", null, "historyReplicatedPath")]
+    [InlineData("c", null, null, "nope", "ddlMode")]
     public void GivenInvalidCluster_WhenValidate_ThenFails(
         string name,
         string? replicatedPath,
         string? historyPath,
+        string? ddlMode,
         string expectedMessage)
     {
         var config = CodegenConfigLoader.Load(RepoPaths.CodegenConfigPath);
@@ -88,13 +90,24 @@ public sealed class ClusterConfigTests : IDisposable
         {
             Name = name,
             ReplicatedPath = replicatedPath ?? ClusterConfig.DefaultReplicatedPath,
-            HistoryReplicatedPath = historyPath ?? ClusterConfig.DefaultHistoryReplicatedPath
+            HistoryReplicatedPath = historyPath ?? ClusterConfig.DefaultHistoryReplicatedPath,
+            DdlMode = ddlMode ?? ClusterDdlModes.OnCluster
         };
 
         var result = new CodegenConfigValidator().Validate(config);
 
         result.IsValid.Should().BeFalse();
-        result.Errors.Should().Contain(error => error.ErrorMessage.Contains(expectedMessage));
+        result.Errors.Should().Contain(error => error.ErrorMessage.Contains(expectedMessage, StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void GivenRepoReplicatedDbConfig_WhenValidate_ThenSucceeds()
+    {
+        var config = CodegenConfigLoader.Load(RepoPaths.ClusterReplicatedDbCodegenConfigPath);
+
+        new CodegenConfigValidator().Validate(config).IsValid.Should().BeTrue();
+        config.Cluster.UsesReplicatedDatabase.Should().BeTrue();
+        config.Cluster.MaterializedViewsWriteThroughDistributed.Should().BeTrue();
     }
 
     [Fact]

@@ -197,6 +197,98 @@ public sealed class ClusterModeGenerationTests
         sql.Should().NotContain("_local");
     }
 
+
+    [Fact]
+    public void GivenWriteThroughDistributed_WhenGenerateMaterializedView_ThenTargetsDistributedTable()
+    {
+        var cluster = new ClusterDdl(new ClusterConfig
+        {
+            Name = "kafka2ch",
+            MaterializedViewsWriteThroughDistributed = true
+        });
+
+        var sql = MaterializedViewGenerator.Generate(CreateView(), cluster: cluster);
+
+        sql.Should().Contain("CREATE MATERIALIZED VIEW orders_mv ON CLUSTER kafka2ch TO orders AS");
+        sql.Should().NotContain("TO orders_local");
+    }
+
+    [Fact]
+    public void GivenPerTableWriteThroughOverride_WhenRenderPipeline_ThenOnlyThatViewWritesThroughDistributed()
+    {
+        var config = CodegenConfigLoader.Load(RepoPaths.ClusterCodegenConfigPath);
+        config.Cluster.MaterializedViewsWriteThroughDistributed = false;
+        config.Pipeline!.MergeTreeTables.First(t => t.TableName == "orders")
+            .MaterializedViewsWriteThroughDistributed = true;
+
+        var sql = SchemaPlanRenderer.RenderPipelineSql(SchemaGeneratorFactory.Create().BuildPlan(config));
+
+        sql.Should().Contain("CREATE MATERIALIZED VIEW orders_mv ON CLUSTER kafka2ch TO orders AS");
+        sql.Should().Contain("CREATE MATERIALIZED VIEW shipments_mv ON CLUSTER kafka2ch TO shipments_local AS");
+    }
+
+    [Fact]
+    public void GivenReplicatedDatabaseDdlMode_WhenGenerate_ThenOmitsOnClusterAndCreatesReplicatedDatabase()
+    {
+        var cluster = new ClusterDdl(new ClusterConfig
+        {
+            Name = "kafka2ch",
+            DdlMode = ClusterDdlModes.ReplicatedDatabase,
+            ReplicatedDatabaseName = "kafka2ch"
+        });
+
+        cluster.OnCluster.Should().BeEmpty();
+        cluster.CreateReplicatedDatabaseSql().Should().Be(
+            """
+            CREATE DATABASE IF NOT EXISTS kafka2ch ON CLUSTER kafka2ch
+            ENGINE = Replicated('/clickhouse/databases/{uuid}', '{replica}');
+
+            """.ReplaceLineEndings());
+
+        var tableSql = MergeTreeTableGenerator.Generate(CreateTable(), cluster: cluster);
+        tableSql.Should().Contain("CREATE TABLE orders_local\n");
+        tableSql.Should().NotContain("ON CLUSTER");
+        tableSql.Should().Contain("ENGINE = ReplicatedMergeTree\n");
+        tableSql.Should().NotContain("ReplicatedMergeTree('/");
+        tableSql.Should().Contain("CREATE TABLE orders AS orders_local");
+
+        var versions = SchemaMigrationsScriptGenerator.Generate([], cluster);
+        versions.Should().Contain("CREATE DATABASE IF NOT EXISTS kafka2ch ON CLUSTER kafka2ch");
+        versions.Should().Contain("USE kafka2ch;");
+        versions.Should().Contain("CREATE TABLE IF NOT EXISTS default.schema_migrations ON CLUSTER kafka2ch");
+        versions.Should().Contain("ENGINE = ReplicatedMergeTree('/clickhouse/tables/all/{database}/{table}', '{shard}-{replica}')");
+        versions.Should().Contain("USE kafka2ch;");
+    }
+
+    [Fact]
+    public void GivenRepoReplicatedDbConfig_WhenRenderInitScripts_ThenMatchesCommittedDirectory()
+    {
+        var config = CodegenConfigLoader.Load(RepoPaths.ClusterReplicatedDbCodegenConfigPath);
+        var plan = SchemaGeneratorFactory.Create().BuildPlan(config);
+        var scripts = SchemaPlanRenderer.RenderInitScripts(plan);
+
+        config.Cluster.UsesReplicatedDatabase.Should().BeTrue();
+        config.Cluster.MaterializedViewsWriteThroughDistributed.Should().BeTrue();
+        File.ReadAllText(Path.Combine(RepoPaths.ClusterReplicatedDbInitDirectory, "00_schema_migrations.sql"))
+            .ReplaceLineEndings()
+            .Should().Be(SchemaMigrationsScriptGenerator.Generate(
+                SchemaMigrationsScriptGenerator.ReadFromDirectory(
+                    CodegenConfigLoader.ResolvePath(RepoPaths.ClusterReplicatedDbCodegenConfigPath, config.Migrations.MigrationsDirectory)),
+                ClusterDdl.For(config)).ReplaceLineEndings());
+
+        foreach (var (outputPath, sql) in scripts)
+        {
+            var committed = Path.Combine(RepoPaths.ClusterReplicatedDbInitDirectory, Path.GetFileName(outputPath));
+            File.ReadAllText(committed).ReplaceLineEndings().Should().Be(sql.ReplaceLineEndings(), committed);
+        }
+
+        var pipeline = scripts[config.Pipeline!.OutputPath];
+        pipeline.Should().Contain("CREATE MATERIALIZED VIEW orders_mv TO orders AS");
+        pipeline.Should().Contain("CREATE MATERIALIZED VIEW orders_agg_mv TO orders_agg_1m AS");
+        pipeline.Should().Contain("FROM orders_local");
+        pipeline.Should().NotContain("ON CLUSTER");
+    }
+
     private static MergeTreeTableConfig CreateTable() => new()
     {
         TableName = "orders",

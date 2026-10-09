@@ -126,14 +126,21 @@ dotnet exec tools/ClickHouseSchemaGen.Migrator/bin/Debug/net8.0/ClickHouseSchema
 
 ## Кластерный ClickHouse
 
-Тот же стенд на кластере **2 шарда × 2 реплики + ClickHouse Keeper** (нужен Docker Compose ≥ 2.24.4):
+Стенд **2 шарда × 2 реплики + ансамбль из 3 ClickHouse Keeper** (Docker Compose ≥ 2.24.4; в production Keeper тоже держите не меньше чем из 3 узлов):
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.cluster.yml up -d --build
 ./scripts/verify-cluster.sh
 ```
 
-Overlay [`docker-compose.cluster.yml`](docker-compose.cluster.yml) превращает сервис `clickhouse` в шард 1 / реплику 1 (порты `8123`/`9000` те же, `sandbox-app` и запросы ниже работают без изменений) и добавляет `clickhouse-02..04`, `clickhouse-keeper`, one-shot `clickhouse-cluster-init` и топики на 4 партиции.
+Альтернатива DDL через Replicated database (без `ON CLUSTER` на таблицах, MV пишут через `Distributed`):
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.cluster.yml \
+  -f docker-compose.cluster.replicated-db.yml up -d --build
+```
+
+Overlay [`docker-compose.cluster.yml`](docker-compose.cluster.yml): `clickhouse` = шард 1 / реплика 1 (порты те же), плюс `clickhouse-02..04`, `clickhouse-keeper-01..03`, `clickhouse-cluster-init`, топики на 4 партиции.
 
 | Нода | Шард | Реплика |
 |---|---|---|
@@ -142,17 +149,13 @@ Overlay [`docker-compose.cluster.yml`](docker-compose.cluster.yml) превра�
 | `clickhouse-03` | 02 | `clickhouse-03` |
 | `clickhouse-04` | 02 | `clickhouse-04` |
 
-Топология схемы (генерируется из [`clickhouse.codegen.cluster.json`](src/Sandbox.Contracts/clickhouse.codegen.cluster.json) в `docker/clickhouse-cluster/init/`):
+Топология (`onCluster`, [`clickhouse.codegen.cluster.json`](src/Sandbox.Contracts/clickhouse.codegen.cluster.json) → `docker/clickhouse-cluster/init/`):
 
-- `orders_queue` / `shipments_queue` (classic `ENGINE = Kafka`) и их MV — на каждой ноде, с общим `kafka_group_name`: партиции топика распределяются между всеми 4 нодами;
-- MV пишут в `orders_local` / `shipments_local` (`ReplicatedMergeTree`, путь `/clickhouse/tables/{shard}/{database}/{table}`) — данные шардируются по партициям Kafka и реплицируются внутри шарда;
-- агрегаты `orders_agg_1m_local` / `shipments_agg_1m_local` — `ReplicatedSummingMergeTree`, их MV читают из `*_local`;
-- `orders`, `shipments`, `orders_agg_1m`, `shipments_agg_1m` — `Distributed`-таблицы для чтения (и внешних вставок);
-- `schema_migrations` — `ReplicatedMergeTree` без `{shard}` в пути: одинаковая история на всех нодах.
+- Kafka-очереди и MV на каждой ноде, общий `kafka_group_name` → партиции делятся на 4 ноды;
+- по умолчанию MV пишут в `*_local` (`ReplicatedMergeTree`); опционально — через `Distributed` по `shardingKey`;
+- `orders` / агрегаты — `Distributed`; `schema_migrations` — `ReplicatedMergeTree` без `{shard}`.
 
-Init-скрипты применяются один раз сервисом `clickhouse-cluster-init` (`ON CLUSTER` с одной ноды), а не через `docker-entrypoint-initdb.d` каждой ноды. Миграции кластера лежат в `docker/clickhouse-cluster/migrations/` и применяются `clickhouse-migrate` с `ClickHouse__Cluster=kafka2ch`. Настройки `cluster` и ограничения — в [clickhouse.codegen.md](src/Sandbox.Contracts/clickhouse.codegen.md#cluster-кластерный-clickhouse).
-
-Состояние кластера:
+Init — one-shot `clickhouse-cluster-init`. Миграции — `clickhouse-migrate` с `ClickHouse__Cluster`. Подробности и `ddlMode` — [clickhouse.codegen.md](src/Sandbox.Contracts/clickhouse.codegen.md#cluster-кластерный-clickhouse).
 
 ```bash
 docker exec clickhouse clickhouse-client --password sandbox --query "

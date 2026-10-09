@@ -13,12 +13,12 @@ public sealed class GeneratedSchemaClickHouseIntegrationTests : IAsyncLifetime
     [Fact]
     public async Task GivenGeneratedKafkaTableDdl_WhenAppliedToClickHouse_ThenTableHasExpectedColumns()
     {
-        // Arrange
+
         var config = OrdersQueueTestConfig.Create();
         var ddl = SchemaGeneratorFactory.Create()
             .GenerateKafkaTableSql(config, OrdersQueueTestConfig.Defaults);
 
-        // Act
+
         var execResult = await _clickHouse.ExecScriptAsync(ddl);
         await using var connection = new ClickHouseConnection(_clickHouse.GetConnectionString());
         await connection.OpenAsync();
@@ -30,7 +30,7 @@ public sealed class GeneratedSchemaClickHouseIntegrationTests : IAsyncLifetime
         while (await reader.ReadAsync())
             columns.Add((reader.GetString(0), reader.GetString(1)));
 
-        // Assert
+
         execResult.ExitCode.Should().Be(0, execResult.Stderr);
         columns.Select(column => column.Name).Should().BeEquivalentTo([
             "order_id",
@@ -64,7 +64,7 @@ public sealed class GeneratedSchemaClickHouseIntegrationTests : IAsyncLifetime
     [Fact]
     public async Task GivenOrderEventProtobuf_WhenInsertedViaProtobufSingle_ThenRowIsReadable()
     {
-        // Arrange
+
         var config = OrdersQueueTestConfig.Create();
         var mapper = new ProtoToClickHouseMapper();
         var columns = mapper.MapMessage(
@@ -124,7 +124,7 @@ public sealed class GeneratedSchemaClickHouseIntegrationTests : IAsyncLifetime
         var insertQuery =
             "INSERT INTO order_events_ingest SETTINGS format_schema='order_event:OrderEvent', input_format_protobuf_oneof_presence=1, input_format_protobuf_flatten_google_wrappers=1 FORMAT ProtobufSingle";
 
-        // Act
+
         await InsertProtobufAsync(insertQuery, payload.ToArray());
 
         await using var connection = new ClickHouseConnection(_clickHouse.GetConnectionString());
@@ -156,7 +156,7 @@ public sealed class GeneratedSchemaClickHouseIntegrationTests : IAsyncLifetime
         await using var reader = await command.ExecuteReaderAsync();
         var hasRow = await reader.ReadAsync();
 
-        // Assert
+
         hasRow.Should().BeTrue();
         reader.GetString(0).Should().Be("ord-integration-1");
         reader.GetString(1).Should().Be("books");
@@ -181,7 +181,7 @@ public sealed class GeneratedSchemaClickHouseIntegrationTests : IAsyncLifetime
     [Fact]
     public async Task GivenShipmentEventProtobuf_WhenInsertedViaProtobufSingle_ThenNestedScansAndDocumentsAreReadable()
     {
-        // Arrange
+
         var columns = new DenormalizationPlanner().MapMessage(
             ShipmentEvent.Descriptor,
             OrdersQueueTestConfig.Defaults,
@@ -231,7 +231,7 @@ public sealed class GeneratedSchemaClickHouseIntegrationTests : IAsyncLifetime
         using var payload = new MemoryStream();
         shipmentEvent.WriteTo(payload);
 
-        // Act
+
         await InsertProtobufAsync(
             "INSERT INTO shipment_events_ingest SETTINGS format_schema='shipment_event:ShipmentEvent', input_format_protobuf_oneof_presence=1, input_format_protobuf_flatten_google_wrappers=1 FORMAT ProtobufSingle",
             payload.ToArray());
@@ -251,7 +251,7 @@ public sealed class GeneratedSchemaClickHouseIntegrationTests : IAsyncLifetime
         await using var reader = await command.ExecuteReaderAsync();
         var hasRow = await reader.ReadAsync();
 
-        // Assert
+
         hasRow.Should().BeTrue();
         reader.GetString(0).Should().Contain("SCAN-1");
         reader.GetString(1).Should().Contain("loaded");
@@ -262,7 +262,7 @@ public sealed class GeneratedSchemaClickHouseIntegrationTests : IAsyncLifetime
     [Fact]
     public async Task GivenOneofMessage_WhenInsertedViaProtobufSingle_ThenActiveBranchIsReadable()
     {
-        // Arrange
+
         await CreateIngestTableAsync(
             OneofMessage.Descriptor,
             "oneof_messages_ingest",
@@ -272,7 +272,7 @@ public sealed class GeneratedSchemaClickHouseIntegrationTests : IAsyncLifetime
         using var payload = new MemoryStream();
         message.WriteTo(payload);
 
-        // Act
+
         await InsertProtobufAsync(
             "INSERT INTO oneof_messages_ingest SETTINGS format_schema='mapping_fixtures:OneofMessage', input_format_protobuf_oneof_presence=1 FORMAT ProtobufSingle",
             payload.ToArray());
@@ -287,7 +287,7 @@ public sealed class GeneratedSchemaClickHouseIntegrationTests : IAsyncLifetime
         await using var reader = await command.ExecuteReaderAsync();
         await reader.ReadAsync();
 
-        // Assert
+
         reader.GetString(0).Should().BeEmpty();
         reader.GetInt32(1).Should().Be(42);
         reader.GetString(2).Should().Be("number");
@@ -296,7 +296,7 @@ public sealed class GeneratedSchemaClickHouseIntegrationTests : IAsyncLifetime
     [Fact]
     public async Task GivenTimestampMessage_WhenInsertedViaProtobufSingle_ThenTimestampIsReadable()
     {
-        // Arrange
+
         await CreateIngestTableAsync(
             TimestampFieldsMessage.Descriptor,
             "timestamp_messages_ingest");
@@ -308,7 +308,7 @@ public sealed class GeneratedSchemaClickHouseIntegrationTests : IAsyncLifetime
         using var payload = new MemoryStream();
         message.WriteTo(payload);
 
-        // Act
+
         await InsertProtobufAsync(
             "INSERT INTO timestamp_messages_ingest SETTINGS format_schema='mapping_fixtures:TimestampFieldsMessage' FORMAT ProtobufSingle",
             payload.ToArray());
@@ -323,7 +323,7 @@ public sealed class GeneratedSchemaClickHouseIntegrationTests : IAsyncLifetime
             """;
         var createdAt = await command.ExecuteScalarAsync();
 
-        // Assert
+
         createdAt.Should().NotBeNull();
         Convert.ToDateTime(createdAt).Should().Be(DateTime.Parse("2024-01-15T10:30:00Z").ToUniversalTime());
     }

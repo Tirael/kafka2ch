@@ -85,35 +85,28 @@ Workflow: правка proto → build падает на drift → `Cli migrate 
 
 По умолчанию выключен: пока `cluster.name` пустой, DDL и миграции генерируются ровно как для одной ноды. С `name` включается кластерный режим.
 
-| Поле                    | По умолчанию                                    | Описание |
-| ----------------------- | ----------------------------------------------- | -------- |
-| `name`                  | —                                               | имя кластера из `remote_servers`; используется в `ON CLUSTER` и `Distributed(...)` |
-| `replicatedPath`        | `/clickhouse/tables/{shard}/{database}/{table}` | Keeper-путь `Replicated*MergeTree` (должен содержать `{table}` или `{uuid}`) |
-| `replicaName`           | `{replica}`                                     | имя реплики storage-таблиц |
-| `historyReplicatedPath` | `/clickhouse/tables/all/{database}/{table}`     | Keeper-путь `schema_migrations`; **без** `{shard}` — история одна на весь кластер |
-| `historyReplicaName`    | `{shard}-{replica}`                             | имя реплики `schema_migrations`, уникальное во всём кластере |
-| `localTableSuffix`      | `_local`                                        | суффикс per-node storage-таблиц |
-| `shardingKey`           | `rand()`                                        | ключ шардирования `Distributed` (переопределяется `mergeTreeTables[].shardingKey`) |
-
-Макросы `{shard}` / `{replica}` должны быть заданы в `<macros>` каждой ноды; `{database}` / `{table}` ClickHouse подставляет сам.
-
-Что генерируется:
-
-| Объект конфига | Один сервер | Кластер |
+| Поле | По умолчанию | Описание |
 | --- | --- | --- |
-| `kafkaTables[]` | `CREATE TABLE q … ENGINE = Kafka` | то же `ON CLUSTER`: очередь на каждой ноде, один `kafka_group_name` → партиции топика делятся между всеми нодами |
-| `mergeTreeTables[]` `t` | `t ENGINE = MergeTree` | `t_local ON CLUSTER … ENGINE = ReplicatedMergeTree(replicatedPath, replicaName)` + `t ON CLUSTER AS t_local ENGINE = Distributed(name, currentDatabase(), t_local, shardingKey)` |
-| `materializedViews[]` | `… TO t` | `… ON CLUSTER … TO t_local`: каждая нода пишет то, что прочитала из своих партиций, в свой шард |
-| protobuf-UDF ключа | `CREATE OR REPLACE FUNCTION` | `… ON CLUSTER` |
-| `trailingSql` | как есть | `CREATE TABLE` с `*MergeTree` → `Replicated*MergeTree` `_local` + `Distributed`; `CREATE MATERIALIZED VIEW` получает `ON CLUSTER`, `TO`/`FROM`/`JOIN` по известным storage-таблицам переписываются на `_local`; прочие `CREATE` (`VIEW`, `FUNCTION`, `DICTIONARY`, не-MergeTree таблицы) — только `ON CLUSTER`; `INSERT` без изменений; `ALTER`/`DROP`/… — ошибка (делайте миграцией) |
-| `schema_migrations` | `MergeTree` | `ON CLUSTER … ReplicatedMergeTree(historyReplicatedPath, historyReplicaName)` — полная история на каждой ноде |
-| миграции | `DETACH`/`ALTER t`/`DROP VIEW`/`ATTACH` | всё `ON CLUSTER`; `ALTER` колонки сначала для `t_local`, затем для `Distributed` `t`; маркер `-- await:kafka_consumers_empty q ON CLUSTER c` ждёт пустой `clusterAllReplicas(c, system.kafka_consumers)` |
+| `name` | — | имя кластера из `remote_servers`; для `Distributed(...)` и (в режиме `onCluster`) `ON CLUSTER` |
+| `ddlMode` | `onCluster` | `onCluster` — каждый DDL с `ON CLUSTER`; `replicatedDatabase` — `CREATE DATABASE … ENGINE = Replicated(...)`, дальше DDL без `ON CLUSTER` (реплицируется движком БД) |
+| `replicatedPath` | `/clickhouse/tables/{shard}/{database}/{table}` | Keeper-путь `Replicated*MergeTree` (`{table}` или `{uuid}`) |
+| `replicaName` | `{replica}` | имя реплики storage-таблиц |
+| `historyReplicatedPath` | `/clickhouse/tables/all/{database}/{table}` | Keeper-путь `schema_migrations`; **без** `{shard}` |
+| `historyReplicaName` | `{shard}-{replica}` | имя реплики `schema_migrations` |
+| `localTableSuffix` | `_local` | суффикс per-node storage-таблиц |
+| `shardingKey` | `rand()` | ключ `Distributed` (переопределяется `mergeTreeTables[].shardingKey`) |
+| `materializedViewsWriteThroughDistributed` | `false` | MV пишут в `Distributed` `t` (шардирование по `shardingKey`); по умолчанию пишут в `t_local`. Override: `mergeTreeTables[].materializedViewsWriteThroughDistributed` |
+| `replicatedDatabaseName` | `kafka2ch` | только `ddlMode=replicatedDatabase` |
+| `replicatedDatabasePath` | `/clickhouse/databases/{uuid}` | Keeper-путь Replicated database |
+| `replicatedDatabaseReplicaName` | `{replica}` | replica name Replicated database |
 
-Чтение и внешние вставки идут через `Distributed`-таблицу с исходным именем (`orders`, `orders_agg_1m`), поэтому SQL приложений не меняется. Агрегаты (`SummingMergeTree` и т.п.) после `Distributed` по-прежнему читаются через `GROUP BY` / `sum`.
+Макросы `{shard}` / `{replica}` — в `<macros>` каждой ноды. Для production Keeper — ансамбль из **не менее 3** узлов (в compose-демо так и сделано).
 
-Используется только классический `ENGINE = Kafka` (offsets в consumer group Kafka); `kafka_keeper_path` / Kafka2 не генерируются. Полезно иметь партиций в топике не меньше, чем нод: лишние консьюмеры простаивают.
+**Цель MV (default = `_local`):** Kafka→raw MV на каждой ноде пишет в свой шард (`TO t_local`). Опция `materializedViewsWriteThroughDistributed` переключает `TO t`, чтобы строки перешардировались по `shardingKey` (дороже; нужно, если ключ шардирования важнее привязки к партиции Kafka). Agg-MV из `trailingSql` всегда читают `FROM *_local`, даже при write-through.
 
-Снапшот и drift-check кластер не учитывают: это свойство деплоя, а не схемы. Если один и тот же проект деплоится и на одну ноду, и на кластер (как в этом репо), у каждого варианта свои `migrations` (снапшот, каталог миграций, `00_schema_migrations.sql`) и `migrate` запускается для каждого конфига.
+**`ddlMode=replicatedDatabase`:** `CREATE DATABASE … ON CLUSTER … ENGINE = Replicated`, затем `schema_migrations` в `default` с `ON CLUSTER` и общим Keeper-путём (история на всех шардах), `USE <replicatedDatabaseName>`; таблицы/MV — `Replicated*MergeTree` без аргументов (путь задаёт Replicated DB), без `ON CLUSTER`. `DETACH` очередей — `PERMANENTLY`. Migrator: `--ddl-mode replicatedDatabase` / `ClickHouse__DdlMode`, `ClickHouse__Database=<replicatedDatabaseName>`. Пример: [`clickhouse.codegen.cluster.replicated-db.json`](clickhouse.codegen.cluster.replicated-db.json); compose: `-f docker-compose.cluster.yml -f docker-compose.cluster.replicated-db.yml`.
+
+Снапшот/drift кластер не учитывают. Один проект на single-node и cluster → **отдельные** `migrations` / snapshot / `00_*.sql` на конфиг; `Cli migrate --config …` и apply — **отдельно для каждого** конфига (это ожидаемо).
 
 ### `extends` / `outputDirectory`
 
@@ -134,7 +127,7 @@ Workflow: правка proto → build падает на drift → `Cli migrate 
 }
 ```
 
-`dotnet build src/Sandbox.Contracts` генерирует оба варианта. Миграция для кластера: `Cli migrate --config src/Sandbox.Contracts/clickhouse.codegen.cluster.json --name …`; применение: `Migrator --migrations docker/clickhouse-cluster/migrations --cluster kafka2ch` (или env `ClickHouse__Cluster`; путь/реплика истории — `ClickHouse__HistoryReplicatedPath` / `ClickHouse__HistoryReplicaName`, должны совпадать с `historyReplicatedPath` / `historyReplicaName`).
+`dotnet build src/Sandbox.Contracts` генерирует single-node, cluster (`onCluster`) и cluster (`replicatedDatabase`) варианты. Миграция: `Cli migrate --config <тот же codegen.json> --name …` — по разу на каждый конфиг. Apply: `Migrator --migrations <dir> --cluster kafka2ch [--ddl-mode onCluster|replicatedDatabase]` (env `ClickHouse__Cluster` / `ClickHouse__DdlMode` / `ClickHouse__Database`).
 
 ---
 

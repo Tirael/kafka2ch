@@ -1,10 +1,6 @@
 namespace ClickHouseSchemaGen.Mapping;
 
-/// <summary>
-/// Maps a protobuf Kafka key to <c>_key.&lt;field path&gt;</c> columns decoded from the raw <c>_key</c> virtual column.
-/// Field types and overrides follow the same rules as value fields; only singular scalar, enum,
-/// nested message (flattened) and google.protobuf wrapper fields can be decoded.
-/// </summary>
+
 public sealed class KafkaKeyColumnMapper(DenormalizationPlanner planner)
 {
     public const string KeyColumn = "_key";

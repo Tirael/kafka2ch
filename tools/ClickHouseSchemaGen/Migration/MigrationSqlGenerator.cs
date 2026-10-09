@@ -18,10 +18,10 @@ public static partial class MigrationSqlGenerator
         ArgumentNullException.ThrowIfNull(newPlan);
         ArgumentException.ThrowIfNullOrWhiteSpace(migrationName);
         ArgumentException.ThrowIfNullOrWhiteSpace(targetChecksum);
+        _ = (generatedAt, parentChecksum, plan.Warnings);
 
         var cluster = ClusterDdl.For(newPlan.Config);
         var builder = new StringBuilder();
-        AppendHeader(builder, migrationName, generatedAt, parentChecksum, targetChecksum, plan.Warnings);
 
         var kafkaRecreates = CollectKafkaRecreates(plan);
         var metaOnlyQueues = CollectMetaOnlyQueues(plan, kafkaRecreates, newPlan);
@@ -33,7 +33,7 @@ public static partial class MigrationSqlGenerator
 
         foreach (var queue in detachedQueues)
         {
-            builder.AppendLine($"DETACH TABLE IF EXISTS {queue}{cluster.OnCluster};");
+            builder.AppendLine(cluster.DetachTableSql(queue));
             builder.AppendLine(cluster.AwaitKafkaConsumersEmpty(queue));
         }
 
@@ -47,26 +47,6 @@ public static partial class MigrationSqlGenerator
         AppendManualBlock(builder, plan, cluster);
 
         return builder.ToString();
-    }
-
-    private static void AppendHeader(
-        StringBuilder builder,
-        string migrationName,
-        DateTimeOffset generatedAt,
-        string? parentChecksum,
-        string targetChecksum,
-        IReadOnlyList<string> warnings)
-    {
-        builder.AppendLine(SqlScriptWriter.GeneratedHeader);
-        builder.AppendLine($"-- Migration: {migrationName}");
-        builder.AppendLine($"-- Generated at: {generatedAt:O}");
-        builder.AppendLine($"-- Parent checksum: {parentChecksum ?? "<none>"}");
-        builder.AppendLine($"-- Target checksum: {targetChecksum}");
-
-        foreach (var warning in warnings)
-            builder.AppendLine($"-- Warning: {warning}");
-
-        builder.AppendLine();
     }
 
     private static void AppendMergeTreeAutomaticChanges(
@@ -102,10 +82,7 @@ public static partial class MigrationSqlGenerator
             builder.AppendLine();
     }
 
-    /// <summary>
-    /// A column change of MergeTree table <c>t</c>: on a cluster the storage table <c>t_local</c> is altered
-    /// first, then the <c>Distributed</c> table <c>t</c> whose structure must match it.
-    /// </summary>
+
     private static void AppendAlter(StringBuilder builder, ClusterDdl cluster, string tableName, string clause)
     {
         foreach (var target in AlterTargets(cluster, tableName))
@@ -125,7 +102,6 @@ public static partial class MigrationSqlGenerator
         {
             var table = newPlan.MergeTreeTables.First(t =>
                 string.Equals(t.Config.TableName, added.TableName, StringComparison.OrdinalIgnoreCase));
-            builder.AppendLine("-- New MergeTree table; consider a new kafka_group_name for backfill if needed.");
             builder.Append(MergeTreeTableGenerator.Generate(table.Config, ifNotExists: true, cluster));
         }
     }
@@ -166,15 +142,23 @@ public static partial class MigrationSqlGenerator
                 builder.AppendLine();
             }
 
-            // ClickHouse cannot create a view over a detached table; an attached Kafka table without views
-            // has no consumers, so attaching before CREATE does not start consumption early.
-            if (!recreateKafka && metaOnlyQueues.Contains(queue) && attachedQueues.Add(queue))
-                builder.AppendLine($"ATTACH TABLE {queue}{cluster.OnCluster};");
 
-            builder.Append(MaterializedViewGenerator.Generate(view.Config, cluster: cluster));
+            if (!recreateKafka && metaOnlyQueues.Contains(queue) && attachedQueues.Add(queue))
+                builder.AppendLine(cluster.AttachTableSql(queue));
+
+            var writeThrough = newPlan.MergeTreeTables
+                .FirstOrDefault(table => string.Equals(
+                    table.Config.TableName,
+                    view.Config.TargetTable,
+                    StringComparison.OrdinalIgnoreCase))
+                ?.Config.MaterializedViewsWriteThroughDistributed;
+            builder.Append(MaterializedViewGenerator.Generate(
+                view.Config,
+                cluster: cluster,
+                writeThroughDistributed: writeThrough));
 
             if (recreateKafka)
-                builder.AppendLine($"ATTACH TABLE {queue}{cluster.OnCluster};");
+                builder.AppendLine(cluster.AttachTableSql(queue));
 
             builder.AppendLine();
         }
@@ -198,7 +182,7 @@ public static partial class MigrationSqlGenerator
             var kafkaPlan = newPlan.KafkaTables.First(t =>
                 string.Equals(t.Config.TableName, queue, StringComparison.OrdinalIgnoreCase));
             builder.Append(KafkaTableGenerator.Generate(kafkaPlan.Config, kafkaPlan.Columns, ifNotExists: false, cluster));
-            builder.AppendLine($"ATTACH TABLE {queue}{cluster.OnCluster};");
+            builder.AppendLine(cluster.AttachTableSql(queue));
             builder.AppendLine();
         }
     }
@@ -208,7 +192,6 @@ public static partial class MigrationSqlGenerator
         if (plan.ManualChanges.Count == 0)
             return;
 
-        builder.AppendLine("-- MANUAL / DESTRUCTIVE (review and uncomment before applying)");
         foreach (var change in plan.ManualChanges)
         {
             switch (change)
@@ -225,7 +208,7 @@ public static partial class MigrationSqlGenerator
                     foreach (var target in AlterTargets(cluster, typeChanged.TableName))
                     {
                         builder.AppendLine(
-                            $"-- ALTER TABLE {target}{cluster.OnCluster} MODIFY COLUMN {SqlColumnFormatter.FormatColumnName(typeChanged.ColumnName)} {typeChanged.NewType}; -- {typeChanged.Kind}");
+                            $"-- ALTER TABLE {target}{cluster.OnCluster} MODIFY COLUMN {SqlColumnFormatter.FormatColumnName(typeChanged.ColumnName)} {typeChanged.NewType};");
                     }
 
                     break;

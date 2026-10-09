@@ -2,12 +2,6 @@ using System.Text.RegularExpressions;
 
 namespace ClickHouseSchemaGen.Generation;
 
-/// <summary>
-/// Adapts hand-written <c>trailingSql</c> (aggregate tables and their views) to cluster mode with the same
-/// topology as generated tables: MergeTree-family tables become <c>Replicated*</c> local tables plus a
-/// <c>Distributed</c> table, materialized views read from and write to local tables, and every
-/// <c>CREATE</c> runs <c>ON CLUSTER</c>. Other DDL (ALTER, DROP, ...) has no unambiguous cluster form and is rejected.
-/// </summary>
 public static partial class ClusterTrailingSqlRewriter
 {
     public static string Rewrite(string sql, ClusterDdl cluster, IEnumerable<string> storageTables)
@@ -79,7 +73,7 @@ public static partial class ClusterTrailingSqlRewriter
 
         rest = ToClauseRegex().Replace(rest, to =>
             localTables.Contains(to.Groups["table"].Value)
-                ? $"{to.Groups["prefix"].Value}{cluster.StorageTable(to.Groups["table"].Value)}"
+                ? $"{to.Groups["prefix"].Value}{cluster.MaterializedViewTarget(to.Groups["table"].Value)}"
                 : to.Value,
             count: 1);
 

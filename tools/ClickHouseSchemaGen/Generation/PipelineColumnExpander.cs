@@ -1,8 +1,6 @@
 namespace ClickHouseSchemaGen.Generation;
 
-/// <summary>
-/// Fills empty <c>pipeline.*.columns</c> from the mapped Kafka queue schema and optional kafka meta.
-/// </summary>
+
 public static class PipelineColumnExpander
 {
     public static MergeTreeTableConfig ExpandMergeTreeTable(
@@ -59,6 +57,7 @@ public static class PipelineColumnExpander
             OrderBy = table.OrderBy,
             Ttl = table.Ttl,
             ShardingKey = table.ShardingKey,
+            MaterializedViewsWriteThroughDistributed = table.MaterializedViewsWriteThroughDistributed,
             SourceTable = table.SourceTable,
             IncludeKafkaMeta = table.IncludeKafkaMeta,
             Columns = columns

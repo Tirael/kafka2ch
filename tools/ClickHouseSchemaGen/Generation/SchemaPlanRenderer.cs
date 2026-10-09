@@ -11,14 +11,17 @@ public static class SchemaPlanRenderer
         {
             scripts[kafkaTable.Config.OutputPath] = SchemaMigrationsTable.AppendInitRecord(
                 kafkaTable.Config.OutputPath,
-                KafkaTableGenerator.Generate(kafkaTable.Config, kafkaTable.Columns, cluster: cluster));
+                cluster.WithDatabaseContext(
+                    KafkaTableGenerator.Generate(kafkaTable.Config, kafkaTable.Columns, cluster: cluster)),
+                cluster);
         }
 
         if (plan.Config.Pipeline is not null)
         {
             scripts[plan.Config.Pipeline.OutputPath] = SchemaMigrationsTable.AppendInitRecord(
                 plan.Config.Pipeline.OutputPath,
-                RenderPipelineSql(plan));
+                cluster.WithDatabaseContext(RenderPipelineSql(plan)),
+                cluster);
         }
 
         return scripts;
@@ -27,9 +30,12 @@ public static class SchemaPlanRenderer
     public static string RenderPipelineSql(ResolvedSchemaPlan plan)
     {
         var cluster = ClusterDdl.For(plan.Config);
-        var pipelineBuilder = new StringBuilder()
-            .AppendLine(SqlScriptWriter.GeneratedHeader)
-            .AppendLine();
+        var writeThroughByTable = plan.MergeTreeTables.ToDictionary(
+            table => table.Config.TableName,
+            table => table.Config.MaterializedViewsWriteThroughDistributed,
+            StringComparer.OrdinalIgnoreCase);
+
+        var pipelineBuilder = new StringBuilder();
 
         foreach (var mergeTreeTable in plan.MergeTreeTables)
             pipelineBuilder.Append(MergeTreeTableGenerator.Generate(mergeTreeTable.Config, cluster: cluster));
@@ -43,10 +49,12 @@ public static class SchemaPlanRenderer
 
         foreach (var materializedView in plan.MaterializedViews)
         {
+            writeThroughByTable.TryGetValue(materializedView.Config.TargetTable, out var writeThrough);
             pipelineBuilder.Append(MaterializedViewGenerator.Generate(
                 materializedView.Config,
                 includeFunctionDefinitions: false,
-                cluster: cluster));
+                cluster: cluster,
+                writeThroughDistributed: writeThrough));
         }
 
         if (!string.IsNullOrWhiteSpace(plan.TrailingSql))

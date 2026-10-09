@@ -196,6 +196,9 @@ internal sealed class ClusterConfigValidator : AbstractValidator<ClusterConfig>
             .Must(ValidationRules.IsSqlIdentifier)
             .OverridePropertyName(nameof(ClusterConfig.Name))
             .WithMessage("Cluster name must be a valid ClickHouse identifier.");
+        RuleFor(cluster => cluster.DdlMode)
+            .Must(mode => ClusterDdlModes.All.Contains(mode, StringComparer.OrdinalIgnoreCase))
+            .WithMessage($"ddlMode must be one of: {string.Join(", ", ClusterDdlModes.All)}.");
         RuleFor(cluster => cluster.ReplicatedPath)
             .NotEmpty()
             .Must(path => path.Contains("{table}", StringComparison.Ordinal) || path.Contains("{uuid}", StringComparison.Ordinal))
@@ -211,6 +214,16 @@ internal sealed class ClusterConfigValidator : AbstractValidator<ClusterConfig>
             .Must(suffix => ValidationRules.IsSqlIdentifier("t" + suffix))
             .WithMessage("localTableSuffix must keep table names valid ClickHouse identifiers.");
         RuleFor(cluster => cluster.ShardingKey).NotEmpty();
+
+        When(cluster => cluster.UsesReplicatedDatabase, () =>
+        {
+            RuleFor(cluster => cluster.ReplicatedDatabaseName)
+                .NotEmpty()
+                .Must(ValidationRules.IsSqlIdentifier)
+                .WithMessage("replicatedDatabaseName must be a valid ClickHouse identifier.");
+            RuleFor(cluster => cluster.ReplicatedDatabasePath).NotEmpty();
+            RuleFor(cluster => cluster.ReplicatedDatabaseReplicaName).NotEmpty();
+        });
     }
 }
 

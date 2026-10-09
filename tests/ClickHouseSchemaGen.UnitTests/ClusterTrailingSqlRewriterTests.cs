@@ -103,6 +103,31 @@ public sealed class ClusterTrailingSqlRewriterTests
         rewritten.Should().NotContain("lookup_local");
     }
 
+    [Fact]
+    public void GivenWriteThroughDistributed_WhenRewriteView_ThenWritesToDistributedAndReadsLocal()
+    {
+        const string sql = """
+            CREATE TABLE orders_agg_1m (minute DateTime, orders_count UInt64)
+            ENGINE = SummingMergeTree ORDER BY minute;
+
+            CREATE MATERIALIZED VIEW orders_agg_mv TO orders_agg_1m AS
+            SELECT toStartOfMinute(event_time) AS minute, count() AS orders_count
+            FROM orders
+            GROUP BY minute;
+            """;
+        var cluster = new ClusterDdl(new ClusterConfig
+        {
+            Name = "kafka2ch",
+            MaterializedViewsWriteThroughDistributed = true
+        });
+
+        var rewritten = ClusterTrailingSqlRewriter.Rewrite(sql, cluster, ["orders"]);
+
+        rewritten.Should().Contain("CREATE MATERIALIZED VIEW orders_agg_mv ON CLUSTER kafka2ch TO orders_agg_1m AS");
+        rewritten.Should().Contain("FROM orders_local");
+        rewritten.Should().NotContain("TO orders_agg_1m_local");
+    }
+
     [Theory]
     [InlineData("ALTER TABLE orders ADD COLUMN x UInt8")]
     [InlineData("DROP TABLE orders")]
