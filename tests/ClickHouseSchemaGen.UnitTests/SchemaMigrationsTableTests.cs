@@ -12,7 +12,7 @@ public sealed class SchemaMigrationsTableTests
         sql.Should().StartWith(body.TrimEnd());
         sql.TrimEnd().Should().EndWith(
             "INSERT INTO schema_migrations (version, name, checksum, applied_at, kind) VALUES " +
-            $"('03', '03_pipeline.sql', '{SchemaSnapshotSerializer.ComputeChecksum(body)}', now(), 'init');");
+            $"('02', '02_pipeline.sql', '{SchemaSnapshotSerializer.ComputeChecksum(body)}', now(), 'init');");
     }
 
     [Fact]
