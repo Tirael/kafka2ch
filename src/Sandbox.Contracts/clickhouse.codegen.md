@@ -1,6 +1,6 @@
 # Инструкция: `clickhouse.codegen.json`
 
-Конфиг генератора ClickHouse DDL из protobuf (`tools/ClickHouseSchemaGen`).  
+Конфиг генератора ClickHouse DDL из protobuf (`tools/ClickHouseSchemaGen` / NuGet `ClickHouseSchemaGen.Tasks`).  
 Файл: `[clickhouse.codegen.json](clickhouse.codegen.json)` в этом каталоге.
 
 После правок перегенерируйте SQL:
@@ -11,6 +11,8 @@ dotnet build src/Sandbox.Contracts
 
 Результат - файлы в `docker/clickhouse/init/` (пути задаются в конфиге).  
 Пропуск codegen: `dotnet build -p:SkipClickHouseCodegen=true`.
+
+Вне этого репозитория подключайте пакет `ClickHouseSchemaGen.Tasks` (MSBuild) и/или tools `ClickHouseSchemaGen.Cli` / `ClickHouseSchemaGen.Migrator` — см. раздел **NuGet-пакеты** в [README](../../README.md). Для CLI передайте `--assemblies` с DLL, где лежат типы из `messageType`.
 
 ---
 

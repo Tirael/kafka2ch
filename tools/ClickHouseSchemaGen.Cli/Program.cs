@@ -1,4 +1,5 @@
-﻿using ClickHouseSchemaGen;
+﻿using System.Reflection;
+using ClickHouseSchemaGen;
 using ClickHouseSchemaGen.Mapping;
 using ClickHouseSchemaGen.Migration;
 using ClickHouseSchemaGen.Validation;
@@ -35,6 +36,7 @@ catch (Exception exception)
 
 static int RunGenerate(string[] args)
 {
+    LoadMessageAssemblies(args);
     var configPath = RequireConfig(args);
     new ClickHouseSchemaGenerator(new DenormalizationPlanner()).GenerateFromConfigFile(configPath);
     Console.WriteLine($"Generated ClickHouse DDL from '{configPath}'.");
@@ -52,6 +54,7 @@ static int RunMigrate(string[] args)
     var orchestrator = new MigrationOrchestrator();
     if (args[0] == "init")
     {
+        LoadMessageAssemblies(args.AsSpan(1).ToArray());
         var configPath = RequireConfig(args.AsSpan(1).ToArray());
         orchestrator.Init(configPath);
         Console.WriteLine($"Initialized schema snapshot for '{configPath}'.");
@@ -60,6 +63,7 @@ static int RunMigrate(string[] args)
 
     if (args[0] == "status")
     {
+        LoadMessageAssemblies(args.AsSpan(1).ToArray());
         var configPath = RequireConfig(args.AsSpan(1).ToArray());
         var status = orchestrator.Status(configPath);
         if (!status.HasSnapshot)
@@ -81,6 +85,7 @@ static int RunMigrate(string[] args)
     }
 
     var migrateArgs = args;
+    LoadMessageAssemblies(migrateArgs);
     var nameIndex = Array.IndexOf(migrateArgs, "--name");
     if (nameIndex < 0 || nameIndex + 1 >= migrateArgs.Length)
     {
@@ -96,6 +101,20 @@ static int RunMigrate(string[] args)
     if (result.MigrationPath is not null)
         Console.WriteLine($"Migration file: {result.MigrationPath}");
     return result.ExitCode;
+}
+
+static void LoadMessageAssemblies(string[] args)
+{
+    var assembliesIndex = Array.IndexOf(args, "--assemblies");
+    if (assembliesIndex < 0 || assembliesIndex + 1 >= args.Length)
+        return;
+
+    foreach (var path in args[assembliesIndex + 1].Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+    {
+        if (!File.Exists(path))
+            throw new FileNotFoundException($"Message assembly not found: {path}");
+        Assembly.LoadFrom(Path.GetFullPath(path));
+    }
 }
 
 static string RequireConfig(string[] args)
@@ -117,10 +136,14 @@ static void PrintUsage()
 {
     Console.WriteLine("""
         Usage:
-          ClickHouseSchemaGen.Cli generate --config <path>
-          ClickHouseSchemaGen.Cli migrate init --config <path>
-          ClickHouseSchemaGen.Cli migrate status --config <path>
-          ClickHouseSchemaGen.Cli migrate --config <path> --name <name> [--allow-manual]
-          ClickHouseSchemaGen.Cli --config <path>   (alias for generate)
+          clickhouse-schema-gen generate --config <path> [--assemblies <dll[;dll…]>]
+          clickhouse-schema-gen migrate init --config <path> [--assemblies <dll[;dll…]>]
+          clickhouse-schema-gen migrate status --config <path> [--assemblies <dll[;dll…]>]
+          clickhouse-schema-gen migrate --config <path> --name <name> [--assemblies <dll[;dll…]>] [--allow-manual]
+          clickhouse-schema-gen --config <path> [--assemblies <dll[;dll…]>]   (alias for generate)
+
+        --assemblies  Semicolon-separated paths to assemblies that define protobuf message types
+                      referenced by messageType in the codegen config (required when the tool
+                      package does not already reference those contracts).
         """);
 }

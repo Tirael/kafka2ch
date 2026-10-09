@@ -4,6 +4,17 @@
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+
+    <!-- Packable projects opt in explicitly; default off for apps/tests/samples. -->
+    <IsPackable>false</IsPackable>
+    <VersionPrefix>0.1.0</VersionPrefix>
+    <Authors>kafka2ch</Authors>
+    <Company>kafka2ch</Company>
+    <Product>ClickHouseSchemaGen</Product>
+    <PackageProjectUrl>https://github.com/Tirael/kafka2ch</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/Tirael/kafka2ch</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageTags>clickhouse;protobuf;kafka;codegen;msbuild</PackageTags>
   </PropertyGroup>
 
 </Project>

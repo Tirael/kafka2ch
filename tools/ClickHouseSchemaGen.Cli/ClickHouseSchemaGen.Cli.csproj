@@ -6,12 +6,17 @@
     <SkipClickHouseCodegen>true</SkipClickHouseCodegen>
     <!-- Apphost .exe under bin/ is frequently blocked by AppLocker in closed contours; prefer `dotnet exec`. -->
     <UseAppHost>false</UseAppHost>
+
+    <IsPackable>true</IsPackable>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>clickhouse-schema-gen</ToolCommandName>
+    <PackageId>ClickHouseSchemaGen.Cli</PackageId>
+    <Description>dotnet tool: generate ClickHouse DDL and schema migrations from clickhouse.codegen.json.</Description>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="Google.Protobuf" />
     <ProjectReference Include="..\ClickHouseSchemaGen\ClickHouseSchemaGen.csproj" />
-    <ProjectReference Include="..\..\src\Sandbox.Contracts\Sandbox.Contracts.csproj" />
   </ItemGroup>
 
 </Project>

@@ -1,0 +1,33 @@
+{
+  "defaults": {
+    "maxFlattenDepth": 3,
+    "repeatedMessageStrategy": "nested",
+    "optionalAsNullable": true,
+    "oneofPresence": true,
+    "enumMaxValuesForEnum8": 127
+  },
+  "migrations": {
+    "snapshotPath": "generated/schema.snapshot.json",
+    "migrationsDirectory": "generated/migrations",
+    "versionsOutputPath": "generated/00_schema_migrations.sql"
+  },
+  "kafkaTables": [
+    {
+      "messageType": "Sandbox.Contracts.OrderEvent, Sandbox.Contracts",
+      "tableName": "orders_queue",
+      "protoFile": "order_event",
+      "messageName": "OrderEvent",
+      "outputPath": "generated/01_orders_queue.sql",
+      "kafka": {
+        "brokerList": "kafka:9092",
+        "topic": "orders",
+        "groupName": "clickhouse-orders",
+        "skipBytes": 6
+      },
+      "key": {
+        "format": "protobuf",
+        "messageType": "Sandbox.Contracts.OrderKey, Sandbox.Contracts"
+      }
+    }
+  ]
+}

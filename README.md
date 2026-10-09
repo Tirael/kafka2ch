@@ -109,9 +109,11 @@ docker compose up -d --build
 3. Сгенерируйте миграцию:
 
 ```bash
+dotnet build src/Sandbox.Contracts -p:SkipClickHouseCodegen=true
 dotnet build tools/ClickHouseSchemaGen.Cli
 dotnet exec tools/ClickHouseSchemaGen.Cli/bin/Debug/net8.0/ClickHouseSchemaGen.Cli.dll \
-  migrate --config src/Sandbox.Contracts/clickhouse.codegen.json --name <change_name>
+  migrate --config src/Sandbox.Contracts/clickhouse.codegen.json --name <change_name> \
+  --assemblies src/Sandbox.Contracts/bin/Debug/net8.0/Sandbox.Contracts.dll
 ```
 
 4. Закоммитьте SQL в `docker/clickhouse/migrations/`, обновлённый `schema.snapshot.json` и `00_schema_migrations.sql`
@@ -231,6 +233,63 @@ dotnet test tests/ClickHouseSchemaGen.UnitTests
 dotnet test tests/ClickHouseSchemaGen.IntegrationTests
 ```
 
+### NuGet-пакеты (внешний consumer)
+
+Генератор можно подключить **без** `ProjectReference` на этот репозиторий. Пакеты:
+
+| Package id | Тип | Назначение |
+|---|---|---|
+| `ClickHouseSchemaGen` | library | ядро генератора (API) |
+| `ClickHouseSchemaGen.Tasks` | MSBuild (developmentDependency) | codegen на `dotnet build` |
+| `ClickHouseSchemaGen.Cli` | `dotnet tool` (`clickhouse-schema-gen`) | `generate` / `migrate` |
+| `ClickHouseSchemaGen.Migrator` | `dotnet tool` (`clickhouse-schema-migrator`) | apply SQL-миграций |
+
+Версия задаётся через `VersionPrefix` в [`Directory.Build.props`](Directory.Build.props) (сейчас `0.1.0`). Локальная сборка пакетов:
+
+```bash
+./scripts/pack-verify.sh
+# или:
+dotnet pack tools/ClickHouseSchemaGen -o artifacts/nuget
+dotnet pack tools/ClickHouseSchemaGen.Tasks -o artifacts/nuget
+dotnet pack tools/ClickHouseSchemaGen.Cli -o artifacts/nuget
+dotnet pack tools/ClickHouseSchemaGen.Migrator -o artifacts/nuget
+```
+
+`nuget.config` в корне уже добавляет source `artifacts/nuget` (для smoke-теста).
+
+**MSBuild (рекомендуемый путь, как у Sandbox.Contracts):**
+
+```xml
+<PackageReference Include="ClickHouseSchemaGen.Tasks" Version="0.1.0" PrivateAssets="all" />
+```
+
+```xml
+<PropertyGroup>
+  <ClickHouseCodegenConfig>$(MSBuildProjectDirectory)/clickhouse.codegen.json</ClickHouseCodegenConfig>
+  <ClickHouseCodegenAssemblies>$(TargetPath)</ClickHouseCodegenAssemblies>
+  <ClickHouseCodegenRunOnBuild>true</ClickHouseCodegenRunOnBuild>
+</PropertyGroup>
+```
+
+`ClickHouseCodegenAssemblies` — пути к DLL с protobuf-типами из `messageType` (часто `$(TargetPath)` самого contracts-проекта). Escape hatch: `-p:SkipClickHouseCodegen=true`.
+
+**CLI / migrator tools:**
+
+```bash
+dotnet tool install --global ClickHouseSchemaGen.Cli --add-source ./artifacts/nuget
+dotnet tool install --global ClickHouseSchemaGen.Migrator --add-source ./artifacts/nuget
+
+clickhouse-schema-gen generate \
+  --config path/to/clickhouse.codegen.json \
+  --assemblies path/to/Your.Contracts.dll
+
+clickhouse-schema-gen migrate --config … --name <change> --assemblies path/to/Your.Contracts.dll
+
+clickhouse-schema-migrator --migrations path/to/migrations
+```
+
+Пример consumer: [`samples/NuGetCodegenSmoke`](samples/NuGetCodegenSmoke). В этом репозитории `Sandbox.Contracts` по-прежнему вызывает локальный `tools/ClickHouseSchemaGen.Tasks` через `MSBuild` (без NuGet), чтобы не требовать `pack` при обычной разработке.
+
 ## Полезные команды
 
 ```bash
@@ -254,9 +313,11 @@ docker exec kafka kafka-console-consumer \
 ```
 src/Sandbox.App/          # worker: PublishOrders, PublishShipments, ReadAggregates
 src/Sandbox.Contracts/    # protobuf + clickhouse.codegen.json
-tools/ClickHouseSchemaGen # proto3 → ClickHouse DDL
+tools/ClickHouseSchemaGen # proto3 → ClickHouse DDL (+ .Tasks / .Cli / .Migrator NuGet)
+samples/NuGetCodegenSmoke # smoke: restore Tasks package + generate
 docker/clickhouse/        # init SQL + format schemas
 scripts/verify-pipeline.sh
+scripts/pack-verify.sh    # dotnet pack + NuGet smoke + unit tests
 docker-compose.yml
 Dockerfile
 .env.example

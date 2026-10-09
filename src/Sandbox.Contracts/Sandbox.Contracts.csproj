@@ -26,6 +26,9 @@
     <Exec>dotnet …Cli.dll</Exec> (AppLocker) and not via UsingTask on bin/*.dll (MSB3027 lock).
 
     Escape hatch: dotnet build -p:SkipClickHouseCodegen=true
+
+    In-repo: MSBuild the local Tasks project (no NuGet restore required for day-to-day work).
+    External consumers: PackageReference ClickHouseSchemaGen.Tasks — see README.
   -->
   <Target Name="GenerateClickHouseDdl" AfterTargets="SyncProtoSchemas" Condition="'$(SkipClickHouseCodegen)' != 'true'">
     <PropertyGroup>
@@ -33,7 +36,7 @@
       <_ClickHouseCodegenConfig>$(MSBuildProjectDirectory)/clickhouse.codegen.json</_ClickHouseCodegenConfig>
     </PropertyGroup>
     <MSBuild Projects="$(_ClickHouseSchemaGenTasksProject)" Targets="Restore;Build" Properties="Configuration=$(Configuration);SkipClickHouseCodegen=true" />
-    <MSBuild Projects="$(_ClickHouseSchemaGenTasksProject)" Targets="GenerateClickHouseDdl" Properties="Configuration=$(Configuration);SkipClickHouseCodegen=true;ClickHouseCodegenConfig=$(_ClickHouseCodegenConfig)" />
+    <MSBuild Projects="$(_ClickHouseSchemaGenTasksProject)" Targets="GenerateClickHouseDdl" Properties="Configuration=$(Configuration);SkipClickHouseCodegen=true;ClickHouseCodegenConfig=$(_ClickHouseCodegenConfig);ClickHouseCodegenAssemblies=$(TargetPath)" />
   </Target>
 
 </Project>
