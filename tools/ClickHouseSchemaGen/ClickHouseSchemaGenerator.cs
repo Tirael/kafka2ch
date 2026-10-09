@@ -1,7 +1,3 @@
-using ClickHouseSchemaGen.Planning;
-using ClickHouseSchemaGen.Snapshot;
-using ClickHouseSchemaGen.Validation;
-
 namespace ClickHouseSchemaGen;
 
 public sealed class ClickHouseSchemaGenerator(
@@ -19,7 +15,10 @@ public sealed class ClickHouseSchemaGenerator(
         var descriptor = ProtoDescriptorResolver.ResolveDescriptor(config.MessageType);
         var overrides = MergeFieldOverrides(rootConfig?.FieldOverrides, config.FieldOverrides);
         var columns = planner.MapMessage(descriptor, defaults, overrides);
-        return KafkaTableGenerator.Generate(config, columns);
+        return KafkaTableGenerator.Generate(
+            config,
+            columns,
+            cluster: rootConfig is null ? null : ClusterDdl.For(rootConfig));
     }
 
     public string GenerateKafkaTableSql(KafkaTableConfig config, CodegenDefaults defaults) =>
@@ -146,7 +145,7 @@ public sealed class ClickHouseSchemaGenerator(
         var scripts = SchemaPlanRenderer.RenderInitScripts(plan);
 
         foreach (var (outputPath, sql) in scripts)
-            WriteGeneratedSql(configDirectory, outputPath, sql);
+            WriteGeneratedSql(configDirectory, CodegenConfigLoader.ResolveInitScriptPath(config, outputPath), sql);
 
         if (!checkSnapshot)
             return;

@@ -19,7 +19,7 @@ public sealed class MigrationOrchestrator(ClickHouseSchemaGenerator generator, T
         SchemaSnapshotSerializer.Save(paths.SnapshotPath, snapshot);
         File.WriteAllText(
             paths.VersionsOutputPath,
-            SchemaMigrationsScriptGenerator.Generate([]));
+            SchemaMigrationsScriptGenerator.Generate([], ClusterDdl.For(config)));
     }
 
     public MigrationStatusResult Status(string configPath)
@@ -107,7 +107,7 @@ public sealed class MigrationOrchestrator(ClickHouseSchemaGenerator generator, T
         var migrations = SchemaMigrationsScriptGenerator.ReadFromDirectory(paths.MigrationsDirectory);
         File.WriteAllText(
             paths.VersionsOutputPath,
-            SchemaMigrationsScriptGenerator.Generate(migrations));
+            SchemaMigrationsScriptGenerator.Generate(migrations, ClusterDdl.For(config)));
 
         return new MigrationRunResult(
             ExitCode: 0,

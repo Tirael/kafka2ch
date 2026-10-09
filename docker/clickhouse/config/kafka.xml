@@ -1,0 +1,6 @@
+<clickhouse>
+    <kafka>
+        <session_timeout_ms>60000</session_timeout_ms>
+        <heartbeat_interval_ms>10000</heartbeat_interval_ms>
+    </kafka>
+</clickhouse>

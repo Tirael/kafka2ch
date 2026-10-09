@@ -7,16 +7,16 @@ public sealed class ProtoToClickHouseMapperTests
     [Fact]
     public void GivenOrderEventDescriptor_WhenMapped_ThenColumnsMatchExpectedSchema()
     {
-        // Arrange
+
         var config = OrdersQueueTestConfig.Create();
 
-        // Act
+
         var columns = _sut.MapMessage(
             OrderEvent.Descriptor,
             OrdersQueueTestConfig.Defaults,
             config.FieldOverrides);
 
-        // Assert
+
         columns.Select(column => (column.Name, column.Type)).Should().BeEquivalentTo([
             ("order_id", "String"),
             ("category", "LowCardinality(String)"),
@@ -46,13 +46,13 @@ public sealed class ProtoToClickHouseMapperTests
     [Fact]
     public void GivenShipmentEventDescriptor_WhenMapped_ThenNestedRepeatedAndIndependentListsStaySeparate()
     {
-        // Act
+
         var columns = _sut.MapMessage(
             ShipmentEvent.Descriptor,
             OrdersQueueTestConfig.Defaults,
             MappingTestSupport.EmptyOverrides);
 
-        // Assert
+
         var checkpoints = columns.Should().ContainSingle(column => column.Name == "checkpoints").Subject;
         checkpoints.Type.Should().StartWith("Nested(");
         checkpoints.Type.Should().Contain("scans Array(Tuple(code String, operator_note Nullable(String)))");
@@ -103,16 +103,16 @@ public sealed class ProtoToClickHouseMapperTests
     [Fact]
     public void GivenRepeatedStringField_WhenMappedWithoutOverride_ThenUsesArrayOfString()
     {
-        // Arrange
+
         var tagsField = OrderEvent.Descriptor.Fields.InDeclarationOrder().Single(field => field.Name == "tags");
 
-        // Act
+
         var columns = _sut.MapMessage(
             OrderEvent.Descriptor,
             OrdersQueueTestConfig.Defaults,
             overrides: MappingTestSupport.EmptyOverrides);
 
-        // Assert
+
         tagsField.IsRepeated.Should().BeTrue();
         columns.Single(column => column.Name == "tags").Type.Should().Be("Array(String)");
     }
@@ -120,13 +120,13 @@ public sealed class ProtoToClickHouseMapperTests
     [Fact]
     public void GivenAssemblyQualifiedMessageType_WhenResolved_ThenDescriptorMatchesOrderEvent()
     {
-        // Arrange
+
         const string messageType = "Sandbox.Contracts.OrderEvent, Sandbox.Contracts";
 
-        // Act
+
         var descriptor = ProtoToClickHouseMapper.ResolveDescriptor(messageType);
 
-        // Assert
+
         descriptor.Name.Should().Be("OrderEvent");
         descriptor.FullName.Should().Be("sandbox.orders.v1.OrderEvent");
     }

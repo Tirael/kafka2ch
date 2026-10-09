@@ -1,17 +1,13 @@
-using System.Security.Cryptography;
-using System.Text;
-using System.Text.RegularExpressions;
-using ClickHouse.Client.ADO;
-using ClickHouseSchemaGen.Migration;
-using Microsoft.Extensions.Logging;
-
 namespace ClickHouseSchemaGen.Migrator;
 
-public sealed class MigrationRunner(ILogger logger, TimeProvider timeProvider)
+
+public sealed class MigrationRunner(ILogger logger, TimeProvider timeProvider, ClusterConfig? cluster = null)
 {
     private static readonly Regex AwaitConsumersMarker = new(
-        @"^\s*--\s*await:kafka_consumers_empty\s+(?<table>[A-Za-z_][A-Za-z0-9_]*)\s*$",
-        RegexOptions.Compiled | RegexOptions.CultureInvariant);
+        @"^\s*--\s*await:kafka_consumers_empty\s+(?<table>[A-Za-z_][A-Za-z0-9_]*)(?:\s+ON\s+CLUSTER\s+(?<cluster>[A-Za-z_][A-Za-z0-9_]*))?\s*$",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+
+    private readonly ClusterDdl _cluster = new(cluster);
 
     private static readonly TimeSpan ConsumerWaitTimeout = TimeSpan.FromSeconds(60);
 
@@ -85,9 +81,11 @@ public sealed class MigrationRunner(ILogger logger, TimeProvider timeProvider)
         }
     }
 
-    private static async Task EnsureMigrationsTableAsync(ClickHouseConnection connection, CancellationToken cancellationToken)
+    private async Task EnsureMigrationsTableAsync(ClickHouseConnection connection, CancellationToken cancellationToken)
     {
-        foreach (var statement in SchemaMigrationsTable.UpgradeStatements.Prepend(SchemaMigrationsTable.CreateTableSql))
+        var statements = SchemaMigrationsTable.UpgradeStatementsFor(_cluster)
+            .Prepend(SchemaMigrationsTable.CreateTableSqlFor(_cluster));
+        foreach (var statement in statements)
         {
             await using var command = connection.CreateCommand();
             command.CommandText = statement;
@@ -95,13 +93,13 @@ public sealed class MigrationRunner(ILogger logger, TimeProvider timeProvider)
         }
     }
 
-    private static async Task<Dictionary<string, string>> LoadAppliedAsync(
+    private async Task<Dictionary<string, string>> LoadAppliedAsync(
         ClickHouseConnection connection,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
         command.CommandText =
-            $"SELECT version, checksum FROM schema_migrations WHERE kind = '{SchemaMigrationsTable.MigrationKind}'";
+            $"SELECT version, checksum FROM {_cluster.HistoryTableName} WHERE kind = '{SchemaMigrationsTable.MigrationKind}'";
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         var applied = new Dictionary<string, string>(StringComparer.Ordinal);
         while (await reader.ReadAsync(cancellationToken))
@@ -120,7 +118,12 @@ public sealed class MigrationRunner(ILogger logger, TimeProvider timeProvider)
             var awaitMatch = AwaitConsumersMarker.Match(statement);
             if (awaitMatch.Success)
             {
-                await WaitForConsumersEmptyAsync(connection, awaitMatch.Groups["table"].Value, cancellationToken);
+                var markerCluster = awaitMatch.Groups["cluster"].Success ? awaitMatch.Groups["cluster"].Value : null;
+                await WaitForConsumersEmptyAsync(
+                    connection,
+                    awaitMatch.Groups["table"].Value,
+                    markerCluster ?? _cluster.Name,
+                    cancellationToken);
                 continue;
             }
 
@@ -133,19 +136,25 @@ public sealed class MigrationRunner(ILogger logger, TimeProvider timeProvider)
         }
     }
 
+
     private async Task WaitForConsumersEmptyAsync(
         ClickHouseConnection connection,
         string tableName,
+        string? clusterName,
         CancellationToken cancellationToken)
     {
+        var database = await QueryCurrentDatabaseAsync(connection, cancellationToken);
+        var source = clusterName is null
+            ? "system.kafka_consumers"
+            : $"clusterAllReplicas('{EscapeLiteral(clusterName)}', system.kafka_consumers)";
         var deadline = timeProvider.GetUtcNow() + ConsumerWaitTimeout;
         while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
             await using var command = connection.CreateCommand();
             command.CommandText =
-                "SELECT count() FROM system.kafka_consumers " +
-                $"WHERE database = currentDatabase() AND table = '{EscapeLiteral(tableName)}'";
+                $"SELECT count() FROM {source} " +
+                $"WHERE database = '{EscapeLiteral(database)}' AND table = '{EscapeLiteral(tableName)}'";
             var count = Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken));
             if (count == 0)
                 return;
@@ -158,6 +167,15 @@ public sealed class MigrationRunner(ILogger logger, TimeProvider timeProvider)
 
             await Task.Delay(TimeSpan.FromSeconds(1), timeProvider, cancellationToken);
         }
+    }
+
+    private static async Task<string> QueryCurrentDatabaseAsync(
+        ClickHouseConnection connection,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT currentDatabase()";
+        return Convert.ToString(await command.ExecuteScalarAsync(cancellationToken))!;
     }
 
     private async Task RecordAppliedAsync(
@@ -174,90 +192,14 @@ public sealed class MigrationRunner(ILogger logger, TimeProvider timeProvider)
             name,
             checksum,
             SchemaMigrationsTable.MigrationKind,
-            $"toDateTime('{EscapeLiteral(appliedAt)}')");
+            $"toDateTime('{EscapeLiteral(appliedAt)}')",
+            _cluster.HistoryTableName);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static string EscapeLiteral(string value) => value.Replace("'", "''", StringComparison.Ordinal);
 
-    public static IEnumerable<string> SplitStatements(string sql)
-    {
-        var statements = new List<string>();
-        var builder = new StringBuilder();
-        var inSingleQuote = false;
-        var inLineComment = false;
-
-        for (var i = 0; i < sql.Length; i++)
-        {
-            var current = sql[i];
-            var next = i + 1 < sql.Length ? sql[i + 1] : '\0';
-
-            if (inLineComment)
-            {
-                builder.Append(current);
-                if (current == '\n')
-                    inLineComment = false;
-                continue;
-            }
-
-            if (!inSingleQuote && current == '-' && next == '-')
-            {
-                // A comment before a statement is emitted on its own: otherwise the statement would be
-                // skipped as a comment and await markers would not match.
-                if (string.IsNullOrWhiteSpace(builder.ToString()))
-                {
-                    var lineEnd = sql.IndexOf('\n', i);
-                    var end = lineEnd < 0 ? sql.Length : lineEnd;
-                    statements.Add(sql[i..end].TrimEnd());
-                    builder.Clear();
-                    i = end;
-                    continue;
-                }
-
-                inLineComment = true;
-                builder.Append(current);
-                continue;
-            }
-
-            if (current == '\'' && !inSingleQuote)
-            {
-                inSingleQuote = true;
-                builder.Append(current);
-                continue;
-            }
-
-            if (current == '\'' && inSingleQuote)
-            {
-                builder.Append(current);
-                if (next == '\'')
-                {
-                    builder.Append(next);
-                    i++;
-                    continue;
-                }
-
-                inSingleQuote = false;
-                continue;
-            }
-
-            if (current == ';' && !inSingleQuote)
-            {
-                var statement = builder.ToString().Trim();
-                if (statement.Length > 0)
-                    statements.Add(statement);
-                builder.Clear();
-                continue;
-            }
-
-            builder.Append(current);
-        }
-
-        var tail = builder.ToString().Trim();
-        if (tail.Length > 0)
-            statements.Add(tail);
-
-        return statements;
-    }
+    public static IEnumerable<string> SplitStatements(string sql) => SqlStatementSplitter.Split(sql);
 
     private static string ParseVersion(string fileName)
     {

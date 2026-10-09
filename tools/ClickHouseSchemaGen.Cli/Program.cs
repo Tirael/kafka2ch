@@ -1,8 +1,4 @@
-﻿using System.Reflection;
-using ClickHouseSchemaGen;
-using ClickHouseSchemaGen.Mapping;
-using ClickHouseSchemaGen.Migration;
-using ClickHouseSchemaGen.Validation;
+using System.Reflection;
 
 if (args.Length == 0 || args.Contains("--help") || args.Contains("-h"))
 {

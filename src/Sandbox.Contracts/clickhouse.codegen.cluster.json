@@ -1,0 +1,18 @@
+{
+  "extends": "clickhouse.codegen.json",
+  "outputDirectory": "../../docker/clickhouse-cluster/init",
+  "cluster": {
+    "name": "kafka2ch",
+    "replicatedPath": "/clickhouse/tables/{shard}/{database}/{table}",
+    "replicaName": "{replica}",
+    "historyReplicatedPath": "/clickhouse/tables/all/{database}/{table}",
+    "historyReplicaName": "{shard}-{replica}",
+    "localTableSuffix": "_local",
+    "shardingKey": "rand()"
+  },
+  "migrations": {
+    "snapshotPath": "../../docker/clickhouse-cluster/init/schema.snapshot.json",
+    "migrationsDirectory": "../../docker/clickhouse-cluster/migrations",
+    "versionsOutputPath": "../../docker/clickhouse-cluster/init/00_schema_migrations.sql"
+  }
+}

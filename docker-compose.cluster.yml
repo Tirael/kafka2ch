@@ -1,0 +1,144 @@
+x-clickhouse-node: &clickhouse-node
+  image: ${CLICKHOUSE_IMAGE}
+  depends_on:
+    clickhouse-keeper-01:
+      condition: service_healthy
+    clickhouse-keeper-02:
+      condition: service_healthy
+    clickhouse-keeper-03:
+      condition: service_healthy
+  volumes:
+    - ./docker/clickhouse/format_schemas:/var/lib/clickhouse/format_schemas
+    - ./docker/clickhouse/config/kafka.xml:/etc/clickhouse-server/config.d/kafka.xml:ro
+    - ./docker/clickhouse-cluster/config/cluster.xml:/etc/clickhouse-server/config.d/cluster.xml:ro
+  healthcheck:
+    test: ["CMD-SHELL", "clickhouse-client --password \"$${CLICKHOUSE_PASSWORD}\" --query 'SELECT 1'"]
+    interval: 5s
+    timeout: 10s
+    retries: 30
+    start_period: 10s
+
+x-keeper: &keeper
+  image: ${CLICKHOUSE_IMAGE}
+  healthcheck:
+    test: ["CMD-SHELL", "clickhouse keeper-client --host localhost --port 9181 --query 'ls /' >/dev/null"]
+    interval: 5s
+    timeout: 10s
+    retries: 40
+    start_period: 15s
+
+services:
+  clickhouse-keeper-01:
+    <<: *keeper
+    container_name: clickhouse-keeper-01
+    hostname: clickhouse-keeper-01
+    entrypoint: ["clickhouse", "keeper", "--config-file=/etc/clickhouse-keeper/keeper.xml"]
+    volumes:
+      - ./docker/clickhouse-cluster/config/keeper-01.xml:/etc/clickhouse-keeper/keeper.xml:ro
+
+  clickhouse-keeper-02:
+    <<: *keeper
+    container_name: clickhouse-keeper-02
+    hostname: clickhouse-keeper-02
+    entrypoint: ["clickhouse", "keeper", "--config-file=/etc/clickhouse-keeper/keeper.xml"]
+    volumes:
+      - ./docker/clickhouse-cluster/config/keeper-02.xml:/etc/clickhouse-keeper/keeper.xml:ro
+
+  clickhouse-keeper-03:
+    <<: *keeper
+    container_name: clickhouse-keeper-03
+    hostname: clickhouse-keeper-03
+    entrypoint: ["clickhouse", "keeper", "--config-file=/etc/clickhouse-keeper/keeper.xml"]
+    volumes:
+      - ./docker/clickhouse-cluster/config/keeper-03.xml:/etc/clickhouse-keeper/keeper.xml:ro
+
+  clickhouse:
+    <<: *clickhouse-node
+    hostname: clickhouse
+    environment:
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+      CLICKHOUSE_SHARD: "01"
+      CLICKHOUSE_REPLICA: clickhouse
+    volumes: !override
+      - ./docker/clickhouse/format_schemas:/var/lib/clickhouse/format_schemas
+      - ./docker/clickhouse/config/kafka.xml:/etc/clickhouse-server/config.d/kafka.xml:ro
+      - ./docker/clickhouse-cluster/config/cluster.xml:/etc/clickhouse-server/config.d/cluster.xml:ro
+
+  clickhouse-02:
+    <<: *clickhouse-node
+    container_name: clickhouse-02
+    hostname: clickhouse-02
+    environment:
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+      CLICKHOUSE_SHARD: "01"
+      CLICKHOUSE_REPLICA: clickhouse-02
+
+  clickhouse-03:
+    <<: *clickhouse-node
+    container_name: clickhouse-03
+    hostname: clickhouse-03
+    environment:
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+      CLICKHOUSE_SHARD: "02"
+      CLICKHOUSE_REPLICA: clickhouse-03
+
+  clickhouse-04:
+    <<: *clickhouse-node
+    container_name: clickhouse-04
+    hostname: clickhouse-04
+    environment:
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+      CLICKHOUSE_SHARD: "02"
+      CLICKHOUSE_REPLICA: clickhouse-04
+
+  clickhouse-cluster-init:
+    image: ${CLICKHOUSE_IMAGE}
+    container_name: clickhouse-cluster-init
+    entrypoint: ["/bin/sh", "/cluster/bootstrap.sh"]
+    environment:
+      CLICKHOUSE_HOST: clickhouse
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+      CLICKHOUSE_CLUSTER: kafka2ch
+      CLICKHOUSE_DATABASE: ${CLICKHOUSE_CLUSTER_DATABASE:-default}
+      INIT_DIR: /cluster/init
+    volumes:
+      - ./docker/clickhouse-cluster:/cluster:ro
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+      clickhouse-02:
+        condition: service_healthy
+      clickhouse-03:
+        condition: service_healthy
+      clickhouse-04:
+        condition: service_healthy
+    restart: "no"
+
+  clickhouse-migrate:
+    depends_on:
+      clickhouse-cluster-init:
+        condition: service_completed_successfully
+    environment:
+      ClickHouse__Cluster: kafka2ch
+      ClickHouse__DdlMode: ${CLICKHOUSE_CLUSTER_DDL_MODE:-onCluster}
+      ClickHouse__Database: ${CLICKHOUSE_CLUSTER_DATABASE:-default}
+    volumes: !override
+      - ./docker/clickhouse-cluster/migrations:/migrations:ro
+
+  sandbox-app:
+    environment:
+      ClickHouse__Database: ${CLICKHOUSE_CLUSTER_DATABASE:-default}
+
+  kafka-init:
+    command:
+      - |
+        kafka-topics --bootstrap-server kafka:9092 \
+          --create --if-not-exists \
+          --topic orders --partitions 4 --replication-factor 1
+        kafka-topics --bootstrap-server kafka:9092 \
+          --create --if-not-exists \
+          --topic shipments --partitions 4 --replication-factor 1

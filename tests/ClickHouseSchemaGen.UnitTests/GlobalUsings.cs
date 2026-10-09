@@ -3,6 +3,7 @@ global using ClickHouseSchemaGen;
 global using ClickHouseSchemaGen.Generation;
 global using ClickHouseSchemaGen.Mapping;
 global using ClickHouseSchemaGen.Migration;
+global using ClickHouseSchemaGen.Migrator;
 global using ClickHouseSchemaGen.Models;
 global using ClickHouseSchemaGen.Planning;
 global using ClickHouseSchemaGen.Shared;

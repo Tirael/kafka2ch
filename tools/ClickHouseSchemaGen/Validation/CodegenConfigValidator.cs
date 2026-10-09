@@ -51,12 +51,43 @@ public sealed class CodegenConfigValidator : AbstractValidator<CodegenConfig>
             .When(config => config.Pipeline?.MergeTreeTables.Any(table =>
                 MaterializedViewAutoGenerator.ShouldCreate(table, config.Pipeline.MaterializedViews)) == true);
 
+        When(config => config.Cluster?.Enabled == true, () =>
+        {
+            RuleFor(config => config.Cluster).SetValidator(new ClusterConfigValidator());
+            RuleFor(config => config)
+                .Must(config => FindLocalTableNameConflict(config) is null)
+                .WithMessage(config => FindLocalTableNameConflict(config) ?? "Local table name conflict.");
+        });
+
         RuleFor(config => config)
             .Must(VersionsScriptSortsBeforeInitScripts)
             .WithMessage(config =>
                 $"Migrations versions script '{Path.GetFileName(config.Migrations.VersionsOutputPath)}' must sort " +
                 "before every init script (e.g. '00_schema_migrations.sql'): init scripts record themselves " +
                 "into schema_migrations.");
+    }
+
+    private static string? FindLocalTableNameConflict(CodegenConfig config)
+    {
+        if (config.Pipeline is null)
+            return null;
+
+        var names = config.KafkaTables.Select(table => table.TableName)
+            .Concat(config.Pipeline.MergeTreeTables.Select(table => table.TableName))
+            .Concat(config.Pipeline.MaterializedViews.Select(view => view.Name))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var table in config.Pipeline.MergeTreeTables)
+        {
+            var localName = table.TableName + config.Cluster.LocalTableSuffix;
+            if (names.Contains(localName))
+            {
+                return $"MergeTree table '{table.TableName}' stores rows in '{localName}' in cluster mode, " +
+                    "but that name is already used. Rename the table or change cluster.localTableSuffix.";
+            }
+        }
+
+        return null;
     }
 
     private static bool VersionsScriptSortsBeforeInitScripts(CodegenConfig config)

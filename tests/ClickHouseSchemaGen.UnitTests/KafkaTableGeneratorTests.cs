@@ -5,16 +5,16 @@ public sealed class KafkaTableGeneratorTests
     [Fact]
     public void GivenOrdersQueueConfig_WhenGenerated_ThenSqlContainsKafkaSettingsAndColumns()
     {
-        // Arrange
+
         var config = OrdersQueueTestConfig.Create();
         var columns = MappingTestSupport.MapFixture(
             ProtoToClickHouseMapper.ResolveDescriptor(config.MessageType),
             config.FieldOverrides);
 
-        // Act
+
         var sql = KafkaTableGenerator.Generate(config, columns);
 
-        // Assert
+
         sql.Should().Contain("CREATE TABLE orders_queue");
         sql.Should().MatchRegex(@"category\s+LowCardinality\(String\)");
         sql.Should().Contain("Nested(sku String, qty UInt32, unit_price Float64");

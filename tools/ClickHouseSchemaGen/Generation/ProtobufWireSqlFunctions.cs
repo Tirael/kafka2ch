@@ -1,9 +1,6 @@
 namespace ClickHouseSchemaGen.Generation;
 
-/// <summary>
-/// ClickHouse SQL UDFs that read protobuf wire format from a String (ClickHouse has no per-value protobuf decoder).
-/// Field lookup returns the last occurrence of a field number, matching proto3 "last one wins" for scalars.
-/// </summary>
+
 public static class ProtobufWireSqlFunctions
 {
     public const string Has = "protobufWireHas";
@@ -20,14 +17,7 @@ public static class ProtobufWireSqlFunctions
         view.Columns.Any(mapping =>
             mapping.Expression?.Contains(FunctionPrefix, StringComparison.Ordinal) == true);
 
-    // SQL UDFs are expanded inline, so an argument used twice is copied twice and nested calls grow
-    // the query tree exponentially. Larger arguments are bound once via arrayMap(x -> ..., [arg])[1].
-    // Order matters: a UDF must be created after the functions it calls.
-    // No SQL comments: the migration runner skips statements that start with "--".
-    //   protobufWireVarint(m, p)  -> (value, byte length) of the varint at 1-based position p
-    //   protobufWireField(m, n)   -> (next position, value position or 0 when absent, wire type)
-    //   protobufWireBytes(m, n)   -> payload of a length-delimited field (string, bytes, message); '' when absent
-    //   protobufWireBits(m, n)    -> raw 64-bit value of a varint / fixed64 / fixed32 field; 0 when absent
+
     public const string Definitions = """
         CREATE OR REPLACE FUNCTION protobufWireVarint AS (m, p) ->
             arrayFold(

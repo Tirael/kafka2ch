@@ -53,7 +53,7 @@ public sealed class DenormalizationPlanner
         MessageDescriptor descriptor,
         MappingContext context,
         string parentColumnPath) =>
-        // Overrides use the full proto path; column names stay local until the caller prefixes them.
+
         MapMessage(descriptor, context with
         {
             Depth = context.Depth + 1,
@@ -149,9 +149,7 @@ public sealed class DenormalizationPlanner
     private static string BuildCompositeType(string keyword, IReadOnlyList<ClickHouseColumn> innerColumns) =>
         $"{keyword}({string.Join(", ", innerColumns.Select(column => $"{SanitizeCompositeColumnName(column.Name)} {EmbedCompositeType(column.Type)}"))})";
 
-    // ClickHouse rejects Nested inside Nested, Array, Map, or Tuple.
-    // Several Nested columns that share a dotted prefix also collide on one <prefix>.size0 stream.
-    // A repeated message stays Nested only as a top-level column; every other copy becomes Array(Tuple(...)).
+
     internal static string PromoteEmbeddedNested(string type) => EmbedCompositeType(type);
 
     private static string EmbedCompositeType(string type)

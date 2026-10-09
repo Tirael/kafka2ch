@@ -44,7 +44,7 @@ public static class KafkaMetaColumnFactory
         return resolved;
     }
 
-    /// <param name="keyColumns">Decoded protobuf key columns (<c>_key.*</c>) of the source queue, if any.</param>
+
     public static IReadOnlyList<PipelineColumnConfig> CreateMergeTreeColumns(
         PersistKafkaMetaConfig meta,
         IReadOnlyList<ClickHouseColumn>? keyColumns = null)
@@ -121,7 +121,7 @@ public static class KafkaMetaColumnFactory
         return columns;
     }
 
-    /// <param name="keyColumns">Decoded protobuf key columns (<c>_key.*</c>) of the source queue, if any.</param>
+
     public static IReadOnlyList<PipelineColumnMapping> CreateMappings(
         PersistKafkaMetaConfig meta,
         IReadOnlyList<ClickHouseColumn>? keyColumns = null)
@@ -192,7 +192,7 @@ public static class KafkaMetaColumnFactory
         return mappings;
     }
 
-    /// <summary><c>_key.order_id</c> -> <c>kafka_key.order_id</c>.</summary>
+
     public static string ToKeyTargetName(string keyColumnName) =>
         $"{KeyColumnName}.{keyColumnName[KafkaKeyColumnMapper.ColumnPrefix.Length..]}";
 

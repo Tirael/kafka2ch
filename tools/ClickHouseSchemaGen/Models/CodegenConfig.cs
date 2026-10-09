@@ -2,6 +2,15 @@ namespace ClickHouseSchemaGen.Models;
 
 public sealed class CodegenConfig
 {
+
+
+    public string? Extends { get; set; }
+
+
+    public string? OutputDirectory { get; set; }
+
+    public ClusterConfig Cluster { get; set; } = new();
+
     public CodegenDefaults Defaults { get; set; } = new();
 
     public List<KafkaTableConfig> KafkaTables { get; set; } = [];
@@ -20,7 +29,7 @@ public sealed class MigrationsConfig
 
     public string MigrationsDirectory { get; set; } = "../../docker/clickhouse/migrations";
 
-    public string VersionsOutputPath { get; set; } = 
+    public string VersionsOutputPath { get; set; } =
         $"../../docker/clickhouse/init/{SchemaMigrationsTable.DefaultScriptFileName}";
 }
 
@@ -70,22 +79,15 @@ public static class KafkaKeyFormats
     public static readonly string[] All = [String, Protobuf];
 }
 
-/// <summary>
-/// Kafka message key contract. ClickHouse exposes the key only as the raw <c>_key</c> String,
-/// so protobuf keys are decoded in materialized views as <c>_key.&lt;field path&gt;</c> columns.
-/// </summary>
+
 public sealed class KafkaKeyConfig
 {
     public string Format { get; set; } = KafkaKeyFormats.String;
 
-    /// <summary>
-    /// CLR protobuf key type (<c>FullName, Assembly</c>). Required when <see cref="Format"/> is <c>protobuf</c>.
-    /// </summary>
+
     public string? MessageType { get; set; }
 
-    /// <summary>
-    /// Bytes to skip before the key payload. Defaults to <see cref="KafkaSettingsConfig.SkipBytes"/>.
-    /// </summary>
+
     public int? SkipBytes { get; set; }
 
     public Dictionary<string, FieldOverrideConfig> FieldOverrides { get; set; } =
@@ -146,19 +148,16 @@ public sealed class MergeTreeTableConfig
 
     public string? Ttl { get; set; }
 
-    /// <summary>
-    /// Kafka queue table to copy columns from when <see cref="Columns"/> is empty.
-    /// </summary>
+    public string? ShardingKey { get; set; }
+
+    public bool? MaterializedViewsWriteThroughDistributed { get; set; }
+
     public string? SourceTable { get; set; }
 
-    /// <summary>
-    /// When true, appends canonical kafka meta columns even for explicit column lists.
-    /// </summary>
+
     public bool? IncludeKafkaMeta { get; set; }
 
-    /// <summary>
-    /// Explicit MergeTree columns. When empty, columns are taken from <see cref="SourceTable"/>.
-    /// </summary>
+
     public List<PipelineColumnConfig> Columns { get; set; } = [];
 }
 
@@ -170,15 +169,10 @@ public sealed class MaterializedViewConfig
 
     public required string SourceTable { get; set; }
 
-    /// <summary>
-    /// When true, appends canonical kafka meta mappings even for explicit column lists.
-    /// </summary>
+
     public bool? IncludeKafkaMeta { get; set; }
 
-    /// <summary>
-    /// Explicit column mappings. When empty, all columns from <see cref="SourceTable"/>
-    /// are mapped 1:1 (<c>source</c> → <c>target</c> with the same name).
-    /// </summary>
+
     public List<PipelineColumnMapping> Columns { get; set; } = [];
 }
 
