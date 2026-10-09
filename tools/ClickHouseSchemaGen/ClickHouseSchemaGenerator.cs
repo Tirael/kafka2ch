@@ -1,7 +1,3 @@
-using ClickHouseSchemaGen.Planning;
-using ClickHouseSchemaGen.Snapshot;
-using ClickHouseSchemaGen.Validation;
-
 namespace ClickHouseSchemaGen;
 
 public sealed class ClickHouseSchemaGenerator(

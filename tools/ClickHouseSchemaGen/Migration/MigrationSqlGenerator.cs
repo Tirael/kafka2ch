@@ -1,5 +1,3 @@
-using System.Text.RegularExpressions;
-
 namespace ClickHouseSchemaGen.Migration;
 
 public static partial class MigrationSqlGenerator

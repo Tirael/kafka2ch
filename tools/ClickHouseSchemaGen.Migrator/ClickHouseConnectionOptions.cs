@@ -1,5 +1,3 @@
-using ClickHouseSchemaGen.Models;
-
 namespace ClickHouseSchemaGen.Migrator;
 
 public sealed class ClickHouseConnectionOptions

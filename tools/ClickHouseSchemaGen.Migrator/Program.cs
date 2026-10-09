@@ -1,7 +1,3 @@
-using ClickHouseSchemaGen.Migrator;
-using ClickHouseSchemaGen.Models;
-using Microsoft.Extensions.Logging;
-
 if (args.Contains("--help") || args.Contains("-h") || args.Length == 0)
 {
     Console.WriteLine("""

@@ -1,5 +1,3 @@
-using ClickHouseSchemaGen.Migrator;
-
 namespace ClickHouseSchemaGen.UnitTests;
 
 public sealed class MigrationRunnerSplitTests

@@ -1,6 +1,3 @@
-using ClickHouseSchemaGen.Migrator;
-using Microsoft.Extensions.Logging.Abstractions;
-
 namespace ClickHouseSchemaGen.IntegrationTests;
 
 public sealed class SchemaMigrationsHistoryIntegrationTests : IAsyncLifetime

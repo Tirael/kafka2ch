@@ -1,9 +1,3 @@
-using ClickHouseSchemaGen.Migrator;
-using DotNet.Testcontainers.Builders;
-using DotNet.Testcontainers.Containers;
-using DotNet.Testcontainers.Networks;
-using Microsoft.Extensions.Logging.Abstractions;
-
 namespace ClickHouseSchemaGen.IntegrationTests;
 
 public sealed class ClusterReplicatedDatabaseIntegrationTests : IAsyncLifetime

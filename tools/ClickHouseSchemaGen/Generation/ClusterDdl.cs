@@ -1,5 +1,3 @@
-using System.Text.RegularExpressions;
-
 namespace ClickHouseSchemaGen.Generation;
 
 public sealed partial class ClusterDdl

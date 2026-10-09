@@ -1,5 +1,3 @@
-using System.Text.RegularExpressions;
-
 namespace ClickHouseSchemaGen.Generation;
 
 public static partial class ClusterTrailingSqlRewriter

@@ -1,5 +1,3 @@
-using ClickHouseSchemaGen.Migration;
-
 namespace ClickHouseSchemaGen.Shared;
 
 
