@@ -106,7 +106,7 @@ public sealed class ProtobufKeyDecodingClickHouseIntegrationTests : IAsyncLifeti
             bootstrap.ExitCode.Should().Be(0, bootstrap.Stderr);
 
 
-            foreach (var script in new[] { "01_orders_queue.sql", "02_shipments_queue.sql", "03_pipeline.sql" })
+            foreach (var script in new[] { "01_orders_queue.sql", "02_pipeline.sql" })
             {
                 var execResult = await _clickHouse.ExecScriptAsync(File.ReadAllText(Path.Combine(outputDirectory, script)));
                 execResult.ExitCode.Should().Be(0, $"{script}: {execResult.Stderr}");

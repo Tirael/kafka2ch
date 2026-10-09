@@ -114,7 +114,7 @@ message OrderEvent {
 
 На конверт Confluent (`skip_bytes = 6`) импорты не влияют: message-indexes считаются по top-level message-ам главного файла, а `OrderEvent` в нём остаётся первым и единственным (типы из импортов в индексацию не входят).
 
-Kafka engine парсит только value сообщения, ключ доступен лишь как сырые байты через виртуальную колонку `_key` (`String`), а per-column разбора protobuf в ClickHouse нет. Поэтому для `kafkaTables[].key.format = "protobuf"` codegen маппит поля отдельного key-proto (`OrderKey`, `ShipmentKey`) в колонки `_key.<поле>` по тем же правилам, что и value, и декодирует их в MV через SQL UDF `protobufWire*` (wire format поверх `substring(_key, skipBytes + 1)`). В демо поля ключа сохраняются в MergeTree как `kafka_key.order_id` / `kafka_key.shipment_id` рядом с сырым `kafka_key` (`persistKafkaMeta.key`). Строковый ключ (`format = "string"`) остаётся значением по умолчанию. Подробности — в `clickhouse.codegen.md`, секция `key`.
+Kafka engine парсит только value сообщения, ключ доступен лишь как сырые байты через виртуальную колонку `_key` (`String`), а per-column разбора protobuf в ClickHouse нет. Поэтому для `kafkaTables[].key.format = "protobuf"` codegen маппит поля отдельного key-proto (`OrderKey`) в колонки `_key.<поле>` по тем же правилам, что и value, и декодирует их в MV через SQL UDF `protobufWire*` (wire format поверх `substring(_key, skipBytes + 1)`). В демо поле ключа сохраняется в MergeTree как `kafka_key.order_id` рядом с сырым `kafka_key` (`persistKafkaMeta.key`). Строковый ключ (`format = "string"`) остаётся значением по умолчанию. Подробности — в `clickhouse.codegen.md`, секция `key`.
 
 ## DDL ClickHouse (docker-entrypoint-initdb.d)
 

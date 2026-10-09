@@ -9,5 +9,4 @@ global using Sandbox.App.Common;
 global using Sandbox.Contracts;
 global using Sandbox.Contracts.Common;
 global using Sandbox.App.Features.PublishOrders;
-global using Sandbox.App.Features.PublishShipments;
 global using Sandbox.App.Features.ReadAggregates;

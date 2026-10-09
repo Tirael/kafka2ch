@@ -220,11 +220,37 @@ public sealed class ClusterModeGenerationTests
         config.Cluster.MaterializedViewsWriteThroughDistributed = false;
         config.Pipeline!.MergeTreeTables.First(t => t.TableName == "orders")
             .MaterializedViewsWriteThroughDistributed = true;
+        config.Pipeline.MergeTreeTables.Add(new MergeTreeTableConfig
+        {
+            TableName = "orders_archive",
+            OrderBy = "(event_time, order_id)",
+            Columns =
+            [
+                new PipelineColumnConfig { Name = "order_id", Type = "String" },
+                new PipelineColumnConfig { Name = "event_time", Type = "DateTime64(3)" }
+            ]
+        });
+        config.Pipeline.MaterializedViews.Add(new MaterializedViewConfig
+        {
+            Name = "orders_archive_mv",
+            TargetTable = "orders_archive",
+            SourceTable = "orders_queue",
+            Columns =
+            [
+                new PipelineColumnMapping { Source = "order_id", Target = "order_id" },
+                new PipelineColumnMapping
+                {
+                    Source = "event_time.seconds",
+                    Target = "event_time",
+                    Expression = "toDateTime64(event_time.seconds + event_time.nanos / 1000000000.0, 3)"
+                }
+            ]
+        });
 
         var sql = SchemaPlanRenderer.RenderPipelineSql(SchemaGeneratorFactory.Create().BuildPlan(config));
 
         sql.Should().Contain("CREATE MATERIALIZED VIEW orders_mv ON CLUSTER kafka2ch TO orders AS");
-        sql.Should().Contain("CREATE MATERIALIZED VIEW shipments_mv ON CLUSTER kafka2ch TO shipments_local AS");
+        sql.Should().Contain("CREATE MATERIALIZED VIEW orders_archive_mv ON CLUSTER kafka2ch TO orders_archive_local AS");
     }
 
     [Fact]

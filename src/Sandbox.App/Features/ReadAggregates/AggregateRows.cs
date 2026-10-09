@@ -6,8 +6,3 @@ public sealed record OrderAggregateRow(
     ulong OrdersCount,
     double TotalAmount,
     ulong TotalQty);
-
-public sealed record ShipmentAggregateRow(
-    DateTime Minute,
-    string Status,
-    ulong ShipmentsCount);

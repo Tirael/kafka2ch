@@ -52,8 +52,7 @@ public sealed class SchemaMigrationsHistoryIntegrationTests : IAsyncLifetime
             new[]
             {
                 ("01", "01_orders_queue.sql", "init"),
-                ("02", "02_shipments_queue.sql", "init"),
-                ("03", "03_pipeline.sql", "init")
+                ("02", "02_pipeline.sql", "init")
             }
             .Concat(committedMigrations)
             .Append(("20990101000000", "20990101000000_add_note.sql", "migration")));

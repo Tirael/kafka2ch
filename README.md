@@ -2,14 +2,14 @@
 
 Демонстрационный стенд: **Kafka (Protobuf + Schema Registry) → ClickHouse → агрегаты**.
 
-Sandbox-приложение на .NET 8 публикует события заказов и отгрузок в Kafka; ClickHouse читает топики через Kafka table engine, складывает сырые строки в MergeTree и агрегирует их materialized view. Background worker периодически читает агрегаты и пишет их в лог.
+Sandbox-приложение на .NET 8 публикует события заказов в Kafka; ClickHouse читает топик через Kafka table engine, складывает сырые строки в MergeTree и агрегирует их materialized view. Background worker периодически читает агрегаты и пишет их в лог.
 
 ```
-PublishOrders / PublishShipments  →  Kafka + Schema Registry
-                                         ↓
-                              ClickHouse (Kafka engine + MV)
-                                         ↓
-                              ReadAggregates (лог агрегатов)
+PublishOrders  →  Kafka + Schema Registry
+                         ↓
+              ClickHouse (Kafka engine + MV)
+                         ↓
+              ReadAggregates (лог агрегатов)
 ```
 
 Подробности архитектуры и решений — в [PLAN.md](PLAN.md).
@@ -61,7 +61,6 @@ cp .env.example .env
 | `Kafka__BootstrapServers` | брокеры Kafka |
 | `Kafka__SchemaRegistryUrl` | URL Schema Registry |
 | `PublishOrders__Topic` / `IntervalMs` | топик и интервал публикации заказов |
-| `PublishShipments__Topic` / `IntervalMs` | топик и интервал публикации отгрузок |
 | `ClickHouse__Host` / `Port` / `Password` / … | подключение к ClickHouse |
 | `ReadAggregates__IntervalMs` / `WindowMinutes` | период и окно чтения агрегатов |
 
@@ -74,7 +73,7 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
-Compose поднимает: Kafka, Schema Registry, ClickHouse, one-shot `kafka-init` (топики `orders` и `shipments`), `sandbox-app`, Kafka UI.
+Compose поднимает: Kafka, Schema Registry, ClickHouse, one-shot `kafka-init` (топик `orders`), `sandbox-app`, Kafka UI.
 
 Проверка статуса:
 
@@ -124,7 +123,7 @@ dotnet exec tools/ClickHouseSchemaGen.Migrator/bin/Debug/net8.0/ClickHouseSchema
   --migrations docker/clickhouse/migrations
 ```
 
-В сырых таблицах `orders` / `shipments` сохраняются `kafka_key` (сырые байты protobuf-ключа) и `kafka_headers` (`Map(String, String)`). Подробности — [clickhouse.codegen.md](src/Sandbox.Contracts/clickhouse.codegen.md) и [MIGRATIONS_PLAN.md](MIGRATIONS_PLAN.md).
+В сырой таблице `orders` сохраняются `kafka_key` (сырые байты protobuf-ключа) и `kafka_headers` (`Map(String, String)`). Подробности — [clickhouse.codegen.md](src/Sandbox.Contracts/clickhouse.codegen.md) и [MIGRATIONS_PLAN.md](MIGRATIONS_PLAN.md).
 
 ## Кластерный ClickHouse
 
@@ -238,7 +237,6 @@ Kafka UI: http://localhost:8080
 После первых сообщений ожидаются subjects примерно такого вида:
 
 - `orders-key`, `orders-value` (+ reference на импортируемые proto, напр. `common/money.proto`)
-- `shipments-key`, `shipments-value` (+ их references)
 
 Проверка value-схемы и блока `references`:
 
@@ -261,7 +259,7 @@ dotnet build src/Sandbox.Contracts
 Результат:
 
 - `docker/clickhouse/format_schemas/` — копия `protos/`
-- `docker/clickhouse/init/01_orders_queue.sql`, `02_shipments_queue.sql`, `03_pipeline.sql`
+- `docker/clickhouse/init/01_orders_queue.sql`, `02_pipeline.sql`
 
 Конфиг codegen: `src/Sandbox.Contracts/clickhouse.codegen.json`.  
 Инструкция по заполнению: [`src/Sandbox.Contracts/clickhouse.codegen.md`](src/Sandbox.Contracts/clickhouse.codegen.md).  
@@ -352,7 +350,7 @@ docker exec kafka kafka-console-consumer \
 ## Структура репозитория
 
 ```
-src/Sandbox.App/          # worker: PublishOrders, PublishShipments, ReadAggregates
+src/Sandbox.App/          # worker: PublishOrders, ReadAggregates
 src/Sandbox.Contracts/    # protobuf + clickhouse.codegen.json
 tools/ClickHouseSchemaGen # proto3 → ClickHouse DDL (+ .Tasks / .Cli / .Migrator NuGet)
 samples/NuGetCodegenSmoke # smoke: restore Tasks package + generate

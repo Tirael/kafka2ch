@@ -14,28 +14,29 @@ public sealed class ReadAggregatesWorker(
         {
             try
             {
-                var (orders, shipments) = await StartupRetry.ExecuteAsync(
-                    () => QueryAggregatesAsync(stoppingToken),
+                var orders = await StartupRetry.ExecuteAsync(
+                    () => QueryOrderAggregatesAsync(stoppingToken),
                     new RetryContext(logger, timeProvider, stoppingToken));
 
-                LogAggregates(
-                    orders,
-                    "No order aggregates in the last {WindowMinutes} minutes",
-                    row => logger.LogInformation(
-                        "Order aggregate {Minute:u} {Category}: orders={OrdersCount} amount={TotalAmount:F2} qty={TotalQty}",
-                        row.Minute,
-                        row.Category,
-                        row.OrdersCount,
-                        row.TotalAmount,
-                        row.TotalQty));
-                LogAggregates(
-                    shipments,
-                    "No shipment aggregates in the last {WindowMinutes} minutes",
-                    row => logger.LogInformation(
-                        "Shipment aggregate {Minute:u} {Status}: shipments={ShipmentsCount}",
-                        row.Minute,
-                        row.Status,
-                        row.ShipmentsCount));
+                if (orders.Count == 0)
+                {
+                    logger.LogInformation(
+                        "No order aggregates in the last {WindowMinutes} minutes",
+                        _options.WindowMinutes);
+                }
+                else
+                {
+                    foreach (var row in orders)
+                    {
+                        logger.LogInformation(
+                            "Order aggregate {Minute:u} {Category}: orders={OrdersCount} amount={TotalAmount:F2} qty={TotalQty}",
+                            row.Minute,
+                            row.Category,
+                            row.OrdersCount,
+                            row.TotalAmount,
+                            row.TotalQty);
+                    }
+                }
             }
             catch (Exception ex)
             {
@@ -46,37 +47,14 @@ public sealed class ReadAggregatesWorker(
         }
     }
 
-    private void LogAggregates<T>(
-        IReadOnlyList<T> rows,
-        string emptyMessage,
-        Action<T> logRow)
-    {
-        if (rows.Count == 0)
-        {
-            logger.LogInformation(emptyMessage, _options.WindowMinutes);
-            return;
-        }
-
-        foreach (var row in rows)
-            logRow(row);
-    }
-
-    private async Task<(IReadOnlyList<OrderAggregateRow> Orders, IReadOnlyList<ShipmentAggregateRow> Shipments)>
-        QueryAggregatesAsync(CancellationToken cancellationToken)
+    private async Task<IReadOnlyList<OrderAggregateRow>> QueryOrderAggregatesAsync(
+        CancellationToken cancellationToken)
     {
         await using var connection = connectionFactory.CreateConnection();
         await connection.OpenAsync(cancellationToken);
 
-        var orders = await QueryOrderAggregatesAsync(connection, cancellationToken);
-        var shipments = await QueryShipmentAggregatesAsync(connection, cancellationToken);
-        return (orders, shipments);
-    }
-
-    private Task<IReadOnlyList<OrderAggregateRow>> QueryOrderAggregatesAsync(
-        ClickHouseConnection connection,
-        CancellationToken cancellationToken) =>
-        QueryAggregatesAsync(
-            connection,
+        await using var command = connection.CreateCommand();
+        command.CommandText =
             $"""
             SELECT minute, category,
                    sum(orders_count) AS orders_count,
@@ -86,48 +64,20 @@ public sealed class ReadAggregatesWorker(
             WHERE minute >= now() - INTERVAL {_options.WindowMinutes} MINUTE
             GROUP BY minute, category
             ORDER BY minute DESC, category
-            """,
-            reader => new OrderAggregateRow(
+            """;
+
+        List<OrderAggregateRow> rows = [];
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            rows.Add(new OrderAggregateRow(
                 reader.GetDateTime(0),
                 reader.GetString(1),
                 Convert.ToUInt64(reader.GetValue(2)),
                 reader.GetDouble(3),
-                Convert.ToUInt64(reader.GetValue(4))),
-            cancellationToken);
-
-    private Task<IReadOnlyList<ShipmentAggregateRow>> QueryShipmentAggregatesAsync(
-        ClickHouseConnection connection,
-        CancellationToken cancellationToken) =>
-        QueryAggregatesAsync(
-            connection,
-            $"""
-            SELECT minute, status,
-                   sum(shipments_count) AS shipments_count
-            FROM shipments_agg_1m
-            WHERE minute >= now() - INTERVAL {_options.WindowMinutes} MINUTE
-            GROUP BY minute, status
-            ORDER BY minute DESC, status
-            """,
-            reader => new ShipmentAggregateRow(
-                reader.GetDateTime(0),
-                reader.GetString(1),
-                Convert.ToUInt64(reader.GetValue(2))),
-            cancellationToken);
-
-    private static async Task<IReadOnlyList<T>> QueryAggregatesAsync<T>(
-        ClickHouseConnection connection,
-        string commandText,
-        Func<System.Data.Common.DbDataReader, T> mapRow,
-        CancellationToken cancellationToken)
-    {
-        await using var command = connection.CreateCommand();
-        command.CommandText = commandText;
-
-        List<T> rows = [];
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-
-        while (await reader.ReadAsync(cancellationToken))
-            rows.Add(mapRow(reader));
+                Convert.ToUInt64(reader.GetValue(4))));
+        }
 
         return rows;
     }

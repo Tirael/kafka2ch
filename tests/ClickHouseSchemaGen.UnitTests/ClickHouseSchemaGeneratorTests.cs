@@ -31,8 +31,7 @@ public sealed class ClickHouseSchemaGeneratorTests
 
         var configJson = File.ReadAllText(configPath)
             .Replace("../../docker/clickhouse/init/01_orders_queue.sql", "generated_orders_queue.sql")
-            .Replace("../../docker/clickhouse/init/02_shipments_queue.sql", "generated_shipments_queue.sql")
-            .Replace("../../docker/clickhouse/init/03_pipeline.sql", "generated_pipeline.sql");
+            .Replace("../../docker/clickhouse/init/02_pipeline.sql", "generated_pipeline.sql");
         File.WriteAllText(configPath, configJson);
 
         var ordersQueuePath = Path.Combine(outputDirectory, "generated_orders_queue.sql");
@@ -161,20 +160,8 @@ public sealed class ClickHouseSchemaGeneratorTests
                         ["category"] = new() { Type = "LowCardinality(String)" },
                         ["status"] = new() { Enum8 = true },
                         ["tags"] = new() { Type = "Array(LowCardinality(String))" },
-                        ["status_history"] = new() { Enum8 = true }
-                    }),
-                CreateKafkaTable(
-                    "Sandbox.Contracts.ShipmentEvent, Sandbox.Contracts",
-                    "shipments_queue",
-                    "shipment_event",
-                    "ShipmentEvent",
-                    "shipments",
-                    new Dictionary<string, FieldOverrideConfig>(StringComparer.OrdinalIgnoreCase)
-                    {
-                        ["status"] = new() { Enum8 = true },
                         ["status_history"] = new() { Enum8 = true },
-                        ["destination.country"] = new() { Type = "LowCardinality(String)" },
-                        ["destination.city"] = new() { Type = "LowCardinality(String)" }
+                        ["price.currency"] = new() { Type = "LowCardinality(String)" }
                     })
             ],
             Pipeline = new PipelineConfig
@@ -188,13 +175,6 @@ public sealed class ClickHouseSchemaGeneratorTests
                         SourceTable = "orders_queue",
                         OrderBy = "order_id",
                         Ttl = "toDateTime(`event_time.seconds`) + INTERVAL 1 DAY"
-                    },
-                    new MergeTreeTableConfig
-                    {
-                        TableName = "shipments",
-                        SourceTable = "shipments_queue",
-                        OrderBy = "shipment_id",
-                        Ttl = "toDateTime(`shipped_at.seconds`) + INTERVAL 1 DAY"
                     }
                 ]
             }
@@ -206,17 +186,14 @@ public sealed class ClickHouseSchemaGeneratorTests
         {
             _sut.GenerateFromConfigFile(configPath);
 
-            var shipmentsQueueSql = File.ReadAllText(Path.Combine(outputDirectory, "generated_shipments_queue.sql"));
+            var ordersQueueSql = File.ReadAllText(Path.Combine(outputDirectory, "generated_orders_queue.sql"));
             var pipelineSql = File.ReadAllText(Path.Combine(outputDirectory, "generated_pipeline.sql"));
 
-            shipmentsQueueSql.Should().Contain("`destination.country` LowCardinality(String)");
-            shipmentsQueueSql.Should().Contain("`destination.city`   LowCardinality(String)");
+            ordersQueueSql.Should().Contain("category             LowCardinality(String)");
+            ordersQueueSql.Should().Contain("`price.currency`     LowCardinality(String)");
             pipelineSql.Should().Contain("TTL toDateTime(`event_time.seconds`) + INTERVAL 1 DAY");
-            pipelineSql.Should().Contain("TTL toDateTime(`shipped_at.seconds`) + INTERVAL 1 DAY");
             pipelineSql.Should().Contain("SETTINGS flatten_nested = 0;");
             pipelineSql.Should().Contain("CREATE MATERIALIZED VIEW orders_mv TO orders AS");
-            pipelineSql.Should().Contain("CREATE MATERIALIZED VIEW shipments_mv TO shipments AS");
-            pipelineSql.Should().Contain("`destination.country`");
         }
         finally
         {

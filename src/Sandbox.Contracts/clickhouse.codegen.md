@@ -220,15 +220,15 @@ Workflow: правка proto → build падает на drift → `Cli migrate 
 
 ```json
 {
-  "messageType": "Sandbox.Contracts.ShipmentEvent, Sandbox.Contracts",
-  "tableName": "shipments_queue",
-  "protoFile": "shipment_event",
-  "messageName": "ShipmentEvent",
-  "outputPath": "../../docker/clickhouse/init/02_shipments_queue.sql",
+  "messageType": "Sandbox.Contracts.OrderEvent, Sandbox.Contracts",
+  "tableName": "orders_queue",
+  "protoFile": "order_event",
+  "messageName": "OrderEvent",
+  "outputPath": "../../docker/clickhouse/init/01_orders_queue.sql",
   "kafka": {
     "brokerList": "kafka:9092",
-    "topic": "shipments",
-    "groupName": "clickhouse-shipments",
+    "topic": "orders",
+    "groupName": "clickhouse-orders",
     "skipBytes": 6,
     "numConsumers": 1,
     "flattenNested": false,
@@ -237,7 +237,7 @@ Workflow: правка proto → build падает на drift → `Cli migrate 
   },
   "fieldOverrides": {
     "status": { "enum8": true },
-    "destination.country": { "type": "LowCardinality(String)" }
+    "price.currency": { "type": "LowCardinality(String)" }
   }
 }
 ```
@@ -336,7 +336,7 @@ Overrides на корне конфига и в таблице **мержатся
 
 ```json
 "pipeline": {
-  "outputPath": "../../docker/clickhouse/init/03_pipeline.sql",
+  "outputPath": "../../docker/clickhouse/init/02_pipeline.sql",
   "mergeTreeTables": [ ... ],
   "materializedViews": [ ... ],
   "trailingSql": "CREATE TABLE ..."
@@ -352,7 +352,7 @@ Overrides на корне конфига и в таблице **мержатся
 | ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `tableName`   | Имя MergeTree-таблицы                                                                                                                                                              |
 | `orderBy`     | Выражение `ORDER BY`, например `"(event_time, order_id)"`                                                                                                                          |
-| `ttl`         | Опционально. Выражение table-level `TTL`, например `"event_time + INTERVAL 90 DAY"`. Должно ссылаться только на колонки этой таблицы (`shipments` -> `shipped_at`, не `event_time`) |
+| `ttl`         | Опционально. Выражение table-level `TTL`, например `"event_time + INTERVAL 90 DAY"`. Должно ссылаться только на колонки этой таблицы (не на поля, которых нет в `columns`) |
 | `shardingKey` | Опционально, только кластер. Ключ шардирования `Distributed`-таблицы (по умолчанию `cluster.shardingKey`)                                                                           |
 | `sourceTable` | Опционально. Имя Kafka-таблицы (`kafkaTables[].tableName`) для автозаполнения колонок                                                                                              |
 | `columns`     | Список `{ "name", "type" }`. **Пустой** -> взять все колонки из `sourceTable`                                                                                                       |
@@ -501,7 +501,7 @@ TTL event_time + INTERVAL 90 DAY;
 - MergeTree с пустым `columns` без `sourceTable` (нужен для автозаполнения)
 - MergeTree `sourceTable` не совпадает с `kafkaTables[].tableName`
 - Автогенерируемое имя view `{tableName}_mv` уже занято другим materialized view
-- TTL ссылается на колонку, которой нет в `columns` (например `event_time` у `shipments`, где есть только `shipped_at`)
+- TTL ссылается на колонку, которой нет в `columns` (например `created_at`, когда в `columns` есть только `event_time`)
 - `key.format` не `string` / `protobuf`; `key.format: protobuf` без `key.messageType`; `key.messageType` / `skipBytes` / `fieldOverrides` при строковом ключе
 - MV ссылается на `_key.<поле>`, которого нет в protobuf-ключе (или ключ строковый)
 - `repeatedMessageStrategy` не из списка `nested`  `arraytuple`  `flatten`
