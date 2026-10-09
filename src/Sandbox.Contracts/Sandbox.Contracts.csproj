@@ -31,9 +31,11 @@
     <PropertyGroup>
       <_ClickHouseSchemaGenTasksProject>$(MSBuildProjectDirectory)/../../tools/ClickHouseSchemaGen.Tasks/ClickHouseSchemaGen.Tasks.csproj</_ClickHouseSchemaGenTasksProject>
       <_ClickHouseCodegenConfig>$(MSBuildProjectDirectory)/clickhouse.codegen.json</_ClickHouseCodegenConfig>
+      <_ClickHouseClusterCodegenConfig>$(MSBuildProjectDirectory)/clickhouse.codegen.cluster.json</_ClickHouseClusterCodegenConfig>
     </PropertyGroup>
     <MSBuild Projects="$(_ClickHouseSchemaGenTasksProject)" Targets="Restore;Build" Properties="Configuration=$(Configuration);SkipClickHouseCodegen=true" />
     <MSBuild Projects="$(_ClickHouseSchemaGenTasksProject)" Targets="GenerateClickHouseDdl" Properties="Configuration=$(Configuration);SkipClickHouseCodegen=true;ClickHouseCodegenConfig=$(_ClickHouseCodegenConfig)" />
+    <MSBuild Projects="$(_ClickHouseSchemaGenTasksProject)" Targets="GenerateClickHouseDdl" Properties="Configuration=$(Configuration);SkipClickHouseCodegen=true;ClickHouseCodegenConfig=$(_ClickHouseClusterCodegenConfig)" Condition="Exists('$(_ClickHouseClusterCodegenConfig)')" />
   </Target>
 
 </Project>

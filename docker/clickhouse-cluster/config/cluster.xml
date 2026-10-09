@@ -1,0 +1,51 @@
+<!-- Shared by every node of the compose cluster; per-node values come from the environment. -->
+<clickhouse>
+    <remote_servers>
+        <kafka2ch>
+            <shard>
+                <internal_replication>true</internal_replication>
+                <replica>
+                    <host>clickhouse</host>
+                    <port>9000</port>
+                    <user>default</user>
+                    <password from_env="CLICKHOUSE_PASSWORD"/>
+                </replica>
+                <replica>
+                    <host>clickhouse-02</host>
+                    <port>9000</port>
+                    <user>default</user>
+                    <password from_env="CLICKHOUSE_PASSWORD"/>
+                </replica>
+            </shard>
+            <shard>
+                <internal_replication>true</internal_replication>
+                <replica>
+                    <host>clickhouse-03</host>
+                    <port>9000</port>
+                    <user>default</user>
+                    <password from_env="CLICKHOUSE_PASSWORD"/>
+                </replica>
+                <replica>
+                    <host>clickhouse-04</host>
+                    <port>9000</port>
+                    <user>default</user>
+                    <password from_env="CLICKHOUSE_PASSWORD"/>
+                </replica>
+            </shard>
+        </kafka2ch>
+    </remote_servers>
+
+    <zookeeper>
+        <node>
+            <host>clickhouse-keeper</host>
+            <port>9181</port>
+        </node>
+    </zookeeper>
+
+    <macros>
+        <shard from_env="CLICKHOUSE_SHARD"/>
+        <replica from_env="CLICKHOUSE_REPLICA"/>
+    </macros>
+
+    <interserver_http_host from_env="CLICKHOUSE_REPLICA"/>
+</clickhouse>

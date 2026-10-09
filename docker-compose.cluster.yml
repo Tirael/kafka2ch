@@ -1,0 +1,119 @@
+# Clustered ClickHouse overlay: 2 shards x 2 replicas + ClickHouse Keeper.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.cluster.yml up -d --build
+#
+# The base `clickhouse` service becomes shard 1 / replica 1 (same host ports, so sandbox-app and
+# scripts keep working); DDL comes from docker/clickhouse-cluster (clickhouse.codegen.cluster.json).
+# Requires Docker Compose >= 2.24.4 (`!override`).
+
+x-clickhouse-node: &clickhouse-node
+  image: ${CLICKHOUSE_IMAGE}
+  depends_on:
+    clickhouse-keeper:
+      condition: service_healthy
+  volumes:
+    - ./docker/clickhouse/format_schemas:/var/lib/clickhouse/format_schemas
+    - ./docker/clickhouse-cluster/config/cluster.xml:/etc/clickhouse-server/config.d/cluster.xml:ro
+  healthcheck:
+    test: ["CMD-SHELL", "clickhouse-client --password \"$${CLICKHOUSE_PASSWORD}\" --query 'SELECT 1'"]
+    interval: 5s
+    timeout: 10s
+    retries: 30
+    start_period: 10s
+
+services:
+  clickhouse-keeper:
+    image: ${CLICKHOUSE_IMAGE}
+    container_name: clickhouse-keeper
+    hostname: clickhouse-keeper
+    entrypoint: ["clickhouse", "keeper", "--config-file=/etc/clickhouse-keeper/keeper.xml"]
+    volumes:
+      - ./docker/clickhouse-cluster/config/keeper.xml:/etc/clickhouse-keeper/keeper.xml:ro
+    healthcheck:
+      test: ["CMD-SHELL", "clickhouse keeper-client --host localhost --port 9181 --query 'ls /' >/dev/null"]
+      interval: 5s
+      timeout: 10s
+      retries: 30
+
+  clickhouse:
+    <<: *clickhouse-node
+    hostname: clickhouse
+    environment:
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+      CLICKHOUSE_SHARD: "01"
+      CLICKHOUSE_REPLICA: clickhouse
+    volumes: !override
+      - ./docker/clickhouse/format_schemas:/var/lib/clickhouse/format_schemas
+      - ./docker/clickhouse-cluster/config/cluster.xml:/etc/clickhouse-server/config.d/cluster.xml:ro
+
+  clickhouse-02:
+    <<: *clickhouse-node
+    container_name: clickhouse-02
+    hostname: clickhouse-02
+    environment:
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+      CLICKHOUSE_SHARD: "01"
+      CLICKHOUSE_REPLICA: clickhouse-02
+
+  clickhouse-03:
+    <<: *clickhouse-node
+    container_name: clickhouse-03
+    hostname: clickhouse-03
+    environment:
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+      CLICKHOUSE_SHARD: "02"
+      CLICKHOUSE_REPLICA: clickhouse-03
+
+  clickhouse-04:
+    <<: *clickhouse-node
+    container_name: clickhouse-04
+    hostname: clickhouse-04
+    environment:
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+      CLICKHOUSE_SHARD: "02"
+      CLICKHOUSE_REPLICA: clickhouse-04
+
+  clickhouse-cluster-init:
+    image: ${CLICKHOUSE_IMAGE}
+    container_name: clickhouse-cluster-init
+    entrypoint: ["/bin/sh", "/cluster/bootstrap.sh"]
+    environment:
+      CLICKHOUSE_HOST: clickhouse
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+      CLICKHOUSE_CLUSTER: kafka2ch
+    volumes:
+      - ./docker/clickhouse-cluster:/cluster:ro
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+      clickhouse-02:
+        condition: service_healthy
+      clickhouse-03:
+        condition: service_healthy
+      clickhouse-04:
+        condition: service_healthy
+    restart: "no"
+
+  clickhouse-migrate:
+    depends_on:
+      clickhouse-cluster-init:
+        condition: service_completed_successfully
+    environment:
+      ClickHouse__Cluster: kafka2ch
+    volumes: !override
+      - ./docker/clickhouse-cluster/migrations:/migrations:ro
+
+  kafka-init:
+    # One partition per ClickHouse node: all nodes share each consumer group, so partitions spread across them.
+    command:
+      - |
+        kafka-topics --bootstrap-server kafka:9092 \
+          --create --if-not-exists \
+          --topic orders --partitions 4 --replication-factor 1
+        kafka-topics --bootstrap-server kafka:9092 \
+          --create --if-not-exists \
+          --topic shipments --partitions 4 --replication-factor 1
