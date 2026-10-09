@@ -48,6 +48,9 @@ dotnet build src/Sandbox.Contracts
 | `fieldOverrides` | нет                | Глобальные overrides полей (мержатся с табличными) |
 | `pipeline`       | нет                | MergeTree + materialized views + произвольный SQL  |
 | `migrations`     | нет                | пути снапшота и каталога SQL-миграций              |
+| `cluster`        | нет                | кластерный ClickHouse (выключен, пока нет `name`)  |
+| `extends`        | нет                | базовый конфиг, поверх которого применяется этот   |
+| `outputDirectory`| нет                | каталог для всех init-скриптов (имя файла из `outputPath`) |
 
 
 Имена `tableName` и пути `outputPath` в `kafkaTables` должны быть уникальны.
@@ -75,6 +78,63 @@ dotnet build src/Sandbox.Contracts
 `00_schema_migrations.sql` создаёт таблицу `schema_migrations` и записывает baseline-миграции (`kind = 'migration'`). Префикс `00` зарезервирован: файл обязан идти раньше любого init-скрипта (валидатор конфига падает иначе), потому что каждый сгенерированный init-скрипт (`01_*`, `02_*`, …) в конце записывает себя строкой `kind = 'init'` (version — префикс файла, checksum — SHA-256 тела скрипта без этой строки). Сама таблица версий не числится миграцией: её создаёт и обновляет (`ALTER … ADD COLUMN IF NOT EXISTS kind`) Migrator до применения миграций, по аналогии с `VersionInfo` в FluentMigrator. Migrator учитывает только `kind = 'migration'`.
 
 Workflow: правка proto → build падает на drift → `Cli migrate --name …` → review/commit → apply через `clickhouse-migrate` / Migrator. Только BACKWARD-compatible эволюция proto; `SkipClickHouseSnapshotCheck=true` — escape hatch.
+
+---
+
+## `cluster` (кластерный ClickHouse)
+
+По умолчанию выключен: пока `cluster.name` пустой, DDL и миграции генерируются ровно как для одной ноды. С `name` включается кластерный режим.
+
+| Поле                    | По умолчанию                                    | Описание |
+| ----------------------- | ----------------------------------------------- | -------- |
+| `name`                  | —                                               | имя кластера из `remote_servers`; используется в `ON CLUSTER` и `Distributed(...)` |
+| `replicatedPath`        | `/clickhouse/tables/{shard}/{database}/{table}` | Keeper-путь `Replicated*MergeTree` (должен содержать `{table}` или `{uuid}`) |
+| `replicaName`           | `{replica}`                                     | имя реплики storage-таблиц |
+| `historyReplicatedPath` | `/clickhouse/tables/all/{database}/{table}`     | Keeper-путь `schema_migrations`; **без** `{shard}` — история одна на весь кластер |
+| `historyReplicaName`    | `{shard}-{replica}`                             | имя реплики `schema_migrations`, уникальное во всём кластере |
+| `localTableSuffix`      | `_local`                                        | суффикс per-node storage-таблиц |
+| `shardingKey`           | `rand()`                                        | ключ шардирования `Distributed` (переопределяется `mergeTreeTables[].shardingKey`) |
+
+Макросы `{shard}` / `{replica}` должны быть заданы в `<macros>` каждой ноды; `{database}` / `{table}` ClickHouse подставляет сам.
+
+Что генерируется:
+
+| Объект конфига | Один сервер | Кластер |
+| --- | --- | --- |
+| `kafkaTables[]` | `CREATE TABLE q … ENGINE = Kafka` | то же `ON CLUSTER`: очередь на каждой ноде, один `kafka_group_name` → партиции топика делятся между всеми нодами |
+| `mergeTreeTables[]` `t` | `t ENGINE = MergeTree` | `t_local ON CLUSTER … ENGINE = ReplicatedMergeTree(replicatedPath, replicaName)` + `t ON CLUSTER AS t_local ENGINE = Distributed(name, currentDatabase(), t_local, shardingKey)` |
+| `materializedViews[]` | `… TO t` | `… ON CLUSTER … TO t_local`: каждая нода пишет то, что прочитала из своих партиций, в свой шард |
+| protobuf-UDF ключа | `CREATE OR REPLACE FUNCTION` | `… ON CLUSTER` |
+| `trailingSql` | как есть | `CREATE TABLE` с `*MergeTree` → `Replicated*MergeTree` `_local` + `Distributed`; `CREATE MATERIALIZED VIEW` получает `ON CLUSTER`, `TO`/`FROM`/`JOIN` по известным storage-таблицам переписываются на `_local`; прочие `CREATE` (`VIEW`, `FUNCTION`, `DICTIONARY`, не-MergeTree таблицы) — только `ON CLUSTER`; `INSERT` без изменений; `ALTER`/`DROP`/… — ошибка (делайте миграцией) |
+| `schema_migrations` | `MergeTree` | `ON CLUSTER … ReplicatedMergeTree(historyReplicatedPath, historyReplicaName)` — полная история на каждой ноде |
+| миграции | `DETACH`/`ALTER t`/`DROP VIEW`/`ATTACH` | всё `ON CLUSTER`; `ALTER` колонки сначала для `t_local`, затем для `Distributed` `t`; маркер `-- await:kafka_consumers_empty q ON CLUSTER c` ждёт пустой `clusterAllReplicas(c, system.kafka_consumers)` |
+
+Чтение и внешние вставки идут через `Distributed`-таблицу с исходным именем (`orders`, `orders_agg_1m`), поэтому SQL приложений не меняется. Агрегаты (`SummingMergeTree` и т.п.) после `Distributed` по-прежнему читаются через `GROUP BY` / `sum`.
+
+Используется только классический `ENGINE = Kafka` (offsets в consumer group Kafka); `kafka_keeper_path` / Kafka2 не генерируются. Полезно иметь партиций в топике не меньше, чем нод: лишние консьюмеры простаивают.
+
+Снапшот и drift-check кластер не учитывают: это свойство деплоя, а не схемы. Если один и тот же проект деплоится и на одну ноду, и на кластер (как в этом репо), у каждого варианта свои `migrations` (снапшот, каталог миграций, `00_schema_migrations.sql`) и `migrate` запускается для каждого конфига.
+
+### `extends` / `outputDirectory`
+
+`extends` — путь к базовому конфигу (относительно текущего файла). Объекты сливаются рекурсивно, массивы и скаляры заменяются целиком. Относительные пути итогового конфига разрешаются от файла, переданного в `--config`. `outputDirectory` перенаправляет все init-скрипты (`kafkaTables[].outputPath`, `pipeline.outputPath`) в один каталог, сохраняя имена файлов.
+
+Кластерный вариант стенда — [`clickhouse.codegen.cluster.json`](clickhouse.codegen.cluster.json):
+
+```json
+{
+  "extends": "clickhouse.codegen.json",
+  "outputDirectory": "../../docker/clickhouse-cluster/init",
+  "cluster": { "name": "kafka2ch" },
+  "migrations": {
+    "snapshotPath": "../../docker/clickhouse-cluster/init/schema.snapshot.json",
+    "migrationsDirectory": "../../docker/clickhouse-cluster/migrations",
+    "versionsOutputPath": "../../docker/clickhouse-cluster/init/00_schema_migrations.sql"
+  }
+}
+```
+
+`dotnet build src/Sandbox.Contracts` генерирует оба варианта. Миграция для кластера: `Cli migrate --config src/Sandbox.Contracts/clickhouse.codegen.cluster.json --name …`; применение: `Migrator --migrations docker/clickhouse-cluster/migrations --cluster kafka2ch` (или env `ClickHouse__Cluster`; путь/реплика истории — `ClickHouse__HistoryReplicatedPath` / `ClickHouse__HistoryReplicaName`, должны совпадать с `historyReplicatedPath` / `historyReplicaName`).
 
 ---
 
@@ -298,6 +358,7 @@ Overrides на корне конфига и в таблице **мержатся
 | `tableName`   | Имя MergeTree-таблицы                                                                                                                                                              |
 | `orderBy`     | Выражение `ORDER BY`, например `"(event_time, order_id)"`                                                                                                                          |
 | `ttl`         | Опционально. Выражение table-level `TTL`, например `"event_time + INTERVAL 90 DAY"`. Должно ссылаться только на колонки этой таблицы (`shipments` -> `shipped_at`, не `event_time`) |
+| `shardingKey` | Опционально, только кластер. Ключ шардирования `Distributed`-таблицы (по умолчанию `cluster.shardingKey`)                                                                           |
 | `sourceTable` | Опционально. Имя Kafka-таблицы (`kafkaTables[].tableName`) для автозаполнения колонок                                                                                              |
 | `columns`     | Список `{ "name", "type" }`. **Пустой** -> взять все колонки из `sourceTable`                                                                                                       |
 
@@ -413,7 +474,7 @@ TTL event_time + INTERVAL 90 DAY;
 
 ### `trailingSql`
 
-Произвольный SQL, дописывается в конец файла (агрегаты, дополнительные MV и т.п.). Может быть многострочной строкой JSON с `\n`.
+Произвольный SQL, дописывается в конец файла (агрегаты, дополнительные MV и т.п.). Может быть многострочной строкой JSON с `\n`. В кластерном режиме переписывается (см. [`cluster`](#cluster-кластерный-clickhouse)).
 
 ---
 
@@ -449,4 +510,6 @@ TTL event_time + INTERVAL 90 DAY;
 - `key.format` не `string` / `protobuf`; `key.format: protobuf` без `key.messageType`; `key.messageType` / `skipBytes` / `fieldOverrides` при строковом ключе
 - MV ссылается на `_key.<поле>`, которого нет в protobuf-ключе (или ключ строковый)
 - `repeatedMessageStrategy` не из списка `nested`  `arraytuple`  `flatten`
+- `cluster.name` не идентификатор; `replicatedPath` без `{table}` / `{uuid}`; `historyReplicatedPath` с `{shard}`
+- имя `<table><localTableSuffix>` совпадает с уже существующей таблицей / view
 
