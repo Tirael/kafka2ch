@@ -167,7 +167,7 @@ public sealed class ClusterModeGenerationTests
     [Fact]
     public void GivenClusterConfig_WhenGenerateMigration_ThenDetachesQueuesAndAltersLocalAndDistributedTablesOnCluster()
     {
-        var sql = PersistKeyMigrationFixture.GenerateSql(RepoPaths.ClusterCodegenConfigPath);
+        var sql = PersistPartitionMigrationFixture.GenerateSql(RepoPaths.ClusterCodegenConfigPath);
 
         sql.Should().Contain(
             """
@@ -176,8 +176,8 @@ public sealed class ClusterModeGenerationTests
             """.ReplaceLineEndings());
         sql.Should().Contain(
             """
-            ALTER TABLE orders_local ON CLUSTER kafka2ch ADD COLUMN IF NOT EXISTS `kafka_key.order_id` String DEFAULT '' AFTER kafka_key;
-            ALTER TABLE orders ON CLUSTER kafka2ch ADD COLUMN IF NOT EXISTS `kafka_key.order_id` String DEFAULT '' AFTER kafka_key;
+            ALTER TABLE orders_local ON CLUSTER kafka2ch ADD COLUMN IF NOT EXISTS kafka_partition UInt64 DEFAULT 0 AFTER kafka_headers;
+            ALTER TABLE orders ON CLUSTER kafka2ch ADD COLUMN IF NOT EXISTS kafka_partition UInt64 DEFAULT 0 AFTER kafka_headers;
             """.ReplaceLineEndings());
         sql.Should().Contain("DROP VIEW IF EXISTS orders_mv ON CLUSTER kafka2ch;");
         sql.Should().Contain("ATTACH TABLE orders_queue ON CLUSTER kafka2ch;");
@@ -188,11 +188,11 @@ public sealed class ClusterModeGenerationTests
     [Fact]
     public void GivenSingleNodeConfig_WhenGenerateMigration_ThenHasNoClusterClauses()
     {
-        var sql = PersistKeyMigrationFixture.GenerateSql(RepoPaths.CodegenConfigPath);
+        var sql = PersistPartitionMigrationFixture.GenerateSql(RepoPaths.CodegenConfigPath);
 
         sql.Should().Contain("DETACH TABLE IF EXISTS orders_queue;");
         sql.Should().Contain("-- await:kafka_consumers_empty orders_queue" + Environment.NewLine);
-        sql.Should().Contain("ALTER TABLE orders ADD COLUMN IF NOT EXISTS `kafka_key.order_id` String DEFAULT '' AFTER kafka_key;");
+        sql.Should().Contain("ALTER TABLE orders ADD COLUMN IF NOT EXISTS kafka_partition UInt64 DEFAULT 0 AFTER kafka_headers;");
         sql.Should().NotContain("ON CLUSTER");
         sql.Should().NotContain("_local");
     }
