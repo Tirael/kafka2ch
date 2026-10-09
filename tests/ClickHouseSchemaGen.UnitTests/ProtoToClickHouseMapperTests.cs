@@ -44,27 +44,25 @@ public sealed class ProtoToClickHouseMapperTests
     }
 
     [Fact]
-    public void GivenShipmentEventDescriptor_WhenMapped_ThenNestedRepeatedAndIndependentListsStaySeparate()
+    public void GivenOrderEventDescriptor_WhenMapped_ThenNestedRepeatedAndIndependentListsStaySeparate()
     {
-
         var columns = _sut.MapMessage(
-            ShipmentEvent.Descriptor,
+            OrderEvent.Descriptor,
             OrdersQueueTestConfig.Defaults,
             MappingTestSupport.EmptyOverrides);
 
+        var items = columns.Should().ContainSingle(column => column.Name == "items").Subject;
+        items.Type.Should().StartWith("Nested(");
+        items.Type.Should().Contain("parts Array(Tuple(sku String, qty UInt32, weight Nullable(Float64)))");
+        items.Type.IndexOf("Nested(", "Nested(".Length, StringComparison.Ordinal).Should().Be(-1);
+        items.FlattensGoogleWrapper.Should().BeTrue();
 
-        var checkpoints = columns.Should().ContainSingle(column => column.Name == "checkpoints").Subject;
-        checkpoints.Type.Should().StartWith("Nested(");
-        checkpoints.Type.Should().Contain("scans Array(Tuple(code String, operator_note Nullable(String)))");
-        checkpoints.Type.IndexOf("Nested(", "Nested(".Length, StringComparison.Ordinal).Should().Be(-1);
-        checkpoints.FlattensGoogleWrapper.Should().BeTrue();
-
-        var documents = columns.Should().ContainSingle(column => column.Name == "documents").Subject;
-        documents.Type.Should().StartWith("Tuple(");
-        documents.Type.Should().Contain("labels Array(Tuple(id String, pages Nullable(Int32)))");
-        documents.Type.Should().Contain("customs_forms Array(Tuple(id String, pages Nullable(Int32)))");
-        documents.Type.Should().NotContain("Nested(");
-        documents.FlattensGoogleWrapper.Should().BeTrue();
+        var attachments = columns.Should().ContainSingle(column => column.Name == "attachments").Subject;
+        attachments.Type.Should().StartWith("Tuple(");
+        attachments.Type.Should().Contain("invoices Array(Tuple(name String, note Nullable(String)))");
+        attachments.Type.Should().Contain("receipts Array(Tuple(name String, note Nullable(String)))");
+        attachments.Type.Should().NotContain("Nested(");
+        attachments.FlattensGoogleWrapper.Should().BeTrue();
     }
 
     [Fact]
@@ -80,14 +78,6 @@ public sealed class ProtoToClickHouseMapperTests
                 ["items.sku"] = new() { Type = "LowCardinality(String)" },
                 ["attachments.invoices"] = new() { Type = "Array(String)" }
             });
-        var shipmentColumns = _sut.MapMessage(
-            ShipmentEvent.Descriptor,
-            OrdersQueueTestConfig.Defaults,
-            new Dictionary<string, FieldOverrideConfig>(StringComparer.OrdinalIgnoreCase)
-            {
-                ["destination.country"] = new() { Type = "LowCardinality(String)" },
-                ["destination.city"] = new() { Type = "LowCardinality(String)" }
-            });
 
         orderColumns.Single(column => column.Name == "price.currency").Type.Should().Be("LowCardinality(String)");
         orderColumns.Single(column => column.Name == "price.amount").Type.Should().Be("Float64");
@@ -95,9 +85,6 @@ public sealed class ProtoToClickHouseMapperTests
         orderColumns.Single(column => column.Name == "card.network").Type.Should().Be("String");
         orderColumns.Single(column => column.Name == "items").Type.Should().Contain("sku LowCardinality(String)");
         orderColumns.Single(column => column.Name == "attachments").Type.Should().Contain("invoices Array(String)");
-        shipmentColumns.Single(column => column.Name == "destination.country").Type.Should().Be("LowCardinality(String)");
-        shipmentColumns.Single(column => column.Name == "destination.city").Type.Should().Be("LowCardinality(String)");
-        shipmentColumns.Single(column => column.Name == "destination.street").Type.Should().Be("String");
     }
 
     [Fact]

@@ -18,12 +18,6 @@ public static class CommonSlice
                 () => sp.GetRequiredService<KafkaClientFactory>()
                     .CreateProducer<OrderKey, OrderEvent>(sp.GetRequiredService<ISchemaRegistryClient>())));
 
-        services.AddSingleton(sp =>
-            ExecuteWithStartupRetry(
-                sp,
-                () => sp.GetRequiredService<KafkaClientFactory>()
-                    .CreateProducer<ShipmentKey, ShipmentEvent>(sp.GetRequiredService<ISchemaRegistryClient>())));
-
         return services;
     }
 

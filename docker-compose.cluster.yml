@@ -139,6 +139,3 @@ services:
         kafka-topics --bootstrap-server kafka:9092 \
           --create --if-not-exists \
           --topic orders --partitions 4 --replication-factor 1
-        kafka-topics --bootstrap-server kafka:9092 \
-          --create --if-not-exists \
-          --topic shipments --partitions 4 --replication-factor 1

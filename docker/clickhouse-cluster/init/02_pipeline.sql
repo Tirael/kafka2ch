@@ -18,26 +18,6 @@ ORDER BY (event_time, order_id);
 CREATE TABLE orders ON CLUSTER kafka2ch AS orders_local
 ENGINE = Distributed('kafka2ch', currentDatabase(), orders_local, rand());
 
-CREATE TABLE shipments_local ON CLUSTER kafka2ch
-(
-    shipment_id          String,
-    order_id             String,
-    status               LowCardinality(String),
-    country              LowCardinality(String),
-    city                 LowCardinality(String),
-    delivery_outcome     LowCardinality(String),
-    shipped_at           DateTime64(3),
-    kafka_key            String,
-    `kafka_key.shipment_id` String,
-    kafka_headers        Map(String, String)
-)
-ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/{database}/{table}', '{replica}')
-ORDER BY (shipped_at, shipment_id)
-TTL shipped_at + INTERVAL 1 DAY;
-
-CREATE TABLE shipments ON CLUSTER kafka2ch AS shipments_local
-ENGINE = Distributed('kafka2ch', currentDatabase(), shipments_local, rand());
-
 CREATE OR REPLACE FUNCTION protobufWireVarint ON CLUSTER kafka2ch AS (m, p) ->
     arrayFold(
         (acc, b) -> if(
@@ -119,20 +99,6 @@ SELECT
     mapFromArrays(`_headers.name`, `_headers.value`) AS kafka_headers
 FROM orders_queue;
 
-CREATE MATERIALIZED VIEW shipments_mv ON CLUSTER kafka2ch TO shipments_local AS
-SELECT
-    shipment_id                  AS shipment_id,
-    order_id                     AS order_id,
-    toString(status)             AS status,
-    `destination.country`        AS country,
-    `destination.city`           AS city,
-    toString(delivery_outcome)   AS delivery_outcome,
-    toDateTime64(shipped_at.seconds + shipped_at.nanos / 1000000000.0, 3) AS shipped_at,
-    _key                         AS kafka_key,
-    CAST(protobufWireBytes(substring(_key, 7), 1) AS String) AS `kafka_key.shipment_id`,
-    mapFromArrays(`_headers.name`, `_headers.value`) AS kafka_headers
-FROM shipments_queue;
-
 CREATE TABLE orders_agg_1m_local ON CLUSTER kafka2ch
 (
     minute        DateTime,
@@ -157,24 +123,4 @@ SELECT
 FROM orders_local
 GROUP BY minute, category;
 
-CREATE TABLE shipments_agg_1m_local ON CLUSTER kafka2ch
-(
-    minute           DateTime,
-    status           LowCardinality(String),
-    shipments_count  UInt64
-)
-ENGINE = ReplicatedSummingMergeTree('/clickhouse/tables/{shard}/{database}/{table}', '{replica}')
-ORDER BY (minute, status);
-
-CREATE TABLE shipments_agg_1m ON CLUSTER kafka2ch AS shipments_agg_1m_local
-ENGINE = Distributed('kafka2ch', currentDatabase(), shipments_agg_1m_local, rand());
-
-CREATE MATERIALIZED VIEW shipments_agg_mv ON CLUSTER kafka2ch TO shipments_agg_1m_local AS
-SELECT
-    toStartOfMinute(shipped_at) AS minute,
-    status,
-    count()                     AS shipments_count
-FROM shipments_local
-GROUP BY minute, status;
-
-INSERT INTO schema_migrations (version, name, checksum, applied_at, kind) VALUES ('03', '03_pipeline.sql', '36d569890a0048a638241ce6eacf7dd1ea846fd7f5960c43e9b527ce7d523796', now(), 'init');
+INSERT INTO schema_migrations (version, name, checksum, applied_at, kind) VALUES ('02', '02_pipeline.sql', '0c091e0ef0300700b15c993585f0d7800a232df2bd8d0f772a046d9e31de4018', now(), 'init');

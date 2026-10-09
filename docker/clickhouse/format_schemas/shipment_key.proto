@@ -1,9 +1,0 @@
-syntax = "proto3";
-
-package sandbox.shipments.v1;
-
-option csharp_namespace = "Sandbox.Contracts";
-
-message ShipmentKey {
-  string shipment_id = 1;
-}

@@ -7,7 +7,7 @@ public sealed class SchemaMigrationsTableTests
     {
         const string body = "CREATE TABLE t (id String) ENGINE = Memory;\n";
 
-        var sql = SchemaMigrationsTable.AppendInitRecord("../../docker/clickhouse/init/03_pipeline.sql", body);
+        var sql = SchemaMigrationsTable.AppendInitRecord("../../docker/clickhouse/init/02_pipeline.sql", body);
 
         sql.Should().StartWith(body.TrimEnd());
         sql.TrimEnd().Should().EndWith(

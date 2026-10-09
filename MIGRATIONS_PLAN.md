@@ -22,7 +22,7 @@ Kafka engine парсит только **value**. Ключ и заголовки
 
 | Виртуальная колонка | Тип в CH | Колонка в MergeTree (канон) | Примечание |
 |---|---|---|---|
-| `_key` | `String` | `kafka_key String` | Сырые байты ключа. У нас ключ — protobuf (`OrderKey` / `ShipmentKey`); CH его не десериализует. Декод — на стороне приложения при необходимости (`ParseFrom`). |
+| `_key` | `String` | `kafka_key String` | Сырые байты ключа. У нас ключ — protobuf (`OrderKey`); CH его не десериализует. Декод — на стороне приложения при необходимости (`ParseFrom`). |
 | `_headers.name` + `_headers.value` | `Array(String)` × 2 | `kafka_headers Map(String, String)` | В MV: `mapFromArrays(\`_headers.name\`, \`_headers.value\`) AS kafka_headers`. Пустые headers → `map()`. |
 | `_topic` (opt.) | `LowCardinality(String)` | `kafka_topic` | Полезно при multi-topic queue; у нас один topic на таблицу — по умолчанию выкл. |
 | `_partition` / `_offset` (opt.) | `UInt64` | `kafka_partition` / `kafka_offset` | Для идемпотентности / дедупа; по умолчанию выкл. |
@@ -45,7 +45,7 @@ Kafka engine парсит только **value**. Ключ и заголовки
 
 - `KafkaMetaColumnFactory` добавляет в план **не** колонки queue DDL, а `PipelineColumnMapping` + колонки MergeTree с `FieldNumberPath` вида `kafka:_key`, `kafka:_headers` (не пересекаются с proto-номерами; differ join’ит по ним же).
 - **Auto** MergeTree (`columns: []` + `sourceTable`): meta-колонки дописываются к зеркалу queue автоматически, если `persistKafkaMeta` включён.
-- **Explicit** MergeTree: meta нужно либо перечислить в `columns` + `materializedViews[].columns`, либо включить флаг `includeKafkaMeta: true` на таблице / view (генератор дописывает канонические колонки и mapping). Без флага и без явных колонок meta не попадает в explicit-пайплайн (текущие `orders` / `shipments` — обновить конфиг: добавить `kafka_key`, `kafka_headers` и mapping).
+- **Explicit** MergeTree: meta нужно либо перечислить в `columns` + `materializedViews[].columns`, либо включить флаг `includeKafkaMeta: true` на таблице / view (генератор дописывает канонические колонки и mapping). Без флага и без явных колонок meta не попадает в explicit-пайплайн (текущий `orders` — обновить конфиг: добавить `kafka_key`, `kafka_headers` и mapping).
 - `MaterializedViewAutoGenerator` / expander учитывают meta при построении SELECT.
 - Имена целевых колонок фиксированы каноном выше (переименование через явный `target` в mapping, если понадобится).
 
@@ -170,7 +170,7 @@ flowchart LR
 - `PipelineColumnExpander` / `MaterializedViewAutoGenerator`: для auto-зеркала и `includeKafkaMeta` дописывают meta в MergeTree + MV; `PipelineColumnExpander.ExpandMergeTreeTable` переносит `FieldNumberPath` из queue/meta.
 - Новый `tools/ClickHouseSchemaGen/Planning/ResolvedSchemaPlan.cs` (records): `KafkaTablePlan` (config + proto-columns), `MergeTreeTablePlan` (expanded config + `Origin: Explicit|Auto`), `MaterializedViewPlan` (expanded config + `Origin`), `TrailingSql`.
 - `ClickHouseSchemaGenerator`: вынести из `GenerateFromConfigFile` / `BuildPipelineSql` чистый `ResolvedSchemaPlan BuildPlan(CodegenConfig config)`; рендер init SQL — `SchemaPlanRenderer.RenderInitScripts(plan)` поверх существующих генераторов.
-- Рефакторинг `BuildPlan` без включения meta — байт-в-байт `01..03_*.sql` не меняются. Включение `persistKafkaMeta` в `clickhouse.codegen.json` для `orders` / `shipments` — **осознанный** diff `03_pipeline.sql` (+ колонки и mapping); оформляется baseline-миграцией или сразу в init при `migrate init` на пустом стенде.
+- Рефакторинг `BuildPlan` без включения meta — байт-в-байт `01..02_*.sql` не меняются. Включение `persistKafkaMeta` в `clickhouse.codegen.json` для `orders` — **осознанный** diff `02_pipeline.sql` (+ колонки и mapping); оформляется baseline-миграцией или сразу в init при `migrate init` на пустом стенде.
 - Загрузку конфига вынести в `CodegenConfigLoader.Load(path)` (переиспользуется CLI, Tasks, тестами).
 
 ## Этап 2. Снапшот
@@ -239,14 +239,14 @@ flowchart LR
   - `MixedTopicCompatibilityTests`: после миграции на схему V2 вставить **сырой protobuf V1** через `ProtobufSingle` с format_schema V2 — строка читается, новые колонки = default; затем V2-сообщение заполняет новые поля. Доказывает штатный смешанный топик без dual-schema runtime.
   - `KafkaMetaPersistenceTests`: Kafka-таблица + MV с meta; insert через HTTP с заголовками / проверка, что в MergeTree есть `kafka_key` и `kafka_headers` (для key — задать `_key` через insert settings / обходной MergeTree-ingest с колонками-симуляторами virtuals, если Testcontainers без брокера; либо короткий compose-smoke в verify-pipeline). Минимум: unit на SQL + integration на `mapFromArrays` / типы колонок в DESCRIBE.
   - `MigrationRunnerTests`: повторный apply — no-op; изменённый checksum применённого файла — ошибка; out-of-order файл — ошибка.
-- Проверить, что рефакторинг без meta не меняет `01..02_*.sql`; diff `03_pipeline.sql` только при включении meta в конфиг.
+- Проверить, что рефакторинг без meta не меняет `01_*.sql`; diff `02_pipeline.sql` только при включении meta в конфиг.
 
 ## Этап 9. Документация и bootstrap
 
 - `src/Sandbox.Contracts/clickhouse.codegen.md`: секция `migrations`, секция `persistKafkaMeta` (key/headers, канонические имена, raw protobuf key), workflow (правка proto -> build падает -> `migrate --name` -> review -> commit снапшот + миграция + `00_*.sql`), таблица классов изменений, что считается Manual, политика BACKWARD-only и что CH игнорирует schema id.
 - `README.md`: раздел «Миграции схемы»; упомянуть `kafka_key` / `kafka_headers` в сырых таблицах; смешанный топик / `format_schemas` до apply; поправить предупреждение про `down -v`. Убрать/обновить тезис из PLAN.md «ключ в пайплайне не используется».
 - `.cursor/skills/senior-csharp-developer/TOOLS.md`: добавить команды `migrate` и список новых генерируемых файлов.
-- Bootstrap в репозитории: `migrate init` -> первый `schema.snapshot.json` + `00_schema_migrations.sql` с пустой таблицей; каталог `docker/clickhouse/migrations/.gitkeep`. Включить `persistKafkaMeta.key/headers` для orders/shipments в `clickhouse.codegen.json` как часть того же bootstrap (или отдельной первой миграции `add_kafka_meta`).
+- Bootstrap в репозитории: `migrate init` -> первый `schema.snapshot.json` + `00_schema_migrations.sql` с пустой таблицей; каталог `docker/clickhouse/migrations/.gitkeep`. Включить `persistKafkaMeta.key/headers` для orders в `clickhouse.codegen.json` как часть того же bootstrap (или отдельной первой миграции `add_kafka_meta`).
 
 ## Ключевые риски и как закрыты
 
@@ -263,7 +263,7 @@ flowchart LR
 
 ## Чеклист задач
 
-- [ ] Этап 1: `FieldNumberPath`, `persistKafkaMeta` / `KafkaMetaColumnFactory`, `ResolvedSchemaPlan`, `BuildPlan` + `SchemaPlanRenderer`; meta в orders/shipments pipeline
+- [ ] Этап 1: `FieldNumberPath`, `persistKafkaMeta` / `KafkaMetaColumnFactory`, `ResolvedSchemaPlan`, `BuildPlan` + `SchemaPlanRenderer`; meta в orders pipeline
 - [ ] Этап 2: `SchemaSnapshot` (v1, parent checksum, origin, kafka meta flags), сериализация, `FromPlan` / `ToPlan`, секция `migrations` в codegen.json
 - [ ] Этап 3: `SnapshotDriftChecker` в `GenerateFromConfigFile`, `SkipClickHouseSnapshotCheck` через Tasks / Contracts.csproj
 - [ ] Этап 4: `SchemaDiffer`, `TypeCompatibility`, `MigrationPolicy`, `ProtoCompatibilityValidator` (BACKWARD gate; `kafka:*` вне proto-проверки)

@@ -67,7 +67,7 @@ public sealed class ClusterConfigTests : IDisposable
         var config = CodegenConfigLoader.Load(RepoPaths.ClusterCodegenConfigPath);
 
         config.Cluster.Name.Should().Be("kafka2ch");
-        config.KafkaTables.Select(table => table.TableName).Should().Equal("orders_queue", "shipments_queue");
+        config.KafkaTables.Select(table => table.TableName).Should().Equal("orders_queue");
         CodegenConfigLoader.ResolvePath(RepoPaths.ClusterCodegenConfigPath, config.Migrations.MigrationsDirectory)
             .Should().Be(Path.Combine(RepoPaths.RepositoryRoot, "docker", "clickhouse-cluster", "migrations"));
         new CodegenConfigValidator().Validate(config).IsValid.Should().BeTrue();

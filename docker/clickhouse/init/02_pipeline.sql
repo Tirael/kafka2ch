@@ -15,23 +15,6 @@ CREATE TABLE orders
 ENGINE = MergeTree
 ORDER BY (event_time, order_id);
 
-CREATE TABLE shipments
-(
-    shipment_id          String,
-    order_id             String,
-    status               LowCardinality(String),
-    country              LowCardinality(String),
-    city                 LowCardinality(String),
-    delivery_outcome     LowCardinality(String),
-    shipped_at           DateTime64(3),
-    kafka_key            String,
-    `kafka_key.shipment_id` String,
-    kafka_headers        Map(String, String)
-)
-ENGINE = MergeTree
-ORDER BY (shipped_at, shipment_id)
-TTL shipped_at + INTERVAL 1 DAY;
-
 CREATE OR REPLACE FUNCTION protobufWireVarint AS (m, p) ->
     arrayFold(
         (acc, b) -> if(
@@ -113,20 +96,6 @@ SELECT
     mapFromArrays(`_headers.name`, `_headers.value`) AS kafka_headers
 FROM orders_queue;
 
-CREATE MATERIALIZED VIEW shipments_mv TO shipments AS
-SELECT
-    shipment_id                  AS shipment_id,
-    order_id                     AS order_id,
-    toString(status)             AS status,
-    `destination.country`        AS country,
-    `destination.city`           AS city,
-    toString(delivery_outcome)   AS delivery_outcome,
-    toDateTime64(shipped_at.seconds + shipped_at.nanos / 1000000000.0, 3) AS shipped_at,
-    _key                         AS kafka_key,
-    CAST(protobufWireBytes(substring(_key, 7), 1) AS String) AS `kafka_key.shipment_id`,
-    mapFromArrays(`_headers.name`, `_headers.value`) AS kafka_headers
-FROM shipments_queue;
-
 CREATE TABLE orders_agg_1m
 (
     minute        DateTime,
@@ -148,21 +117,4 @@ SELECT
 FROM orders
 GROUP BY minute, category;
 
-CREATE TABLE shipments_agg_1m
-(
-    minute           DateTime,
-    status           LowCardinality(String),
-    shipments_count  UInt64
-)
-ENGINE = SummingMergeTree
-ORDER BY (minute, status);
-
-CREATE MATERIALIZED VIEW shipments_agg_mv TO shipments_agg_1m AS
-SELECT
-    toStartOfMinute(shipped_at) AS minute,
-    status,
-    count()                     AS shipments_count
-FROM shipments
-GROUP BY minute, status;
-
-INSERT INTO schema_migrations (version, name, checksum, applied_at, kind) VALUES ('03', '03_pipeline.sql', 'c06bfb2dc7c44327058060439d7eb8be87d5d7002c2d6a64eb7973ff09220fe8', now(), 'init');
+INSERT INTO schema_migrations (version, name, checksum, applied_at, kind) VALUES ('02', '02_pipeline.sql', 'a9effc8757c62e65d8be6a6cca50a31ac9100e9aac8f961ba5a1aabbf88f6600', now(), 'init');

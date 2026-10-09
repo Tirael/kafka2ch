@@ -27,23 +27,6 @@
           { "name": "payment", "type": "LowCardinality(String)" },
           { "name": "event_time", "type": "DateTime64(3)" }
         ]
-      },
-      {
-        "tableName": "shipments",
-        "orderBy": "(shipped_at, shipment_id)",
-        "ttl": "shipped_at + INTERVAL 1 DAY",
-        "includeKafkaMeta": true,
-        "shardingKey": "cityHash64(order_id)",
-        "materializedViewsWriteThroughDistributed": true,
-        "columns": [
-          { "name": "shipment_id", "type": "String" },
-          { "name": "order_id", "type": "String" },
-          { "name": "status", "type": "LowCardinality(String)" },
-          { "name": "country", "type": "LowCardinality(String)" },
-          { "name": "city", "type": "LowCardinality(String)" },
-          { "name": "delivery_outcome", "type": "LowCardinality(String)" },
-          { "name": "shipped_at", "type": "DateTime64(3)" }
-        ]
       }
     ]
   },

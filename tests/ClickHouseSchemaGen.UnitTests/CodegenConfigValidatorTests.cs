@@ -19,7 +19,7 @@ public sealed class CodegenConfigValidatorTests
     {
         var config = CreateValidConfig();
         config.KafkaTables[0].OutputPath = "init/01_orders_queue.sql";
-        config.Pipeline!.OutputPath = "init/03_pipeline.sql";
+        config.Pipeline!.OutputPath = "init/02_pipeline.sql";
         config.Migrations.VersionsOutputPath = "init/99_schema_migrations.sql";
 
         var result = _sut.Validate(config);
@@ -163,17 +163,17 @@ public sealed class CodegenConfigValidatorTests
         [
             new MergeTreeTableConfig
             {
-                TableName = "shipments",
-                OrderBy = "(shipped_at, shipment_id)",
+                TableName = "orders_archive",
+                OrderBy = "(archived_at, order_id)",
                 Ttl = "event_time + INTERVAL 1 DAY",
                 Columns =
                 [
-                    new PipelineColumnConfig { Name = "shipment_id", Type = "String" },
-                    new PipelineColumnConfig { Name = "shipped_at", Type = "DateTime64(3)" }
+                    new PipelineColumnConfig { Name = "order_id", Type = "String" },
+                    new PipelineColumnConfig { Name = "archived_at", Type = "DateTime64(3)" }
                 ]
             }
         ];
-        config.Pipeline.MaterializedViews[0].TargetTable = "shipments";
+        config.Pipeline.MaterializedViews[0].TargetTable = "orders_archive";
         config.Pipeline.MaterializedViews[0].SourceTable = "orders_queue";
 
         var result = _sut.Validate(config);
@@ -181,7 +181,7 @@ public sealed class CodegenConfigValidatorTests
         result.IsValid.Should().BeFalse();
         result.Errors.Should().Contain(error =>
             error.ErrorMessage.Contains("TTL expression references unknown columns", StringComparison.Ordinal)
-            && error.ErrorMessage.Contains("shipments", StringComparison.Ordinal));
+            && error.ErrorMessage.Contains("orders_archive", StringComparison.Ordinal));
     }
 
     [Fact]

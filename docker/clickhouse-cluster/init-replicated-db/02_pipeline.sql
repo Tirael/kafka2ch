@@ -20,26 +20,6 @@ ORDER BY (event_time, order_id);
 CREATE TABLE orders AS orders_local
 ENGINE = Distributed('kafka2ch', currentDatabase(), orders_local, cityHash64(order_id));
 
-CREATE TABLE shipments_local
-(
-    shipment_id          String,
-    order_id             String,
-    status               LowCardinality(String),
-    country              LowCardinality(String),
-    city                 LowCardinality(String),
-    delivery_outcome     LowCardinality(String),
-    shipped_at           DateTime64(3),
-    kafka_key            String,
-    `kafka_key.shipment_id` String,
-    kafka_headers        Map(String, String)
-)
-ENGINE = ReplicatedMergeTree
-ORDER BY (shipped_at, shipment_id)
-TTL shipped_at + INTERVAL 1 DAY;
-
-CREATE TABLE shipments AS shipments_local
-ENGINE = Distributed('kafka2ch', currentDatabase(), shipments_local, cityHash64(order_id));
-
 CREATE OR REPLACE FUNCTION protobufWireVarint AS (m, p) ->
     arrayFold(
         (acc, b) -> if(
@@ -121,20 +101,6 @@ SELECT
     mapFromArrays(`_headers.name`, `_headers.value`) AS kafka_headers
 FROM orders_queue;
 
-CREATE MATERIALIZED VIEW shipments_mv TO shipments AS
-SELECT
-    shipment_id                  AS shipment_id,
-    order_id                     AS order_id,
-    toString(status)             AS status,
-    `destination.country`        AS country,
-    `destination.city`           AS city,
-    toString(delivery_outcome)   AS delivery_outcome,
-    toDateTime64(shipped_at.seconds + shipped_at.nanos / 1000000000.0, 3) AS shipped_at,
-    _key                         AS kafka_key,
-    CAST(protobufWireBytes(substring(_key, 7), 1) AS String) AS `kafka_key.shipment_id`,
-    mapFromArrays(`_headers.name`, `_headers.value`) AS kafka_headers
-FROM shipments_queue;
-
 CREATE TABLE orders_agg_1m_local
 (
     minute        DateTime,
@@ -159,24 +125,4 @@ SELECT
 FROM orders_local
 GROUP BY minute, category;
 
-CREATE TABLE shipments_agg_1m_local
-(
-    minute           DateTime,
-    status           LowCardinality(String),
-    shipments_count  UInt64
-)
-ENGINE = ReplicatedSummingMergeTree
-ORDER BY (minute, status);
-
-CREATE TABLE shipments_agg_1m AS shipments_agg_1m_local
-ENGINE = Distributed('kafka2ch', currentDatabase(), shipments_agg_1m_local, rand());
-
-CREATE MATERIALIZED VIEW shipments_agg_mv TO shipments_agg_1m AS
-SELECT
-    toStartOfMinute(shipped_at) AS minute,
-    status,
-    count()                     AS shipments_count
-FROM shipments_local
-GROUP BY minute, status;
-
-INSERT INTO default.schema_migrations (version, name, checksum, applied_at, kind) VALUES ('03', '03_pipeline.sql', 'a17c65b1553714887b0a90d120bb9471f594f04f55e4997b275188e11e58c6e6', now(), 'init');
+INSERT INTO default.schema_migrations (version, name, checksum, applied_at, kind) VALUES ('02', '02_pipeline.sql', '6f2ea29524810fbbf7ccc4c202dec8654f8b829b8f709bf4d5c2c8c8473d082a', now(), 'init');
