@@ -7,13 +7,13 @@ public sealed class ClickHouseSchemaGeneratorTests
     [Fact]
     public void GivenOrdersQueueConfig_WhenGenerateKafkaTableSql_ThenMatchesCommittedInitSqlShape()
     {
-        // Arrange
+
         var config = OrdersQueueTestConfig.Create();
 
-        // Act
+
         var sql = _sut.GenerateKafkaTableSql(config, OrdersQueueTestConfig.Defaults);
 
-        // Assert
+
         sql.Should().Contain("CREATE TABLE orders_queue");
         sql.Should().Contain("ENGINE = Kafka");
         sql.Should().Contain("kafka_num_consumers = 1");
@@ -23,7 +23,7 @@ public sealed class ClickHouseSchemaGeneratorTests
     [Fact]
     public void GivenCodegenConfigFile_WhenGenerateFromConfigFile_ThenWritesOrdersQueueAndPipelineSql()
     {
-        // Arrange
+
         var outputDirectory = Path.Combine(Path.GetTempPath(), $"clickhouse-schema-gen-{Guid.NewGuid():N}");
         var configPath = Path.Combine(outputDirectory, "clickhouse.codegen.json");
         Directory.CreateDirectory(outputDirectory);
@@ -40,10 +40,10 @@ public sealed class ClickHouseSchemaGeneratorTests
 
         try
         {
-            // Act
+
             _sut.GenerateFromConfigFile(configPath);
 
-            // Assert
+
             File.Exists(ordersQueuePath).Should().BeTrue();
             File.Exists(pipelinePath).Should().BeTrue();
             File.ReadAllText(ordersQueuePath).Should().Contain("CREATE TABLE orders_queue");
@@ -344,7 +344,7 @@ public sealed class ClickHouseSchemaGeneratorTests
     [Fact]
     public void GivenProtobufKey_WhenGenerateKafkaTableSql_ThenQueueDdlHasNoKeyColumns()
     {
-        // Arrange
+
         var config = OrdersQueueTestConfig.Create();
         config.Key = new KafkaKeyConfig
         {
@@ -352,10 +352,10 @@ public sealed class ClickHouseSchemaGeneratorTests
             MessageType = "Sandbox.Contracts.OrderKey, Sandbox.Contracts"
         };
 
-        // Act
+
         var sql = _sut.GenerateKafkaTableSql(config, OrdersQueueTestConfig.Defaults);
 
-        // Assert
+
         sql.Should().NotContain("_key");
         sql.Should().NotContain("CREATE OR REPLACE FUNCTION");
     }
@@ -426,7 +426,7 @@ public sealed class ClickHouseSchemaGeneratorTests
     [Fact]
     public void GivenPersistedKafkaKeyWithProtobufKey_WhenBuildPlan_ThenAddsTypedKafkaKeyColumns()
     {
-        // Arrange
+
         var config = CreateProtobufKeyConfig(new MergeTreeTableConfig
         {
             TableName = "orders_raw",
@@ -435,10 +435,10 @@ public sealed class ClickHouseSchemaGeneratorTests
         });
         config.Defaults.PersistKafkaMeta = new PersistKafkaMetaConfig { Key = true };
 
-        // Act
+
         var plan = _sut.BuildPlan(config);
 
-        // Assert
+
         var table = plan.MergeTreeTables.Single().Config;
         table.Columns.Should().ContainSingle(column => column.Name == "kafka_key" && column.Type == "String");
         table.Columns.Should().ContainSingle(column =>
@@ -459,7 +459,7 @@ public sealed class ClickHouseSchemaGeneratorTests
     [Fact]
     public void GivenProtobufKeyWithoutPersistedKafkaKey_WhenBuildPlan_ThenMirrorHasNoKeyColumns()
     {
-        // Arrange
+
         var config = CreateProtobufKeyConfig(new MergeTreeTableConfig
         {
             TableName = "orders_raw",
@@ -467,10 +467,10 @@ public sealed class ClickHouseSchemaGeneratorTests
             OrderBy = "order_id"
         });
 
-        // Act
+
         var plan = _sut.BuildPlan(config);
 
-        // Assert
+
         plan.MergeTreeTables.Single().Config.Columns
             .Should().NotContain(column => column.Name.Contains("key", StringComparison.Ordinal));
         ProtobufWireSqlFunctions.IsUsedBy(plan.MaterializedViews.Single().Config).Should().BeFalse();
@@ -479,7 +479,7 @@ public sealed class ClickHouseSchemaGeneratorTests
     [Fact]
     public void GivenStringKeyAndKeyColumnMapping_WhenBuildPlan_ThenThrows()
     {
-        // Arrange
+
         var config = CreateProtobufKeyConfig(
             new MergeTreeTableConfig
             {
@@ -496,10 +496,10 @@ public sealed class ClickHouseSchemaGeneratorTests
             });
         config.KafkaTables[0].Key = new KafkaKeyConfig();
 
-        // Act
+
         var act = () => _sut.BuildPlan(config);
 
-        // Assert
+
         act.Should().Throw<InvalidOperationException>()
             .WithMessage("*orders_mv*_key.order_id*orders_queue*protobuf*");
     }

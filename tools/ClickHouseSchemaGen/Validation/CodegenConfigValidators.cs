@@ -188,6 +188,45 @@ internal sealed class MaterializedViewConfigValidator : AbstractValidator<Materi
     }
 }
 
+internal sealed class ClusterConfigValidator : AbstractValidator<ClusterConfig>
+{
+    public ClusterConfigValidator()
+    {
+        RuleFor(cluster => cluster.Name!.Trim())
+            .Must(ValidationRules.IsSqlIdentifier)
+            .OverridePropertyName(nameof(ClusterConfig.Name))
+            .WithMessage("Cluster name must be a valid ClickHouse identifier.");
+        RuleFor(cluster => cluster.DdlMode)
+            .Must(mode => ClusterDdlModes.All.Contains(mode, StringComparer.OrdinalIgnoreCase))
+            .WithMessage($"ddlMode must be one of: {string.Join(", ", ClusterDdlModes.All)}.");
+        RuleFor(cluster => cluster.ReplicatedPath)
+            .NotEmpty()
+            .Must(path => path.Contains("{table}", StringComparison.Ordinal) || path.Contains("{uuid}", StringComparison.Ordinal))
+            .WithMessage("replicatedPath must contain {table} or {uuid}: every replicated table needs its own Keeper path.");
+        RuleFor(cluster => cluster.ReplicaName).NotEmpty();
+        RuleFor(cluster => cluster.HistoryReplicatedPath)
+            .NotEmpty()
+            .Must(path => !path.Contains("{shard}", StringComparison.Ordinal))
+            .WithMessage("historyReplicatedPath must not contain {shard}: every node keeps the full migration history.");
+        RuleFor(cluster => cluster.HistoryReplicaName).NotEmpty();
+        RuleFor(cluster => cluster.LocalTableSuffix)
+            .NotEmpty()
+            .Must(suffix => ValidationRules.IsSqlIdentifier("t" + suffix))
+            .WithMessage("localTableSuffix must keep table names valid ClickHouse identifiers.");
+        RuleFor(cluster => cluster.ShardingKey).NotEmpty();
+
+        When(cluster => cluster.UsesReplicatedDatabase, () =>
+        {
+            RuleFor(cluster => cluster.ReplicatedDatabaseName)
+                .NotEmpty()
+                .Must(ValidationRules.IsSqlIdentifier)
+                .WithMessage("replicatedDatabaseName must be a valid ClickHouse identifier.");
+            RuleFor(cluster => cluster.ReplicatedDatabasePath).NotEmpty();
+            RuleFor(cluster => cluster.ReplicatedDatabaseReplicaName).NotEmpty();
+        });
+    }
+}
+
 internal sealed class PipelineConfigValidator : AbstractValidator<PipelineConfig>
 {
     public PipelineConfigValidator()

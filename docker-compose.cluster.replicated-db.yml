@@ -1,0 +1,17 @@
+services:
+  clickhouse-cluster-init:
+    environment:
+      CLICKHOUSE_DATABASE: kafka2ch
+      INIT_DIR: /cluster/init-replicated-db
+
+  clickhouse-migrate:
+    environment:
+      ClickHouse__Cluster: kafka2ch
+      ClickHouse__DdlMode: replicatedDatabase
+      ClickHouse__Database: kafka2ch
+    volumes: !override
+      - ./docker/clickhouse-cluster/migrations-replicated-db:/migrations:ro
+
+  sandbox-app:
+    environment:
+      ClickHouse__Database: kafka2ch

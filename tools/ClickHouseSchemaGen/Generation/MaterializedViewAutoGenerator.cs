@@ -1,9 +1,6 @@
 namespace ClickHouseSchemaGen.Generation;
 
-/// <summary>
-/// Creates a 1:1 materialized view for each MergeTree table whose columns were
-/// auto-filled from a Kafka queue and that has no explicit view of its own.
-/// </summary>
+
 public static class MaterializedViewAutoGenerator
 {
     public static string DefaultName(string tableName) => $"{tableName}_mv";
@@ -60,7 +57,7 @@ public static class MaterializedViewAutoGenerator
             var meta = metaForSourceTable?.Invoke(original.SourceTable!) ?? new PersistKafkaMetaConfig();
             if (meta.AnyEnabled)
             {
-                // Auto mirror uses queue column names for payload; replace kafka_* targets with virtual sources.
+
                 columns.RemoveAll(mapping => KafkaMetaColumnFactory.IsKafkaMetaPath(
                     expandedTables[i].Columns
                         .FirstOrDefault(column => column.Name == mapping.Target)

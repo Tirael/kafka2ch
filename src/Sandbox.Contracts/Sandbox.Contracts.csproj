@@ -21,19 +21,18 @@
     <Copy SourceFiles="@(ProtoSchema)" DestinationFiles="@(ProtoSchema->'$(MSBuildProjectDirectory)/../../docker/clickhouse/format_schemas/%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
   </Target>
 
-  <!--
-    Codegen runs in-process (RoslynCodeTaskFactory + shadow-copied assemblies), not via
-    <Exec>dotnet …Cli.dll</Exec> (AppLocker) and not via UsingTask on bin/*.dll (MSB3027 lock).
 
-    Escape hatch: dotnet build -p:SkipClickHouseCodegen=true
-  -->
   <Target Name="GenerateClickHouseDdl" AfterTargets="SyncProtoSchemas" Condition="'$(SkipClickHouseCodegen)' != 'true'">
     <PropertyGroup>
       <_ClickHouseSchemaGenTasksProject>$(MSBuildProjectDirectory)/../../tools/ClickHouseSchemaGen.Tasks/ClickHouseSchemaGen.Tasks.csproj</_ClickHouseSchemaGenTasksProject>
       <_ClickHouseCodegenConfig>$(MSBuildProjectDirectory)/clickhouse.codegen.json</_ClickHouseCodegenConfig>
+      <_ClickHouseClusterCodegenConfig>$(MSBuildProjectDirectory)/clickhouse.codegen.cluster.json</_ClickHouseClusterCodegenConfig>
+      <_ClickHouseClusterReplicatedDbCodegenConfig>$(MSBuildProjectDirectory)/clickhouse.codegen.cluster.replicated-db.json</_ClickHouseClusterReplicatedDbCodegenConfig>
     </PropertyGroup>
     <MSBuild Projects="$(_ClickHouseSchemaGenTasksProject)" Targets="Restore;Build" Properties="Configuration=$(Configuration);SkipClickHouseCodegen=true" />
-    <MSBuild Projects="$(_ClickHouseSchemaGenTasksProject)" Targets="GenerateClickHouseDdl" Properties="Configuration=$(Configuration);SkipClickHouseCodegen=true;ClickHouseCodegenConfig=$(_ClickHouseCodegenConfig)" />
+    <MSBuild Projects="$(_ClickHouseSchemaGenTasksProject)" Targets="GenerateClickHouseDdl" Properties="Configuration=$(Configuration);SkipClickHouseCodegen=true;ClickHouseCodegenConfig=$(_ClickHouseCodegenConfig);ClickHouseCodegenAssemblies=$(TargetPath)" />
+    <MSBuild Projects="$(_ClickHouseSchemaGenTasksProject)" Targets="GenerateClickHouseDdl" Properties="Configuration=$(Configuration);SkipClickHouseCodegen=true;ClickHouseCodegenConfig=$(_ClickHouseClusterCodegenConfig);ClickHouseCodegenAssemblies=$(TargetPath)" Condition="Exists('$(_ClickHouseClusterCodegenConfig)')" />
+    <MSBuild Projects="$(_ClickHouseSchemaGenTasksProject)" Targets="GenerateClickHouseDdl" Properties="Configuration=$(Configuration);SkipClickHouseCodegen=true;ClickHouseCodegenConfig=$(_ClickHouseClusterReplicatedDbCodegenConfig);ClickHouseCodegenAssemblies=$(TargetPath)" Condition="Exists('$(_ClickHouseClusterReplicatedDbCodegenConfig)')" />
   </Target>
 
 </Project>

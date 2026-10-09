@@ -1,7 +1,7 @@
 FROM --platform=linux/amd64 mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /src
 
-COPY kafka2ch.sln ./
+COPY kafka2ch.sln Directory.Build.props Directory.Packages.props ./
 COPY src/Sandbox.Contracts/Sandbox.Contracts.csproj src/Sandbox.Contracts/
 COPY src/Sandbox.App/Sandbox.App.csproj src/Sandbox.App/
 COPY tools/ClickHouseSchemaGen/ClickHouseSchemaGen.csproj tools/ClickHouseSchemaGen/

@@ -124,6 +124,47 @@ dotnet exec tools/ClickHouseSchemaGen.Migrator/bin/Debug/net8.0/ClickHouseSchema
 
 В сырых таблицах `orders` / `shipments` сохраняются `kafka_key` (сырые байты protobuf-ключа) и `kafka_headers` (`Map(String, String)`). Подробности — [clickhouse.codegen.md](src/Sandbox.Contracts/clickhouse.codegen.md) и [MIGRATIONS_PLAN.md](MIGRATIONS_PLAN.md).
 
+## Кластерный ClickHouse
+
+Стенд **2 шарда × 2 реплики + ансамбль из 3 ClickHouse Keeper** (Docker Compose ≥ 2.24.4; в production Keeper тоже держите не меньше чем из 3 узлов):
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.cluster.yml up -d --build
+./scripts/verify-cluster.sh
+```
+
+Альтернатива DDL через Replicated database (без `ON CLUSTER` на таблицах, MV пишут через `Distributed`):
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.cluster.yml \
+  -f docker-compose.cluster.replicated-db.yml up -d --build
+```
+
+Overlay [`docker-compose.cluster.yml`](docker-compose.cluster.yml): `clickhouse` = шард 1 / реплика 1 (порты те же), плюс `clickhouse-02..04`, `clickhouse-keeper-01..03`, `clickhouse-cluster-init`, топики на 4 партиции. На всех нодах (и на single-node) монтируется [`docker/clickhouse/config/kafka.xml`](docker/clickhouse/config/kafka.xml) (`session_timeout_ms` / `heartbeat_interval_ms` для Kafka engine).
+
+| Нода | Шард | Реплика |
+|---|---|---|
+| `clickhouse` | 01 | `clickhouse` |
+| `clickhouse-02` | 01 | `clickhouse-02` |
+| `clickhouse-03` | 02 | `clickhouse-03` |
+| `clickhouse-04` | 02 | `clickhouse-04` |
+
+Топология (`onCluster`, [`clickhouse.codegen.cluster.json`](src/Sandbox.Contracts/clickhouse.codegen.cluster.json) → `docker/clickhouse-cluster/init/`):
+
+- Kafka-очереди и MV на каждой ноде, общий `kafka_group_name` → партиции делятся на 4 ноды;
+- по умолчанию MV пишут в `*_local` (`ReplicatedMergeTree`); опционально — через `Distributed` по `shardingKey`;
+- `orders` / агрегаты — `Distributed`; `schema_migrations` — `ReplicatedMergeTree` без `{shard}`.
+
+Init — one-shot `clickhouse-cluster-init`. Миграции — `clickhouse-migrate` с `ClickHouse__Cluster`. Подробности и `ddlMode` — [clickhouse.codegen.md](src/Sandbox.Contracts/clickhouse.codegen.md#cluster-кластерный-clickhouse).
+
+```bash
+docker exec clickhouse clickhouse-client --password sandbox --query "
+SELECT hostName(), table, assignments.partition_id
+FROM clusterAllReplicas('kafka2ch', system.kafka_consumers)"
+```
+
+Остановка: `docker compose -f docker-compose.yml -f docker-compose.cluster.yml down -v`.
+
 ## Локальный запуск приложения
 
 Инфраструктура в Docker, приложение на хосте:
@@ -256,8 +297,11 @@ src/Sandbox.App/          # worker: PublishOrders, PublishShipments, ReadAggrega
 src/Sandbox.Contracts/    # protobuf + clickhouse.codegen.json
 tools/ClickHouseSchemaGen # proto3 → ClickHouse DDL
 docker/clickhouse/        # init SQL + format schemas
+docker/clickhouse-cluster/ # init SQL, migrations и конфиги кластерного варианта
 scripts/verify-pipeline.sh
+scripts/verify-cluster.sh
 docker-compose.yml
+docker-compose.cluster.yml
 Dockerfile
 .env.example
 ```

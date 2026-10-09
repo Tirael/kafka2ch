@@ -55,6 +55,7 @@ services:
     volumes:
       - ./docker/clickhouse/init:/docker-entrypoint-initdb.d
       - ./docker/clickhouse/format_schemas:/var/lib/clickhouse/format_schemas
+      - ./docker/clickhouse/config/kafka.xml:/etc/clickhouse-server/config.d/kafka.xml:ro
     healthcheck:
       test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
       interval: 10s

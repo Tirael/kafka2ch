@@ -2,16 +2,22 @@ namespace ClickHouseSchemaGen.Migration;
 
 public static class SchemaMigrationsScriptGenerator
 {
-    public static string Generate(IReadOnlyList<MigrationFileInfo> migrations)
+    public static string Generate(IReadOnlyList<MigrationFileInfo> migrations, ClusterDdl? cluster = null)
     {
         ArgumentNullException.ThrowIfNull(migrations);
 
-        var builder = new StringBuilder()
-            .AppendLine(SqlScriptWriter.GeneratedHeader)
-            .AppendLine("-- Must sort before every init script: they record themselves into this table.")
-            .AppendLine()
-            .Append(SchemaMigrationsTable.CreateTableSql).AppendLine(";")
+        var ddl = cluster ?? ClusterDdl.SingleNode;
+        var builder = new StringBuilder();
+
+        if (ddl.UsesReplicatedDatabase)
+            builder.Append(ddl.CreateReplicatedDatabaseSql()).AppendLine();
+
+        builder
+            .Append(SchemaMigrationsTable.CreateTableSqlFor(ddl)).AppendLine(";")
             .AppendLine();
+
+        if (ddl.UsesReplicatedDatabase)
+            builder.AppendLine(ddl.UseReplicatedDatabaseSql()).AppendLine();
 
         foreach (var migration in migrations.OrderBy(m => m.Version, StringComparer.Ordinal))
         {
@@ -20,7 +26,8 @@ public static class SchemaMigrationsScriptGenerator
                     migration.Name,
                     migration.Checksum,
                     SchemaMigrationsTable.MigrationKind,
-                    "toDateTime(0)"))
+                    "toDateTime(0)",
+                    ddl.HistoryTableName))
                 .AppendLine(";");
         }
 

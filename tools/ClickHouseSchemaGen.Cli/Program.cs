@@ -1,9 +1,4 @@
-﻿using ClickHouseSchemaGen;
-using ClickHouseSchemaGen.Mapping;
-using ClickHouseSchemaGen.Migration;
-using ClickHouseSchemaGen.Validation;
-
-if (args.Length == 0 || args.Contains("--help") || args.Contains("-h"))
+﻿if (args.Length == 0 || args.Contains("--help") || args.Contains("-h"))
 {
     PrintUsage();
     return args.Length == 0 ? 1 : 0;

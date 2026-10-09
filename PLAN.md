@@ -272,7 +272,7 @@ src/
     Features/...
 tools/
   ClickHouseSchemaGen/        # DenormalizationPlanner, strategies, generators
-  ClickHouseSchemaGen.Tasks/  # shadow-copy + RoslynCodeTaskFactory codegen (AppLocker / no bin lock)
+  ClickHouseSchemaGen.Tasks/  # shadow-copy + RoslynCodeTaskFactory codegen (AppLocker / no bin lock); message assemblies via ClickHouseCodegenAssemblies (no Sandbox.Contracts reference)
   ClickHouseSchemaGen.Cli/
 tests/
   ClickHouseSchemaGen.Shared/

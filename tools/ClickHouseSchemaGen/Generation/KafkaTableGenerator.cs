@@ -5,15 +5,15 @@ public static class KafkaTableGenerator
     public static string Generate(
         KafkaTableConfig config,
         IReadOnlyList<ClickHouseColumn> columns,
-        bool ifNotExists = false)
+        bool ifNotExists = false,
+        ClusterDdl? cluster = null)
     {
+        cluster ??= ClusterDdl.SingleNode;
         var create = ifNotExists
-            ? $"CREATE TABLE IF NOT EXISTS {config.TableName}"
-            : $"CREATE TABLE {config.TableName}";
+            ? $"CREATE TABLE IF NOT EXISTS {config.TableName}{cluster.OnCluster}"
+            : $"CREATE TABLE {config.TableName}{cluster.OnCluster}";
 
         var builder = new StringBuilder()
-            .AppendLine(SqlScriptWriter.GeneratedHeader)
-            .AppendLine()
             .AppendLine(create)
             .AppendLine("(");
 

@@ -1,5 +1,3 @@
-using System.Text.RegularExpressions;
-
 namespace ClickHouseSchemaGen.Validation;
 
 internal static partial class ValidationRules
