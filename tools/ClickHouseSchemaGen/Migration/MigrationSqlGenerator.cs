@@ -119,7 +119,6 @@ public static partial class MigrationSqlGenerator
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(v => v, StringComparer.Ordinal)
             .ToList();
-        var attachedQueues = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var viewName in viewsToRecreate)
         {
@@ -140,10 +139,6 @@ public static partial class MigrationSqlGenerator
                 builder.AppendLine();
             }
 
-
-            if (!recreateKafka && metaOnlyQueues.Contains(queue) && attachedQueues.Add(queue))
-                builder.AppendLine(cluster.AttachTableSql(queue));
-
             var writeThrough = newPlan.MergeTreeTables
                 .FirstOrDefault(table => string.Equals(
                     table.Config.TableName,
@@ -155,11 +150,17 @@ public static partial class MigrationSqlGenerator
                 cluster: cluster,
                 writeThroughDistributed: writeThrough));
 
-            if (recreateKafka)
-                builder.AppendLine(cluster.AttachTableSql(queue));
-
             builder.AppendLine();
         }
+
+        // Re-attach only queues that stayed DETACHed (meta-only). Recreated queues are already
+        // live after CREATE TABLE; ATTACH after CREATE would fail and leave consumption stopped
+        // until ClickHouse restart for any earlier DETACH that had not yet been cleared.
+        foreach (var queue in metaOnlyQueues.OrderBy(q => q, StringComparer.Ordinal))
+            builder.AppendLine(cluster.AttachTableSql(queue));
+
+        if (metaOnlyQueues.Count > 0)
+            builder.AppendLine();
 
         foreach (var queue in kafkaRecreates.Except(viewsToRecreate.SelectMany(v =>
                      newPlan.MaterializedViews.Where(mv => string.Equals(mv.Config.Name, v, StringComparison.OrdinalIgnoreCase))
@@ -180,7 +181,6 @@ public static partial class MigrationSqlGenerator
             var kafkaPlan = newPlan.KafkaTables.First(t =>
                 string.Equals(t.Config.TableName, queue, StringComparison.OrdinalIgnoreCase));
             builder.Append(KafkaTableGenerator.Generate(kafkaPlan.Config, kafkaPlan.Columns, ifNotExists: false, cluster));
-            builder.AppendLine(cluster.AttachTableSql(queue));
             builder.AppendLine();
         }
     }

@@ -180,9 +180,14 @@ public sealed class ClusterModeGenerationTests
             ALTER TABLE orders ON CLUSTER kafka2ch ADD COLUMN IF NOT EXISTS kafka_partition UInt64 DEFAULT 0 AFTER kafka_headers;
             """.ReplaceLineEndings());
         sql.Should().Contain("DROP VIEW IF EXISTS orders_mv ON CLUSTER kafka2ch;");
-        sql.Should().Contain("ATTACH TABLE orders_queue ON CLUSTER kafka2ch;");
         sql.Should().Contain("CREATE OR REPLACE FUNCTION protobufWireBytes ON CLUSTER kafka2ch AS");
         sql.Should().Contain("CREATE MATERIALIZED VIEW orders_mv ON CLUSTER kafka2ch TO orders_local AS");
+        sql.Should().Contain("ATTACH TABLE orders_queue ON CLUSTER kafka2ch;");
+
+        var mvIndex = sql.IndexOf("CREATE MATERIALIZED VIEW orders_mv ON CLUSTER kafka2ch", StringComparison.Ordinal);
+        var attachIndex = sql.IndexOf("ATTACH TABLE orders_queue ON CLUSTER kafka2ch", StringComparison.Ordinal);
+        mvIndex.Should().BeGreaterThanOrEqualTo(0);
+        attachIndex.Should().BeGreaterThan(mvIndex);
     }
 
     [Fact]
@@ -195,6 +200,11 @@ public sealed class ClusterModeGenerationTests
         sql.Should().Contain("ALTER TABLE orders ADD COLUMN IF NOT EXISTS kafka_partition UInt64 DEFAULT 0 AFTER kafka_headers;");
         sql.Should().NotContain("ON CLUSTER");
         sql.Should().NotContain("_local");
+
+        var mvIndex = sql.IndexOf("CREATE MATERIALIZED VIEW orders_mv", StringComparison.Ordinal);
+        var attachIndex = sql.IndexOf("ATTACH TABLE orders_queue;", StringComparison.Ordinal);
+        mvIndex.Should().BeGreaterThanOrEqualTo(0);
+        attachIndex.Should().BeGreaterThan(mvIndex);
     }
 
 

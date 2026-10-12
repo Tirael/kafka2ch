@@ -7,6 +7,18 @@ public sealed class MigrationRunner(ILogger logger, TimeProvider timeProvider, C
         @"^\s*--\s*await:kafka_consumers_empty\s+(?<table>[A-Za-z_][A-Za-z0-9_]*)(?:\s+ON\s+CLUSTER\s+(?<cluster>[A-Za-z_][A-Za-z0-9_]*))?\s*$",
         RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
 
+    private static readonly Regex DetachTableStatement = new(
+        @"^\s*DETACH\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?<table>[A-Za-z_][A-Za-z0-9_]*)(?:\s+ON\s+CLUSTER\s+(?<cluster>[A-Za-z_][A-Za-z0-9_]*))?(?:\s+PERMANENTLY)?\s*;?\s*$",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+
+    private static readonly Regex AttachTableStatement = new(
+        @"^\s*ATTACH\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?<table>[A-Za-z_][A-Za-z0-9_]*)(?:\s+ON\s+CLUSTER\s+(?<cluster>[A-Za-z_][A-Za-z0-9_]*))?\s*;?\s*$",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+
+    private static readonly Regex DropTableStatement = new(
+        @"^\s*DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?<table>[A-Za-z_][A-Za-z0-9_]*)(?:\s+ON\s+CLUSTER\s+(?<cluster>[A-Za-z_][A-Za-z0-9_]*))?(?:\s+SYNC)?\s*;?\s*$",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+
     private readonly ClusterDdl _cluster = new(cluster);
 
     private static readonly TimeSpan ConsumerWaitTimeout = TimeSpan.FromSeconds(60);
@@ -113,26 +125,90 @@ public sealed class MigrationRunner(ILogger logger, TimeProvider timeProvider, C
         CancellationToken cancellationToken)
     {
         var sql = await File.ReadAllTextAsync(path, cancellationToken);
-        foreach (var statement in SplitStatements(sql))
+        var detachedQueues = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+
+        var completed = false;
+        try
         {
-            var awaitMatch = AwaitConsumersMarker.Match(statement);
-            if (awaitMatch.Success)
+            foreach (var statement in SplitStatements(sql))
             {
-                var markerCluster = awaitMatch.Groups["cluster"].Success ? awaitMatch.Groups["cluster"].Value : null;
-                await WaitForConsumersEmptyAsync(
-                    connection,
-                    awaitMatch.Groups["table"].Value,
-                    markerCluster ?? _cluster.Name,
-                    cancellationToken);
-                continue;
+                var awaitMatch = AwaitConsumersMarker.Match(statement);
+                if (awaitMatch.Success)
+                {
+                    var markerCluster = awaitMatch.Groups["cluster"].Success ? awaitMatch.Groups["cluster"].Value : null;
+                    await WaitForConsumersEmptyAsync(
+                        connection,
+                        awaitMatch.Groups["table"].Value,
+                        markerCluster ?? _cluster.Name,
+                        cancellationToken);
+                    continue;
+                }
+
+                if (string.IsNullOrWhiteSpace(statement) || statement.TrimStart().StartsWith("--", StringComparison.Ordinal))
+                    continue;
+
+                await using var command = connection.CreateCommand();
+                command.CommandText = statement;
+                await command.ExecuteNonQueryAsync(cancellationToken);
+                TrackQueueLifecycle(statement, detachedQueues);
             }
 
-            if (string.IsNullOrWhiteSpace(statement) || statement.TrimStart().StartsWith("--", StringComparison.Ordinal))
-                continue;
+            completed = true;
+        }
+        finally
+        {
+            if (!completed && detachedQueues.Count > 0)
+                await ReattachDetachedQueuesAsync(connection, detachedQueues, CancellationToken.None);
+        }
+    }
 
-            await using var command = connection.CreateCommand();
-            command.CommandText = statement;
-            await command.ExecuteNonQueryAsync(cancellationToken);
+    public static void TrackQueueLifecycle(string statement, IDictionary<string, string?> detachedQueues)
+    {
+        var detach = DetachTableStatement.Match(statement);
+        if (detach.Success)
+        {
+            detachedQueues[detach.Groups["table"].Value] =
+                detach.Groups["cluster"].Success ? detach.Groups["cluster"].Value : null;
+            return;
+        }
+
+        var attach = AttachTableStatement.Match(statement);
+        if (attach.Success)
+        {
+            detachedQueues.Remove(attach.Groups["table"].Value);
+            return;
+        }
+
+        var drop = DropTableStatement.Match(statement);
+        if (drop.Success)
+            detachedQueues.Remove(drop.Groups["table"].Value);
+    }
+
+    private async Task ReattachDetachedQueuesAsync(
+        ClickHouseConnection connection,
+        IReadOnlyDictionary<string, string?> detachedQueues,
+        CancellationToken cancellationToken)
+    {
+        foreach (var (tableName, clusterName) in detachedQueues)
+        {
+            var onCluster = clusterName is null ? string.Empty : $" ON CLUSTER {clusterName}";
+            var attachSql = $"ATTACH TABLE {tableName}{onCluster}";
+            try
+            {
+                logger.LogWarning(
+                    "Migration failed after DETACH of {Table}; re-attaching to resume Kafka consumption",
+                    tableName);
+                await using var command = connection.CreateCommand();
+                command.CommandText = attachSql;
+                await command.ExecuteNonQueryAsync(cancellationToken);
+            }
+            catch (Exception attachException) when (attachException is not OperationCanceledException)
+            {
+                logger.LogError(
+                    attachException,
+                    "Failed to re-attach {Table} after migration failure; Kafka consumption may stay stopped until ATTACH or server restart",
+                    tableName);
+            }
         }
     }
 
