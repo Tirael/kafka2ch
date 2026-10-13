@@ -17,7 +17,7 @@ public static class SchemaMigrationsScriptGenerator
             .AppendLine();
 
         if (ddl.UsesReplicatedDatabase)
-            builder.Append(ddl.UseReplicatedDatabaseSql()).AppendLine().AppendLine();
+            builder.Append(ddl.UseReplicatedDatabaseSql()).AppendLine();
 
         foreach (var migration in migrations.OrderBy(m => m.Version, StringComparer.Ordinal))
         {
