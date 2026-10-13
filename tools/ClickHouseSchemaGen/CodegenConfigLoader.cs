@@ -35,7 +35,6 @@ public static class CodegenConfigLoader
         return Path.GetFullPath(Path.Combine(configDirectory, relativePath));
     }
 
-
     public static string ResolveInitScriptPath(CodegenConfig config, string outputPath) =>
         string.IsNullOrWhiteSpace(config.OutputDirectory)
             ? outputPath
@@ -46,8 +45,8 @@ public static class CodegenConfigLoader
         if (!visited.Add(fullPath))
             throw new InvalidOperationException($"Config '{fullPath}' extends itself (cycle in 'extends').");
 
-        var node = JsonNode.Parse(File.ReadAllText(fullPath), NodeOptions, DocumentOptions) as JsonObject
-            ?? throw new InvalidOperationException($"Config file '{fullPath}' is empty or invalid.");
+        if (JsonNode.Parse(File.ReadAllText(fullPath), NodeOptions, DocumentOptions) is not JsonObject node)
+            throw new InvalidOperationException($"Config file '{fullPath}' is empty or invalid.");
 
         if (!node.TryGetPropertyValue("extends", out var extendsNode) || extendsNode is null)
             return node;

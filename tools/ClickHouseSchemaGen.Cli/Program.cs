@@ -105,7 +105,9 @@ static void LoadMessageAssemblies(string[] args)
     if (assembliesIndex < 0 || assembliesIndex + 1 >= args.Length)
         return;
 
-    foreach (var path in args[assembliesIndex + 1].Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+    foreach (var path in args[assembliesIndex + 1].Split(
+                 ';',
+                 StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
     {
         if (!File.Exists(path))
             throw new FileNotFoundException($"Message assembly not found: {path}");

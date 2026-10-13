@@ -51,14 +51,14 @@ public sealed class ClusterConfig
 
     public string ReplicatedDatabaseReplicaName { get; set; } = DefaultReplicaName;
 
-    [System.Text.Json.Serialization.JsonIgnore]
+    [JsonIgnore]
     public bool Enabled => !string.IsNullOrWhiteSpace(Name);
 
-    [System.Text.Json.Serialization.JsonIgnore]
+    [JsonIgnore]
     public bool UsesOnCluster =>
         Enabled && string.Equals(DdlMode, ClusterDdlModes.OnCluster, StringComparison.OrdinalIgnoreCase);
 
-    [System.Text.Json.Serialization.JsonIgnore]
+    [JsonIgnore]
     public bool UsesReplicatedDatabase =>
         Enabled && string.Equals(DdlMode, ClusterDdlModes.ReplicatedDatabase, StringComparison.OrdinalIgnoreCase);
 }

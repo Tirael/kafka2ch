@@ -2,8 +2,6 @@ namespace ClickHouseSchemaGen.Generation;
 
 public static class SqlStatementSplitter
 {
-
-
     public static IReadOnlyList<string> Split(string sql)
     {
         var statements = new List<string>();
@@ -26,8 +24,6 @@ public static class SqlStatementSplitter
 
             if (!inSingleQuote && current == '-' && next == '-')
             {
-
-
                 if (string.IsNullOrWhiteSpace(builder.ToString()))
                 {
                     var lineEnd = sql.IndexOf('\n', i);

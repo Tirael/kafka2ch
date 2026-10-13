@@ -27,30 +27,35 @@ public static class ProtoCompatibilityValidator
             if (!string.Equals(oldColumn.Type, newColumn.Type, StringComparison.Ordinal))
             {
                 violations.Add(
-                    $"Field '{path}' type changed from '{oldColumn.Type}' to '{newColumn.Type}' on table '{oldColumn.TableName}'.");
+                    $"Field '{path}' type changed from '{oldColumn.Type}' to '{newColumn.Type}' "
+                        + $"on table '{oldColumn.TableName}'.");
             }
         }
 
         foreach (var path in newProtoColumns.Keys.Except(oldProtoColumns.Keys, StringComparer.Ordinal))
         {
-            if (oldProtoColumns.Values.Any(c => ReusesFieldNumber(path, c.FieldNumberPath) && c.FieldNumberPath != path))
+            if (oldProtoColumns.Values.Any(c =>
+                    ReusesFieldNumber(path, c.FieldNumberPath) && c.FieldNumberPath != path))
             {
                 var newColumn = newProtoColumns[path];
                 violations.Add(
-                    $"Field number path '{path}' on table '{newColumn.TableName}' reuses an existing field number with a different path.");
+                    $"Field number path '{path}' on table '{newColumn.TableName}' "
+                        + "reuses an existing field number with a different path.");
             }
         }
 
         foreach (var path in oldProtoColumns.Keys.Except(newProtoColumns.Keys, StringComparer.Ordinal))
         {
             var oldColumn = oldProtoColumns[path];
-            if (IsEnumType(oldColumn.Type) && newProtoColumns.Values.Any(c => SharesEnumBase(path, c.FieldNumberPath)))
+            if (IsEnumType(oldColumn.Type)
+                && newProtoColumns.Values.Any(c => SharesEnumBase(path, c.FieldNumberPath)))
                 continue;
 
             if (newProtoColumns.Values.Any(c => ReusesFieldNumber(path, c.FieldNumberPath)))
             {
                 violations.Add(
-                    $"Removed field '{path}' ({oldColumn.Name}) on table '{oldColumn.TableName}' was replaced by a different field with the same number.");
+                    $"Removed field '{path}' ({oldColumn.Name}) on table '{oldColumn.TableName}' "
+                        + "was replaced by a different field with the same number.");
             }
         }
 
@@ -61,12 +66,14 @@ public static class ProtoCompatibilityValidator
 
             var newColumn = newProtoColumns[path];
             var conflicting = oldProtoColumns.Values.FirstOrDefault(c =>
-                ReusesFieldNumber(path, c.FieldNumberPath) && !string.Equals(c.Type, newColumn.Type, StringComparison.Ordinal));
+                ReusesFieldNumber(path, c.FieldNumberPath)
+                && !string.Equals(c.Type, newColumn.Type, StringComparison.Ordinal));
 
             if (conflicting is not null)
             {
                 violations.Add(
-                    $"Field number '{path}' reuses number from '{conflicting.FieldNumberPath}' with incompatible type '{conflicting.Type}' -> '{newColumn.Type}'.");
+                    $"Field number '{path}' reuses number from '{conflicting.FieldNumberPath}' "
+                        + $"with incompatible type '{conflicting.Type}' -> '{newColumn.Type}'.");
             }
         }
 
@@ -87,7 +94,8 @@ public static class ProtoCompatibilityValidator
             if (oldKind is not null && newKind is not null && oldKind != newKind)
             {
                 violations.Add(
-                    $"Field '{path}' scalar kind changed from '{oldKind}' to '{newKind}' on table '{newColumns[path].TableName}'.");
+                    $"Field '{path}' scalar kind changed from '{oldKind}' to '{newKind}' "
+                        + $"on table '{newColumns[path].TableName}'.");
             }
         }
     }
@@ -98,19 +106,27 @@ public static class ProtoCompatibilityValidator
 
         foreach (var kafkaTable in plan.KafkaTables)
         {
-            foreach (var column in kafkaTable.Columns.Where(c => !KafkaMetaColumnFactory.IsKafkaMetaPath(c.FieldNumberPath)))
+            foreach (var column in kafkaTable.Columns.Where(c =>
+                         !KafkaMetaColumnFactory.IsKafkaMetaPath(c.FieldNumberPath)))
             {
                 var path = ColumnKey(column);
-                columns[path] = new ProtoColumnRef(kafkaTable.Config.TableName, column.Name, path, column.Type);
+                columns[path] = new ProtoColumnRef(
+                    kafkaTable.Config.TableName,
+                    column.Name,
+                    path,
+                    column.Type);
             }
         }
 
         foreach (var mergeTree in plan.MergeTreeTables)
         {
-            foreach (var column in mergeTree.Config.Columns.Where(c => !KafkaMetaColumnFactory.IsKafkaMetaPath(c.FieldNumberPath)))
+            foreach (var column in mergeTree.Config.Columns.Where(c =>
+                         !KafkaMetaColumnFactory.IsKafkaMetaPath(c.FieldNumberPath)))
             {
                 var path = ColumnKey(column);
-                columns.TryAdd(path, new ProtoColumnRef(mergeTree.Config.TableName, column.Name, path, column.Type));
+                columns.TryAdd(
+                    path,
+                    new ProtoColumnRef(mergeTree.Config.TableName, column.Name, path, column.Type));
             }
         }
 
@@ -139,7 +155,9 @@ public static class ProtoCompatibilityValidator
     private static bool SharesEnumBase(string leftPath, string rightPath) =>
         string.Equals(RootFieldNumber(leftPath), RootFieldNumber(rightPath), StringComparison.Ordinal);
 
-    private static bool IsEnumType(string type) => type.StartsWith("Enum8(", StringComparison.Ordinal) || type.StartsWith("Enum16(", StringComparison.Ordinal);
+    private static bool IsEnumType(string type) =>
+        type.StartsWith("Enum8(", StringComparison.Ordinal)
+        || type.StartsWith("Enum16(", StringComparison.Ordinal);
 
     private static string? ScalarKind(string type)
     {

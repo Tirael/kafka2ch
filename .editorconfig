@@ -1,0 +1,14 @@
+root = true
+
+[*.{cs,csx,vb,vbx}]
+indent_style = space
+indent_size = 4
+
+# Prefer simplified names (remove redundant qualifiers).
+dotnet_diagnostic.IDE0001.severity = warning
+
+# Cache and reuse JsonSerializerOptions instances.
+dotnet_diagnostic.CA1869.severity = warning
+
+# Soft wrap guidance; no hard diagnostic for line length.
+max_line_length = 120

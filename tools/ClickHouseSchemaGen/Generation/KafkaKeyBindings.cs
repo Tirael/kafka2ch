@@ -1,6 +1,5 @@
 namespace ClickHouseSchemaGen.Generation;
 
-
 public static partial class KafkaKeyBindings
 {
     [GeneratedRegex(@"`(?<name>_key\.[^`]+)`")]

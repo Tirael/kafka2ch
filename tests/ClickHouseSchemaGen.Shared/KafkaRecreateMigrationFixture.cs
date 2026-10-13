@@ -1,6 +1,5 @@
 namespace ClickHouseSchemaGen.Shared;
 
-
 public static class KafkaRecreateMigrationFixture
 {
     public const string Version = "20990102000000";

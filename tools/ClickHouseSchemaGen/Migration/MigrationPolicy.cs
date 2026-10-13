@@ -46,7 +46,7 @@ public static class MigrationPolicy
                 case OrderByOrTtlChanged order:
                     manualTables.Add(order.TableName);
                     break;
-                case ColumnTypeChanged typeChanged when typeChanged.Kind is TypeChangeKind.Manual or TypeChangeKind.Destructive:
+                case ColumnTypeChanged { Kind: TypeChangeKind.Manual or TypeChangeKind.Destructive } typeChanged:
                     manualTables.Add(typeChanged.TableName);
                     break;
             }

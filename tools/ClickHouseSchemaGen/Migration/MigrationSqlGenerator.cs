@@ -64,7 +64,8 @@ public static partial class MigrationSqlGenerator
                         builder,
                         cluster,
                         renamed.TableName,
-                        $"RENAME COLUMN IF EXISTS {SqlColumnFormatter.FormatColumnName(renamed.OldName)} TO {SqlColumnFormatter.FormatColumnName(renamed.NewName)}");
+                        $"RENAME COLUMN IF EXISTS {SqlColumnFormatter.FormatColumnName(renamed.OldName)} "
+                            + $"TO {SqlColumnFormatter.FormatColumnName(renamed.NewName)}");
                     break;
                 case ColumnTypeChanged { Kind: TypeChangeKind.Safe or TypeChangeKind.Rewrite } typeChanged:
                     AppendAlter(
@@ -79,7 +80,6 @@ public static partial class MigrationSqlGenerator
         if (plan.AutomaticChanges.Any(c => c is ColumnAdded or ColumnRenamed or ColumnTypeChanged))
             builder.AppendLine();
     }
-
 
     private static void AppendAlter(StringBuilder builder, ClusterDdl cluster, string tableName, string clause)
     {
@@ -138,7 +138,11 @@ public static partial class MigrationSqlGenerator
 
             var kafkaPlan = newPlan.KafkaTables.First(t =>
                 string.Equals(t.Config.TableName, queue, StringComparison.OrdinalIgnoreCase));
-            builder.Append(KafkaTableGenerator.Generate(kafkaPlan.Config, kafkaPlan.Columns, ifNotExists: false, cluster));
+            builder.Append(KafkaTableGenerator.Generate(
+                kafkaPlan.Config,
+                kafkaPlan.Columns,
+                ifNotExists: false,
+                cluster));
         }
 
         foreach (var queue in metaOnlyQueues.OrderBy(q => q, StringComparer.Ordinal))
@@ -175,7 +179,8 @@ public static partial class MigrationSqlGenerator
                     foreach (var target in AlterTargets(cluster, removed.TableName))
                     {
                         builder.AppendLine(
-                            $"-- ALTER TABLE {target}{cluster.OnCluster} DROP COLUMN IF EXISTS {SqlColumnFormatter.FormatColumnName(removed.ColumnName)};");
+                            $"-- ALTER TABLE {target}{cluster.OnCluster} DROP COLUMN IF EXISTS "
+                                + $"{SqlColumnFormatter.FormatColumnName(removed.ColumnName)};");
                     }
 
                     break;
@@ -183,25 +188,32 @@ public static partial class MigrationSqlGenerator
                     foreach (var target in AlterTargets(cluster, typeChanged.TableName))
                     {
                         builder.AppendLine(
-                            $"-- ALTER TABLE {target}{cluster.OnCluster} MODIFY COLUMN {SqlColumnFormatter.FormatColumnName(typeChanged.ColumnName)} {typeChanged.NewType};");
+                            $"-- ALTER TABLE {target}{cluster.OnCluster} MODIFY COLUMN "
+                                + $"{SqlColumnFormatter.FormatColumnName(typeChanged.ColumnName)} {typeChanged.NewType};");
                     }
 
                     break;
                 case OrderByOrTtlChanged order:
                     builder.AppendLine(
-                        $"-- Manual ORDER BY/TTL change for {order.TableName}: '{order.OldOrderBy}' -> '{order.NewOrderBy}', TTL '{order.OldTtl}' -> '{order.NewTtl}'.");
+                        $"-- Manual ORDER BY/TTL change for {order.TableName}: "
+                            + $"'{order.OldOrderBy}' -> '{order.NewOrderBy}', "
+                            + $"TTL '{order.OldTtl}' -> '{order.NewTtl}'.");
                     break;
                 case OriginChanged origin:
                     builder.AppendLine(
-                        $"-- Manual origin change for {origin.TableName}: {origin.OldOrigin} -> {origin.NewOrigin}.");
+                        $"-- Manual origin change for {origin.TableName}: "
+                            + $"{origin.OldOrigin} -> {origin.NewOrigin}.");
                     break;
                 case TrailingSqlChanged trailing:
                     builder.AppendLine(
-                        $"-- Manual trailingSql update required (hash {trailing.OldHash ?? "<empty>"} -> {trailing.NewHash ?? "<empty>"}).");
+                        $"-- Manual trailingSql update required "
+                            + $"(hash {trailing.OldHash ?? "<empty>"} -> {trailing.NewHash ?? "<empty>"}).");
                     break;
                 case TableRemoved { Engine: "MergeTree" } removed when cluster.Enabled:
                     builder.AppendLine($"-- DROP TABLE IF EXISTS {removed.TableName}{cluster.OnCluster};");
-                    builder.AppendLine($"-- DROP TABLE IF EXISTS {cluster.StorageTable(removed.TableName)}{cluster.OnCluster} SYNC;");
+                    builder.AppendLine(
+                        $"-- DROP TABLE IF EXISTS {cluster.StorageTable(removed.TableName)}"
+                            + $"{cluster.OnCluster} SYNC;");
                     break;
                 case TableRemoved removed:
                     builder.AppendLine($"-- DROP TABLE IF EXISTS {removed.TableName}{cluster.OnCluster};");
@@ -222,9 +234,10 @@ public static partial class MigrationSqlGenerator
             ? string.Empty
             : $" AFTER {SqlColumnFormatter.FormatColumnName(added.AfterColumn)}";
 
+        var definition = SqlColumnFormatter.FormatBareDefinition(added.ColumnName, added.ColumnType);
         return defaultClause is null
-            ? $"ADD COLUMN IF NOT EXISTS {SqlColumnFormatter.FormatBareDefinition(added.ColumnName, added.ColumnType)}{afterClause}"
-            : $"ADD COLUMN IF NOT EXISTS {SqlColumnFormatter.FormatBareDefinition(added.ColumnName, added.ColumnType)} DEFAULT {defaultClause}{afterClause}";
+            ? $"ADD COLUMN IF NOT EXISTS {definition}{afterClause}"
+            : $"ADD COLUMN IF NOT EXISTS {definition} DEFAULT {defaultClause}{afterClause}";
     }
 
     internal static string? BuildDefaultClause(string columnType)
@@ -247,13 +260,14 @@ public static partial class MigrationSqlGenerator
         if (columnType.StartsWith("Map(", StringComparison.Ordinal))
             return "map()";
 
-        if (columnType.StartsWith("Enum8(", StringComparison.Ordinal) || columnType.StartsWith("Enum16(", StringComparison.Ordinal))
+        if (columnType.StartsWith("Enum8(", StringComparison.Ordinal)
+            || columnType.StartsWith("Enum16(", StringComparison.Ordinal))
             return FirstEnumValue(columnType);
 
         if (columnType is "DateTime" or "DateTime64(3)" or "DateTime64(6)" or "DateTime64(9)")
             return "toDateTime(0)";
 
-        if (columnType == "Bool")
+        if (columnType is "Bool")
             return "0";
 
         return null;

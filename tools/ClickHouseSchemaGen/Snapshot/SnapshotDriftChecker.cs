@@ -29,7 +29,11 @@ public static class SnapshotDriftChecker
     private static void CompareTrailingSql(string? expectedHash, string? actualHash, List<string> differences)
     {
         if (!string.Equals(expectedHash, actualHash, StringComparison.OrdinalIgnoreCase))
-            differences.Add($"trailingSql hash changed (expected {expectedHash ?? "<empty>"}, actual {actualHash ?? "<empty>"}).");
+        {
+            differences.Add(
+                $"trailingSql hash changed (expected {expectedHash ?? "<empty>"}, "
+                    + $"actual {actualHash ?? "<empty>"}).");
+        }
     }
 
     private static void CompareKafkaTables(
@@ -77,12 +81,17 @@ public static class SnapshotDriftChecker
                 continue;
 
             if (expectedTable.Origin != actualTable.Origin)
-                differences.Add($"MergeTree table '{name}' origin changed ({expectedTable.Origin} -> {actualTable.Origin}).");
+            {
+                differences.Add(
+                    $"MergeTree table '{name}' origin changed "
+                        + $"({expectedTable.Origin} -> {actualTable.Origin}).");
+            }
 
             if (!string.Equals(expectedTable.SourceTable, actualTable.SourceTable, StringComparison.OrdinalIgnoreCase))
             {
                 differences.Add(
-                    $"MergeTree table '{name}' sourceTable changed ('{expectedTable.SourceTable}' -> '{actualTable.SourceTable}').");
+                    $"MergeTree table '{name}' sourceTable changed "
+                        + $"('{expectedTable.SourceTable}' -> '{actualTable.SourceTable}').");
             }
 
             if (!string.Equals(expectedTable.OrderBy, actualTable.OrderBy, StringComparison.Ordinal))
@@ -210,7 +219,8 @@ public static class SnapshotDriftChecker
             if (!string.Equals(expectedColumn.Type, actualColumn.Type, StringComparison.Ordinal))
             {
                 differences.Add(
-                    $"{scope}: column '{expectedColumn.Name}' type changed ({expectedColumn.Type} -> {actualColumn.Type}).");
+                    $"{scope}: column '{expectedColumn.Name}' type changed "
+                        + $"({expectedColumn.Type} -> {actualColumn.Type}).");
             }
         }
     }
@@ -225,10 +235,16 @@ public static class SnapshotDriftChecker
         var actualByTarget = actual.ToDictionary(m => m.Target, StringComparer.Ordinal);
 
         foreach (var target in expectedByTarget.Keys.Except(actualByTarget.Keys, StringComparer.Ordinal))
-            differences.Add($"Materialized view '{viewName}': mapping target '{target}' is missing from snapshot.");
+        {
+            differences.Add(
+                $"Materialized view '{viewName}': mapping target '{target}' is missing from snapshot.");
+        }
 
         foreach (var target in actualByTarget.Keys.Except(expectedByTarget.Keys, StringComparer.Ordinal))
-            differences.Add($"Materialized view '{viewName}': mapping target '{target}' exists in snapshot but not in plan.");
+        {
+            differences.Add(
+                $"Materialized view '{viewName}': mapping target '{target}' exists in snapshot but not in plan.");
+        }
 
         foreach (var (target, expectedMapping) in expectedByTarget)
         {
@@ -238,7 +254,8 @@ public static class SnapshotDriftChecker
             if (!string.Equals(expectedMapping.Source, actualMapping.Source, StringComparison.Ordinal))
             {
                 differences.Add(
-                    $"Materialized view '{viewName}': mapping '{target}' source changed ({expectedMapping.Source} -> {actualMapping.Source}).");
+                    $"Materialized view '{viewName}': mapping '{target}' source changed "
+                        + $"({expectedMapping.Source} -> {actualMapping.Source}).");
             }
 
             var expectedExpression = expectedMapping.Expression ?? expectedMapping.Source;

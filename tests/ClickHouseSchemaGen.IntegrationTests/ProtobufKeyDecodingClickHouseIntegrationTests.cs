@@ -23,7 +23,6 @@ public sealed class ProtobufKeyDecodingClickHouseIntegrationTests : IAsyncLifeti
     [Fact]
     public async Task GivenConfluentFramedCompositeKey_WhenDecodedWithGeneratedExpressions_ThenMatchesProtobufValues()
     {
-
         var key = new CompositeKey
         {
             Tenant = "tenant-ü",
@@ -48,9 +47,7 @@ public sealed class ProtobufKeyDecodingClickHouseIntegrationTests : IAsyncLifeti
             Label = "lbl"
         };
 
-
         var decoded = await DecodeAsync(key);
-
 
         decoded.Should().BeEquivalentTo(new Dictionary<string, string>
         {
@@ -82,9 +79,7 @@ public sealed class ProtobufKeyDecodingClickHouseIntegrationTests : IAsyncLifeti
     [Fact]
     public async Task GivenEmptyCompositeKey_WhenDecoded_ThenReturnsProtoDefaultsAndNullsForPresenceFields()
     {
-
         var decoded = await DecodeAsync(new CompositeKey());
-
 
         decoded["_key.tenant"].Should().BeEmpty();
         decoded["_key.int64_value"].Should().Be("0");
@@ -98,7 +93,6 @@ public sealed class ProtobufKeyDecodingClickHouseIntegrationTests : IAsyncLifeti
     [Fact]
     public async Task GivenRepositoryCodegenConfig_WhenGeneratedScriptsApplied_ThenKeyMappedViewsAreCreated()
     {
-
         var outputDirectory = Path.Combine(Path.GetTempPath(), $"clickhouse-schema-gen-{Guid.NewGuid():N}");
         var configPath = Path.Combine(outputDirectory, "clickhouse.codegen.json");
         Directory.CreateDirectory(outputDirectory);
@@ -111,7 +105,6 @@ public sealed class ProtobufKeyDecodingClickHouseIntegrationTests : IAsyncLifeti
             var bootstrap = await _clickHouse.ExecScriptAsync(SchemaMigrationsTable.CreateTableSql);
             bootstrap.ExitCode.Should().Be(0, bootstrap.Stderr);
 
-
             foreach (var script in new[] { "01_orders_queue.sql", "02_pipeline.sql" })
             {
                 var execResult = await _clickHouse.ExecScriptAsync(File.ReadAllText(Path.Combine(outputDirectory, script)));
@@ -119,7 +112,6 @@ public sealed class ProtobufKeyDecodingClickHouseIntegrationTests : IAsyncLifeti
             }
 
             var createViewSql = await QueryScalarAsync("SELECT create_table_query FROM system.tables WHERE name = 'orders_mv'");
-
 
             createViewSql.Should().Contain("[substring(_key, 7)]");
             createViewSql.Should().Contain("AS `kafka_key.order_id`");

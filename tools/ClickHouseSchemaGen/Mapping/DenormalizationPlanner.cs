@@ -146,9 +146,12 @@ public sealed class DenormalizationPlanner
     internal static string BuildTupleType(IReadOnlyList<ClickHouseColumn> innerColumns) =>
         BuildCompositeType("Tuple", innerColumns);
 
-    private static string BuildCompositeType(string keyword, IReadOnlyList<ClickHouseColumn> innerColumns) =>
-        $"{keyword}({string.Join(", ", innerColumns.Select(column => $"{SanitizeCompositeColumnName(column.Name)} {EmbedCompositeType(column.Type)}"))})";
-
+    private static string BuildCompositeType(string keyword, IReadOnlyList<ClickHouseColumn> innerColumns)
+    {
+        var parts = innerColumns.Select(column =>
+            $"{SanitizeCompositeColumnName(column.Name)} {EmbedCompositeType(column.Type)}");
+        return $"{keyword}({string.Join(", ", parts)})";
+    }
 
     internal static string PromoteEmbeddedNested(string type) => EmbedCompositeType(type);
 

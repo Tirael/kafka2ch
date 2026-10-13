@@ -42,7 +42,6 @@ public sealed class MessageFieldStrategy(DenormalizationPlanner planner) : IFiel
 
         var flattened = FlattenNestedColumns(request).ToArray();
 
-
         if (flattened.Count(column => IsRepeatedColumn(column.Type)) > 1)
         {
             return CreateStructTuple(request, maxDepth);

@@ -1,5 +1,4 @@
 using System.Security.Cryptography;
-using System.Text.Json.Serialization;
 
 namespace ClickHouseSchemaGen.Snapshot;
 

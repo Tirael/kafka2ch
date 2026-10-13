@@ -1,6 +1,5 @@
 namespace ClickHouseSchemaGen.Shared;
 
-
 public static class PersistPartitionMigrationFixture
 {
     public const string Version = "20990101000000";

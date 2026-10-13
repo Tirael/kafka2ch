@@ -12,12 +12,9 @@ public sealed record ClickHouseColumn
 
     public string SourceFieldPath { get; init; } = "";
 
-
     public string FieldNumberPath { get; init; } = "";
 
-
     public bool FlattensGoogleWrapper { get; init; }
-
 
     public string? SourceExpression { get; init; }
 

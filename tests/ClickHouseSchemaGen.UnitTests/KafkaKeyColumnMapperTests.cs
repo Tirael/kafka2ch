@@ -7,12 +7,9 @@ public sealed class KafkaKeyColumnMapperTests
     [Fact]
     public void GivenDefaultStringKey_WhenMapKeyColumns_ThenReturnsNoColumns()
     {
-
         var table = OrdersQueueTestConfig.Create();
 
-
         var columns = _sut.MapKeyColumns(table, OrdersQueueTestConfig.Defaults);
-
 
         table.Key.Format.Should().Be(KafkaKeyFormats.String);
         columns.Should().BeEmpty();
@@ -21,7 +18,6 @@ public sealed class KafkaKeyColumnMapperTests
     [Fact]
     public void GivenOrderKeyProtobuf_WhenMapKeyColumns_ThenDecodesFieldAfterConfluentEnvelope()
     {
-
         var table = OrdersQueueTestConfig.Create();
         table.Key = new KafkaKeyConfig
         {
@@ -29,9 +25,7 @@ public sealed class KafkaKeyColumnMapperTests
             MessageType = "Sandbox.Contracts.OrderKey, Sandbox.Contracts"
         };
 
-
         var columns = _sut.MapKeyColumns(table, OrdersQueueTestConfig.Defaults);
-
 
         columns.Should().ContainSingle();
         columns[0].Name.Should().Be("_key.order_id");
@@ -42,12 +36,9 @@ public sealed class KafkaKeyColumnMapperTests
     [Fact]
     public void GivenCompositeKey_WhenMapKeyColumns_ThenUsesValueMappingRulesForTypes()
     {
-
         var table = OrdersQueueTestConfig.CreateCompositeKeyTable();
 
-
         var columns = _sut.MapKeyColumns(table, OrdersQueueTestConfig.Defaults);
-
 
         MappingTestSupport.NameAndTypes(columns).Should().Equal(
             ("_key.tenant", "LowCardinality(String)"),
@@ -77,14 +68,11 @@ public sealed class KafkaKeyColumnMapperTests
     [Fact]
     public void GivenNestedAndOptionalKeyFields_WhenMapKeyColumns_ThenBuildsPresenceAwareExpressions()
     {
-
         var table = OrdersQueueTestConfig.CreateCompositeKeyTable();
         table.Key.SkipBytes = 0;
 
-
         var columns = _sut.MapKeyColumns(table, OrdersQueueTestConfig.Defaults)
             .ToDictionary(column => column.Name);
-
 
         columns["_key.scope.level"].SourceExpression.Should().Be(
             "CAST(reinterpretAsInt32(toUInt32(protobufWireBits(protobufWireBytes(substring(_key, 1), 18), 2))) AS Int32)");
@@ -98,7 +86,6 @@ public sealed class KafkaKeyColumnMapperTests
     [Fact]
     public void GivenRepeatedKeyField_WhenMapKeyColumns_ThenThrowsNotSupported()
     {
-
         var table = OrdersQueueTestConfig.Create();
         table.Key = new KafkaKeyConfig
         {
@@ -106,9 +93,7 @@ public sealed class KafkaKeyColumnMapperTests
             MessageType = "Sandbox.Contracts.TestFixtures.RepeatedKey, Sandbox.Contracts"
         };
 
-
         var act = () => _sut.MapKeyColumns(table, OrdersQueueTestConfig.Defaults);
-
 
         act.Should().Throw<NotSupportedException>().WithMessage("*orders_queue*_key.parts*");
     }
