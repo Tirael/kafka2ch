@@ -7,15 +7,12 @@ public sealed class ProtoToClickHouseMapperTests
     [Fact]
     public void GivenOrderEventDescriptor_WhenMapped_ThenColumnsMatchExpectedSchema()
     {
-
         var config = OrdersQueueTestConfig.Create();
-
 
         var columns = _sut.MapMessage(
             OrderEvent.Descriptor,
             OrdersQueueTestConfig.Defaults,
             config.FieldOverrides);
-
 
         columns.Select(column => (column.Name, column.Type)).Should().BeEquivalentTo([
             ("order_id", "String"),
@@ -90,15 +87,12 @@ public sealed class ProtoToClickHouseMapperTests
     [Fact]
     public void GivenRepeatedStringField_WhenMappedWithoutOverride_ThenUsesArrayOfString()
     {
-
         var tagsField = OrderEvent.Descriptor.Fields.InDeclarationOrder().Single(field => field.Name == "tags");
-
 
         var columns = _sut.MapMessage(
             OrderEvent.Descriptor,
             OrdersQueueTestConfig.Defaults,
             overrides: MappingTestSupport.EmptyOverrides);
-
 
         tagsField.IsRepeated.Should().BeTrue();
         columns.Single(column => column.Name == "tags").Type.Should().Be("Array(String)");
@@ -107,12 +101,9 @@ public sealed class ProtoToClickHouseMapperTests
     [Fact]
     public void GivenAssemblyQualifiedMessageType_WhenResolved_ThenDescriptorMatchesOrderEvent()
     {
-
         const string messageType = "Sandbox.Contracts.OrderEvent, Sandbox.Contracts";
 
-
         var descriptor = ProtoToClickHouseMapper.ResolveDescriptor(messageType);
-
 
         descriptor.Name.Should().Be("OrderEvent");
         descriptor.FullName.Should().Be("sandbox.orders.v1.OrderEvent");

@@ -117,9 +117,7 @@ public sealed class ClusterModeGenerationTests
     [InlineData("SummingMergeTree((a, b))", "ReplicatedSummingMergeTree('/p', 'r', (a, b))")]
     [InlineData("ReplicatedMergeTree('/x', 'y')", "ReplicatedMergeTree('/x', 'y')")]
     public void GivenMergeTreeFamilyEngine_WhenReplicated_ThenPrependsKeeperArguments(string engine, string expected)
-    {
-        ClusterDdl.Replicated(engine, "/p", "r").Should().Be(expected);
-    }
+        => ClusterDdl.Replicated(engine, "/p", "r").Should().Be(expected);
 
     [Fact]
     public void GivenNonMergeTreeEngine_WhenReplicated_ThenThrows()

@@ -44,7 +44,6 @@ public static class KafkaMetaColumnFactory
         return resolved;
     }
 
-
     public static IReadOnlyList<PipelineColumnConfig> CreateMergeTreeColumns(
         PersistKafkaMetaConfig meta,
         IReadOnlyList<ClickHouseColumn>? keyColumns = null)
@@ -121,7 +120,6 @@ public static class KafkaMetaColumnFactory
         return columns;
     }
 
-
     public static IReadOnlyList<PipelineColumnMapping> CreateMappings(
         PersistKafkaMetaConfig meta,
         IReadOnlyList<ClickHouseColumn>? keyColumns = null)
@@ -191,7 +189,6 @@ public static class KafkaMetaColumnFactory
 
         return mappings;
     }
-
 
     public static string ToKeyTargetName(string keyColumnName) =>
         $"{KeyColumnName}.{keyColumnName[KafkaKeyColumnMapper.ColumnPrefix.Length..]}";

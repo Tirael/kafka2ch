@@ -1,6 +1,5 @@
 namespace ClickHouseSchemaGen.Migrator;
 
-
 public sealed class MigrationRunner(ILogger logger, TimeProvider timeProvider, ClusterConfig? cluster = null)
 {
     private static readonly Regex AwaitConsumersMarker = new(
@@ -25,7 +24,10 @@ public sealed class MigrationRunner(ILogger logger, TimeProvider timeProvider, C
 
     private static readonly TimeSpan ReattachTimeout = TimeSpan.FromSeconds(30);
 
-    public async Task ApplyAsync(string connectionString, string migrationsDirectory, CancellationToken cancellationToken)
+    public async Task ApplyAsync(
+        string connectionString,
+        string migrationsDirectory,
+        CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(migrationsDirectory);
         Directory.CreateDirectory(migrationsDirectory);
@@ -113,7 +115,8 @@ public sealed class MigrationRunner(ILogger logger, TimeProvider timeProvider, C
     {
         await using var command = connection.CreateCommand();
         command.CommandText =
-            $"SELECT version, checksum FROM {_cluster.HistoryTableName} WHERE kind = '{SchemaMigrationsTable.MigrationKind}'";
+            $"SELECT version, checksum FROM {_cluster.HistoryTableName} "
+                + $"WHERE kind = '{SchemaMigrationsTable.MigrationKind}'";
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         var applied = new Dictionary<string, string>(StringComparer.Ordinal);
         while (await reader.ReadAsync(cancellationToken))
@@ -137,7 +140,9 @@ public sealed class MigrationRunner(ILogger logger, TimeProvider timeProvider, C
                 var awaitMatch = AwaitConsumersMarker.Match(statement);
                 if (awaitMatch.Success)
                 {
-                    var markerCluster = awaitMatch.Groups["cluster"].Success ? awaitMatch.Groups["cluster"].Value : null;
+                    var markerCluster = awaitMatch.Groups["cluster"] is { Success: true, Value: var value }
+                        ? value
+                        : null;
                     await WaitForConsumersEmptyAsync(
                         connection,
                         awaitMatch.Groups["table"].Value,
@@ -146,7 +151,8 @@ public sealed class MigrationRunner(ILogger logger, TimeProvider timeProvider, C
                     continue;
                 }
 
-                if (string.IsNullOrWhiteSpace(statement) || statement.TrimStart().StartsWith("--", StringComparison.Ordinal))
+                if (string.IsNullOrWhiteSpace(statement)
+                    || statement.TrimStart().StartsWith("--", StringComparison.Ordinal))
                     continue;
 
                 await using var command = connection.CreateCommand();
@@ -170,7 +176,7 @@ public sealed class MigrationRunner(ILogger logger, TimeProvider timeProvider, C
         if (detach.Success)
         {
             detachedQueues[detach.Groups["table"].Value] =
-                detach.Groups["cluster"].Success ? detach.Groups["cluster"].Value : null;
+                detach.Groups["cluster"] is { Success: true, Value: var value } ? value : null;
             return;
         }
 
@@ -208,12 +214,12 @@ public sealed class MigrationRunner(ILogger logger, TimeProvider timeProvider, C
             {
                 logger.LogError(
                     attachException,
-                    "Failed to re-attach {Table} after migration failure; Kafka consumption may stay stopped until ATTACH or server restart",
+                    "Failed to re-attach {Table} after migration failure; "
+                        + "Kafka consumption may stay stopped until ATTACH or server restart",
                     tableName);
             }
         }
     }
-
 
     private async Task WaitForConsumersEmptyAsync(
         ClickHouseConnection connection,

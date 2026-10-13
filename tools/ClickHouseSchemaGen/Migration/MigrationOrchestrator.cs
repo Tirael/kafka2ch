@@ -56,7 +56,10 @@ public sealed class MigrationOrchestrator(ClickHouseSchemaGenerator generator, T
 
         var (config, paths) = LoadContext(configPath);
         if (!File.Exists(paths.SnapshotPath))
-            throw new InvalidOperationException($"Snapshot not found at '{paths.SnapshotPath}'. Run migrate init first.");
+        {
+            throw new InvalidOperationException(
+                $"Snapshot not found at '{paths.SnapshotPath}'. Run migrate init first.");
+        }
 
         var oldSnapshot = SchemaSnapshotSerializer.Load(paths.SnapshotPath);
         var oldPlan = SchemaSnapshotMapper.ToPlan(oldSnapshot, config);
@@ -99,7 +102,8 @@ public sealed class MigrationOrchestrator(ClickHouseSchemaGenerator generator, T
             return new MigrationRunResult(
                 ExitCode: 2,
                 MigrationPath: migrationPath,
-                Message: "Migration SQL was written, but manual/destructive changes require --allow-manual before updating the snapshot.");
+                Message: "Migration SQL was written, but manual/destructive changes "
+                    + "require --allow-manual before updating the snapshot.");
         }
 
         SchemaSnapshotSerializer.Save(paths.SnapshotPath, newSnapshot);

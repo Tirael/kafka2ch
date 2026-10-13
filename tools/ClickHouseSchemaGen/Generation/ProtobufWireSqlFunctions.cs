@@ -1,6 +1,5 @@
 namespace ClickHouseSchemaGen.Generation;
 
-
 public static class ProtobufWireSqlFunctions
 {
     public const string Has = "protobufWireHas";
@@ -16,7 +15,6 @@ public static class ProtobufWireSqlFunctions
     public static bool IsUsedBy(MaterializedViewConfig view) =>
         view.Columns.Any(mapping =>
             mapping.Expression?.Contains(FunctionPrefix, StringComparison.Ordinal) == true);
-
 
     public const string Definitions = """
         CREATE OR REPLACE FUNCTION protobufWireVarint AS (m, p) ->

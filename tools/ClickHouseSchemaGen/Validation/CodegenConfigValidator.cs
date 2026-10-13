@@ -19,10 +19,8 @@ public sealed class CodegenConfigValidator : AbstractValidator<CodegenConfig>
             });
 
         When(config => config.Pipeline is not null, () =>
-        {
             RuleFor(config => config.Pipeline!)
-                .SetValidator(new PipelineConfigValidator());
-        });
+                .SetValidator(new PipelineConfigValidator()));
 
         RuleFor(config => config.KafkaTables)
             .Must(tables => tables.Select(table => table.TableName).Distinct(StringComparer.OrdinalIgnoreCase).Count()

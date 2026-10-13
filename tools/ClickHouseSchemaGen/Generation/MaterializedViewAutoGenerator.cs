@@ -1,6 +1,5 @@
 namespace ClickHouseSchemaGen.Generation;
 
-
 public static class MaterializedViewAutoGenerator
 {
     public static string DefaultName(string tableName) => $"{tableName}_mv";
@@ -57,7 +56,6 @@ public static class MaterializedViewAutoGenerator
             var meta = metaForSourceTable?.Invoke(original.SourceTable!) ?? new PersistKafkaMetaConfig();
             if (meta.AnyEnabled)
             {
-
                 columns.RemoveAll(mapping => KafkaMetaColumnFactory.IsKafkaMetaPath(
                     expandedTables[i].Columns
                         .FirstOrDefault(column => column.Name == mapping.Target)

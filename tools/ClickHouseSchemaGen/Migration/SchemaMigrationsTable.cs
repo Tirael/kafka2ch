@@ -45,7 +45,8 @@ public static class SchemaMigrationsTable
 
     public static IReadOnlyList<string> UpgradeStatementsFor(ClusterDdl cluster) =>
     [
-        $"ALTER TABLE {cluster.HistoryTableName}{cluster.HistoryOnCluster} ADD COLUMN IF NOT EXISTS kind LowCardinality(String) DEFAULT 'migration'"
+        $"ALTER TABLE {cluster.HistoryTableName}{cluster.HistoryOnCluster} "
+            + "ADD COLUMN IF NOT EXISTS kind LowCardinality(String) DEFAULT 'migration'"
     ];
 
     public static string InsertSql(

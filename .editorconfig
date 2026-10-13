@@ -1,0 +1,33 @@
+root = true
+
+[*.{cs,csx,vb,vbx}]
+indent_style = space
+indent_size = 4
+
+# Prefer simplified names (remove redundant qualifiers).
+dotnet_diagnostic.IDE0001.severity = warning
+
+# Cache and reuse JsonSerializerOptions instances.
+dotnet_diagnostic.CA1869.severity = warning
+
+# Soft wrap guidance; no hard diagnostic for line length.
+max_line_length = 120
+
+# Prefer expression-bodied members when the body is a single expression.
+csharp_style_expression_bodied_methods = true:warning
+csharp_style_expression_bodied_constructors = true:warning
+csharp_style_expression_bodied_operators = true:warning
+csharp_style_expression_bodied_properties = true:warning
+csharp_style_expression_bodied_indexers = true:warning
+csharp_style_expression_bodied_accessors = true:warning
+csharp_style_expression_bodied_lambdas = true:warning
+csharp_style_expression_bodied_local_functions = true:warning
+dotnet_diagnostic.IDE0021.severity = warning
+dotnet_diagnostic.IDE0022.severity = warning
+dotnet_diagnostic.IDE0023.severity = warning
+dotnet_diagnostic.IDE0024.severity = warning
+dotnet_diagnostic.IDE0025.severity = warning
+dotnet_diagnostic.IDE0026.severity = warning
+dotnet_diagnostic.IDE0027.severity = warning
+dotnet_diagnostic.IDE0053.severity = warning
+dotnet_diagnostic.IDE0061.severity = warning

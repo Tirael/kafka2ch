@@ -1,6 +1,5 @@
 namespace ClickHouseSchemaGen.Generation;
 
-
 public static class PipelineColumnExpander
 {
     public static MergeTreeTableConfig ExpandMergeTreeTable(

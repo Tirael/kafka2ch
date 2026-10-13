@@ -2,17 +2,16 @@ namespace ClickHouseSchemaGen.UnitTests;
 
 public sealed class ClickHouseSchemaGeneratorTests
 {
+    private static readonly JsonSerializerOptions IndentedJson = new() { WriteIndented = true };
+
     private readonly ClickHouseSchemaGenerator _sut = SchemaGeneratorFactory.Create();
 
     [Fact]
     public void GivenOrdersQueueConfig_WhenGenerateKafkaTableSql_ThenMatchesCommittedInitSqlShape()
     {
-
         var config = OrdersQueueTestConfig.Create();
 
-
         var sql = _sut.GenerateKafkaTableSql(config, OrdersQueueTestConfig.Defaults);
-
 
         sql.Should().Contain("CREATE TABLE orders_queue");
         sql.Should().Contain("ENGINE = Kafka");
@@ -23,7 +22,6 @@ public sealed class ClickHouseSchemaGeneratorTests
     [Fact]
     public void GivenCodegenConfigFile_WhenGenerateFromConfigFile_ThenWritesOrdersQueueAndPipelineSql()
     {
-
         var outputDirectory = Path.Combine(Path.GetTempPath(), $"clickhouse-schema-gen-{Guid.NewGuid():N}");
         var configPath = Path.Combine(outputDirectory, "clickhouse.codegen.json");
         Directory.CreateDirectory(outputDirectory);
@@ -39,9 +37,7 @@ public sealed class ClickHouseSchemaGeneratorTests
 
         try
         {
-
             _sut.GenerateFromConfigFile(configPath);
-
 
             File.Exists(ordersQueuePath).Should().BeTrue();
             File.Exists(pipelinePath).Should().BeTrue();
@@ -114,7 +110,7 @@ public sealed class ClickHouseSchemaGeneratorTests
 
         File.WriteAllText(
             configPath,
-            JsonSerializer.Serialize(config, new JsonSerializerOptions { WriteIndented = true }));
+            JsonSerializer.Serialize(config, IndentedJson));
 
         try
         {
@@ -180,7 +176,7 @@ public sealed class ClickHouseSchemaGeneratorTests
             }
         };
 
-        File.WriteAllText(configPath, JsonSerializer.Serialize(config, new JsonSerializerOptions { WriteIndented = true }));
+        File.WriteAllText(configPath, JsonSerializer.Serialize(config, IndentedJson));
 
         try
         {
@@ -238,7 +234,7 @@ public sealed class ClickHouseSchemaGeneratorTests
             }
         };
 
-        File.WriteAllText(configPath, JsonSerializer.Serialize(config, new JsonSerializerOptions { WriteIndented = true }));
+        File.WriteAllText(configPath, JsonSerializer.Serialize(config, IndentedJson));
 
         try
         {
@@ -298,7 +294,7 @@ public sealed class ClickHouseSchemaGeneratorTests
 
         File.WriteAllText(
             configPath,
-            JsonSerializer.Serialize(config, new JsonSerializerOptions { WriteIndented = true }));
+            JsonSerializer.Serialize(config, IndentedJson));
 
         try
         {
@@ -321,7 +317,6 @@ public sealed class ClickHouseSchemaGeneratorTests
     [Fact]
     public void GivenProtobufKey_WhenGenerateKafkaTableSql_ThenQueueDdlHasNoKeyColumns()
     {
-
         var config = OrdersQueueTestConfig.Create();
         config.Key = new KafkaKeyConfig
         {
@@ -329,9 +324,7 @@ public sealed class ClickHouseSchemaGeneratorTests
             MessageType = "Sandbox.Contracts.OrderKey, Sandbox.Contracts"
         };
 
-
         var sql = _sut.GenerateKafkaTableSql(config, OrdersQueueTestConfig.Defaults);
-
 
         sql.Should().NotContain("_key");
         sql.Should().NotContain("CREATE OR REPLACE FUNCTION");
@@ -374,7 +367,7 @@ public sealed class ClickHouseSchemaGeneratorTests
                 ]
             });
 
-        File.WriteAllText(configPath, JsonSerializer.Serialize(config, new JsonSerializerOptions { WriteIndented = true }));
+        File.WriteAllText(configPath, JsonSerializer.Serialize(config, IndentedJson));
 
         try
         {
@@ -403,7 +396,6 @@ public sealed class ClickHouseSchemaGeneratorTests
     [Fact]
     public void GivenPersistedKafkaKeyWithProtobufKey_WhenBuildPlan_ThenAddsTypedKafkaKeyColumns()
     {
-
         var config = CreateProtobufKeyConfig(new MergeTreeTableConfig
         {
             TableName = "orders_raw",
@@ -412,9 +404,7 @@ public sealed class ClickHouseSchemaGeneratorTests
         });
         config.Defaults.PersistKafkaMeta = new PersistKafkaMetaConfig { Key = true };
 
-
         var plan = _sut.BuildPlan(config);
-
 
         var table = plan.MergeTreeTables.Single().Config;
         table.Columns.Should().ContainSingle(column => column.Name == "kafka_key" && column.Type == "String");
@@ -436,7 +426,6 @@ public sealed class ClickHouseSchemaGeneratorTests
     [Fact]
     public void GivenProtobufKeyWithoutPersistedKafkaKey_WhenBuildPlan_ThenMirrorHasNoKeyColumns()
     {
-
         var config = CreateProtobufKeyConfig(new MergeTreeTableConfig
         {
             TableName = "orders_raw",
@@ -444,9 +433,7 @@ public sealed class ClickHouseSchemaGeneratorTests
             OrderBy = "order_id"
         });
 
-
         var plan = _sut.BuildPlan(config);
-
 
         plan.MergeTreeTables.Single().Config.Columns
             .Should().NotContain(column => column.Name.Contains("key", StringComparison.Ordinal));
@@ -456,7 +443,6 @@ public sealed class ClickHouseSchemaGeneratorTests
     [Fact]
     public void GivenStringKeyAndKeyColumnMapping_WhenBuildPlan_ThenThrows()
     {
-
         var config = CreateProtobufKeyConfig(
             new MergeTreeTableConfig
             {
@@ -473,9 +459,7 @@ public sealed class ClickHouseSchemaGeneratorTests
             });
         config.KafkaTables[0].Key = new KafkaKeyConfig();
 
-
         var act = () => _sut.BuildPlan(config);
-
 
         act.Should().Throw<InvalidOperationException>()
             .WithMessage("*orders_mv*_key.order_id*orders_queue*protobuf*");

@@ -126,9 +126,7 @@ public sealed class TypeCompatibilityTests
     [InlineData("Float32", "Float64", TypeChangeKind.Safe)]
     [InlineData("DateTime", "DateTime64(3)", TypeChangeKind.Rewrite)]
     public void GivenTypePair_WhenClassify_ThenReturnsExpectedKind(string oldType, string newType, TypeChangeKind expected)
-    {
-        TypeCompatibility.Classify(oldType, newType).Should().Be(expected);
-    }
+        => TypeCompatibility.Classify(oldType, newType).Should().Be(expected);
 }
 
 public sealed class SnapshotDriftCheckerTests

@@ -2,10 +2,7 @@ namespace ClickHouseSchemaGen.Models;
 
 public sealed class CodegenConfig
 {
-
-
     public string? Extends { get; set; }
-
 
     public string? OutputDirectory { get; set; }
 
@@ -79,21 +76,18 @@ public static class KafkaKeyFormats
     public static readonly string[] All = [String, Protobuf];
 }
 
-
 public sealed class KafkaKeyConfig
 {
     public string Format { get; set; } = KafkaKeyFormats.String;
 
-
     public string? MessageType { get; set; }
-
 
     public int? SkipBytes { get; set; }
 
     public Dictionary<string, FieldOverrideConfig> FieldOverrides { get; set; } =
         new(StringComparer.OrdinalIgnoreCase);
 
-    [System.Text.Json.Serialization.JsonIgnore]
+    [JsonIgnore]
     public bool IsProtobuf => string.Equals(Format, KafkaKeyFormats.Protobuf, StringComparison.OrdinalIgnoreCase);
 }
 
@@ -154,9 +148,7 @@ public sealed class MergeTreeTableConfig
 
     public string? SourceTable { get; set; }
 
-
     public bool? IncludeKafkaMeta { get; set; }
-
 
     public List<PipelineColumnConfig> Columns { get; set; } = [];
 }
@@ -169,9 +161,7 @@ public sealed class MaterializedViewConfig
 
     public required string SourceTable { get; set; }
 
-
     public bool? IncludeKafkaMeta { get; set; }
-
 
     public List<PipelineColumnMapping> Columns { get; set; } = [];
 }

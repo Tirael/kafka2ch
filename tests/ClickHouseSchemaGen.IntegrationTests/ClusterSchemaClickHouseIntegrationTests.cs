@@ -1,6 +1,5 @@
 namespace ClickHouseSchemaGen.IntegrationTests;
 
-
 public sealed class ClusterSchemaClickHouseIntegrationTests : IAsyncLifetime
 {
     private const string ClusterName = "kafka2ch";
@@ -46,7 +45,6 @@ public sealed class ClusterSchemaClickHouseIntegrationTests : IAsyncLifetime
     [Fact]
     public async Task GivenCommittedClusterInitScripts_WhenBootstrappedAndMigrated_ThenSchemaAndHistoryExistOnEveryNode()
     {
-
         foreach (var script in Directory.GetFiles(RepoPaths.ClusterInitDirectory, "*.sql").Order(StringComparer.Ordinal))
         {
             var execResult = await _shard1.ExecScriptAsync(await File.ReadAllTextAsync(script));
@@ -64,10 +62,8 @@ public sealed class ClusterSchemaClickHouseIntegrationTests : IAsyncLifetime
             "SELECT toString(number), 'books', 1.5, 2, now64(3) FROM numbers(200) " +
             "SETTINGS distributed_foreground_insert = 1");
 
-
         await CreateRunner().ApplyAsync(_shard2.GetConnectionString(), _migrationsDirectory, CancellationToken.None);
         await CreateRunner().ApplyAsync(_shard1.GetConnectionString(), _migrationsDirectory, CancellationToken.None);
-
 
         (await QueryRowsAsync(connection,
                 "SELECT getMacro('replica'), name, engine FROM clusterAllReplicas('kafka2ch', system.tables) " +

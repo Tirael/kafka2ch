@@ -1,6 +1,5 @@
 namespace ClickHouseSchemaGen.Mapping;
 
-
 public sealed class KafkaKeyColumnMapper(DenormalizationPlanner planner)
 {
     public const string KeyColumn = "_key";
@@ -109,9 +108,15 @@ public sealed class KafkaKeyColumnMapper(DenormalizationPlanner planner)
         string name,
         ClickHouseColumn column) =>
         descriptor.FindFieldByName(name)
-        ?? throw Unsupported(tableName, column, $"no field '{name}' in {descriptor.FullName} (overridden column name?)");
+        ?? throw Unsupported(
+            tableName,
+            column,
+            $"no field '{name}' in {descriptor.FullName} (overridden column name?)");
 
     private static NotSupportedException Unsupported(string tableName, ClickHouseColumn column, string reason) =>
-        new($"Kafka table '{tableName}': key column '{ColumnPrefix}{column.Name}' cannot be decoded from _key ({reason}). " +
-            "Protobuf keys support singular scalar, enum, nested message and google.protobuf wrapper fields.");
+        new(
+            $"Kafka table '{tableName}': key column '{ColumnPrefix}{column.Name}' "
+                + $"cannot be decoded from _key ({reason}). "
+                + "Protobuf keys support singular scalar, enum, nested message "
+                + "and google.protobuf wrapper fields.");
 }

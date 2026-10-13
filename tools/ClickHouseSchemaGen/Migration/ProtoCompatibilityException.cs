@@ -4,9 +4,7 @@ public sealed class ProtoCompatibilityException : Exception
 {
     public ProtoCompatibilityException(IReadOnlyList<string> violations)
         : base(BuildMessage(violations))
-    {
-        Violations = violations;
-    }
+        => Violations = violations;
 
     public IReadOnlyList<string> Violations { get; }
 
