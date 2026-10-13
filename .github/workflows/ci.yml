@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: 1
+  DOTNET_NOLOGO: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
+
+jobs:
+  build-and-test:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux
+            os: ubuntu-latest
+            integration: true
+          - name: Windows
+            os: windows-latest
+            integration: false
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # Git for Windows defaults to core.autocrlf=true. SQL and shell scripts
+      # in this repo must stay LF (.gitattributes); reset after disabling
+      # autocrlf so the Windows job matches the committed line endings.
+      - name: Preserve LF line endings
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          git config --global core.autocrlf false
+          git reset --hard HEAD
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 8.0.x
+
+      # nuget.config points at ./artifacts/nuget for local packs. The folder is
+      # gitignored, and NuGet fails restore when a local source is missing.
+      - name: Prepare local NuGet source
+        shell: bash
+        run: mkdir -p artifacts/nuget
+
+      - name: Restore
+        run: dotnet restore kafka2ch.sln
+
+      - name: Build
+        run: dotnet build kafka2ch.sln --configuration Release --no-restore
+
+      - name: Unit tests
+        run: dotnet test tests/ClickHouseSchemaGen.UnitTests/ClickHouseSchemaGen.UnitTests.csproj --configuration Release --no-build --logger "trx;LogFileName=unit-tests.trx" --results-directory TestResults
+
+      # Testcontainers starts Linux ClickHouse images. GitHub-hosted Windows
+      # runners only expose a Windows container daemon, so integration tests
+      # run on the Linux job.
+      - name: Integration tests
+        if: matrix.integration
+        run: dotnet test tests/ClickHouseSchemaGen.IntegrationTests/ClickHouseSchemaGen.IntegrationTests.csproj --configuration Release --no-build --logger "trx;LogFileName=integration-tests.trx" --results-directory TestResults -- xUnit.MaxParallelThreads=2
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-results-${{ matrix.name }}
+          path: TestResults
+          if-no-files-found: ignore

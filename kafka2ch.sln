@@ -9,6 +9,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "common", "common", "{F4E8D2
 		.env.example = .env.example
 		.gitattributes = .gitattributes
 		.gitignore = .gitignore
+		.github\workflows\ci.yml = .github\workflows\ci.yml
 		Directory.Build.props = Directory.Build.props
 		Directory.Packages.props = Directory.Packages.props
 		Dockerfile = Dockerfile
