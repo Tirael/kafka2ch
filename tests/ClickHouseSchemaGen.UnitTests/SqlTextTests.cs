@@ -7,6 +7,28 @@ public sealed class SqlTextTests
         => SqlText.Normalize("a\r\nb\rc\n").Should().Be("a\nb\nc\n");
 
     [Fact]
+    public void GivenIndentedCreateTableClauses_WhenNormalize_ThenStripsOnlyThoseLines()
+    {
+        var drifted = string.Join(
+            '\n',
+            "    kind                LowCardinality(String) DEFAULT 'migration'",
+            "    )",
+            "    ENGINE = ReplicatedMergeTree",
+            "    ORDER BY version;",
+            "");
+        var canonical = string.Join(
+            '\n',
+            "    kind                LowCardinality(String) DEFAULT 'migration'",
+            ")",
+            "ENGINE = ReplicatedMergeTree",
+            "ORDER BY version;",
+            "");
+
+        SqlText.Normalize(drifted).Should().Be(canonical);
+        SqlText.Normalize(canonical).Should().Be(canonical);
+    }
+
+    [Fact]
     public void GivenMergeTreeGenerate_WhenCalled_ThenDoesNotEmitCarriageReturns()
     {
         var sql = MergeTreeTableGenerator.Generate(new MergeTreeTableConfig
