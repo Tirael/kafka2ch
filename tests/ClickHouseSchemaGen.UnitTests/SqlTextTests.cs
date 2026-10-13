@@ -4,9 +4,7 @@ public sealed class SqlTextTests
 {
     [Fact]
     public void GivenCrLfInput_WhenNormalize_ThenEmitsUnixNewlinesOnly()
-    {
-        SqlText.Normalize("a\r\nb\rc\n").Should().Be("a\nb\nc\n");
-    }
+        => SqlText.Normalize("a\r\nb\rc\n").Should().Be("a\nb\nc\n");
 
     [Fact]
     public void GivenMergeTreeGenerate_WhenCalled_ThenDoesNotEmitCarriageReturns()

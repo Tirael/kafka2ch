@@ -131,8 +131,7 @@ static int UnknownCommand(string command)
 }
 
 static void PrintUsage()
-{
-    Console.WriteLine("""
+    => Console.WriteLine("""
         Usage:
           clickhouse-schema-gen generate --config <path> [--assemblies <dll[;dll…]>]
           clickhouse-schema-gen migrate init --config <path> [--assemblies <dll[;dll…]>]
@@ -144,4 +143,3 @@ static void PrintUsage()
                       referenced by messageType in the codegen config (required when the tool
                       package does not already reference those contracts).
         """);
-}

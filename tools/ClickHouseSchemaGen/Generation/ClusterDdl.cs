@@ -5,9 +5,7 @@ public sealed partial class ClusterDdl
     private readonly ClusterConfig? _config;
 
     public ClusterDdl(ClusterConfig? config)
-    {
-        _config = config?.Enabled == true ? config : null;
-    }
+        => _config = config?.Enabled == true ? config : null;
 
     public static ClusterDdl SingleNode { get; } = new(null);
 

@@ -5,15 +5,13 @@ public sealed class DenormalizationPlanner
     private readonly IReadOnlyList<IFieldMappingStrategy> _strategies;
 
     public DenormalizationPlanner()
-    {
-        _strategies =
+        => _strategies =
         [
             new MapFieldStrategy(),
             new RepeatedFieldStrategy(this),
             new MessageFieldStrategy(this),
             new ScalarFieldStrategy()
         ];
-    }
 
     public IReadOnlyList<ClickHouseColumn> MapMessage(
         MessageDescriptor descriptor,
