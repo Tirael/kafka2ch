@@ -327,7 +327,7 @@ public sealed class ClusterModeGenerationTests
             """.ReplaceLineEndings());
 
         var tableSql = MergeTreeTableGenerator.Generate(CreateTable(), cluster: cluster);
-        tableSql.Should().Contain("CREATE TABLE orders_local\n");
+        tableSql.Should().Contain("CREATE TABLE orders_local\n(");
         tableSql.Should().NotContain("ON CLUSTER");
         tableSql.Should().Contain("ENGINE = ReplicatedMergeTree\n");
         tableSql.Should().NotContain("ReplicatedMergeTree('/");

@@ -23,7 +23,7 @@ public static partial class ClusterTrailingSqlRewriter
             builder.Append(RewriteStatement(statement, cluster, localTables)).AppendLine();
         }
 
-        return builder.ToString();
+        return SqlText.Normalize(builder.ToString());
     }
 
     private static string RewriteStatement(string statement, ClusterDdl cluster, HashSet<string> localTables)
@@ -38,10 +38,10 @@ public static partial class ClusterTrailingSqlRewriter
 
         var other = CreateOtherRegex().Match(statement);
         if (other.Success)
-            return $"{other.Groups["head"].Value}{cluster.OnCluster}{other.Groups["rest"].Value};" + Environment.NewLine;
+            return $"{other.Groups["head"].Value}{cluster.OnCluster}{other.Groups["rest"].Value};" + SqlText.NewLine;
 
         if (InsertRegex().IsMatch(statement))
-            return statement + ";" + Environment.NewLine;
+            return statement + ";" + SqlText.NewLine;
 
         throw new InvalidOperationException(
             "trailingSql statement is not supported in cluster mode (only CREATE TABLE / MATERIALIZED VIEW / VIEW / " +
@@ -56,11 +56,11 @@ public static partial class ClusterTrailingSqlRewriter
         var create = ifNotExists ? "CREATE TABLE IF NOT EXISTS" : "CREATE TABLE";
 
         if (!TryReplaceMergeTreeEngine(rest, cluster, out var replicatedRest))
-            return $"{create} {name}{cluster.OnCluster}{rest};" + Environment.NewLine;
+            return $"{create} {name}{cluster.OnCluster}{rest};" + SqlText.NewLine;
 
         localTables.Add(name);
-        return $"{create} {cluster.StorageTable(name)}{cluster.OnCluster}{replicatedRest};" + Environment.NewLine +
-               Environment.NewLine +
+        return $"{create} {cluster.StorageTable(name)}{cluster.OnCluster}{replicatedRest};" + SqlText.NewLine +
+               SqlText.NewLine +
                cluster.DistributedTableStatement(name, shardingKey: null, ifNotExists);
     }
 
@@ -83,7 +83,7 @@ public static partial class ClusterTrailingSqlRewriter
         if (TryReplaceMergeTreeEngine(rest, cluster, out var replicatedRest))
             rest = replicatedRest;
 
-        return $"{head}{cluster.OnCluster}{rest};" + Environment.NewLine;
+        return $"{head}{cluster.OnCluster}{rest};" + SqlText.NewLine;
     }
 
     private static bool TryReplaceMergeTreeEngine(string sql, ClusterDdl cluster, out string rewritten)

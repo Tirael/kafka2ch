@@ -34,7 +34,9 @@ public sealed class MigrationRunnerSplitTests
                 ADD COLUMN IF NOT EXISTS note String DEFAULT '';
             """;
 
-        var statements = MigrationRunner.SplitStatements(sql).ToList();
+        var statements = MigrationRunner.SplitStatements(sql)
+            .Select(statement => statement.ReplaceLineEndings("\n"))
+            .ToList();
 
         statements.Should().Equal(
             "-- header",

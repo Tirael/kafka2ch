@@ -71,8 +71,8 @@ public sealed partial class ClusterDdl
             return string.Empty;
 
         var create = ifNotExists ? "CREATE TABLE IF NOT EXISTS" : "CREATE TABLE";
-        return $"{create} {tableName}{OnCluster} AS {StorageTable(tableName)}" + Environment.NewLine +
-               $"ENGINE = {DistributedEngine(tableName, shardingKey)};" + Environment.NewLine;
+        return $"{create} {tableName}{OnCluster} AS {StorageTable(tableName)}" + SqlText.NewLine +
+               $"ENGINE = {DistributedEngine(tableName, shardingKey)};" + SqlText.NewLine;
     }
 
     public string CreateReplicatedDatabaseSql()
@@ -83,15 +83,15 @@ public sealed partial class ClusterDdl
         var database = _config!.ReplicatedDatabaseName.Trim();
         var path = _config.ReplicatedDatabasePath.Trim();
         var replica = _config.ReplicatedDatabaseReplicaName.Trim();
-        return $"CREATE DATABASE IF NOT EXISTS {database} ON CLUSTER {Name}" + Environment.NewLine +
-               $"ENGINE = Replicated('{EscapeLiteral(path)}', '{EscapeLiteral(replica)}');" + Environment.NewLine;
+        return $"CREATE DATABASE IF NOT EXISTS {database} ON CLUSTER {Name}" + SqlText.NewLine +
+               $"ENGINE = Replicated('{EscapeLiteral(path)}', '{EscapeLiteral(replica)}');" + SqlText.NewLine;
     }
 
     public string UseReplicatedDatabaseSql() =>
-        UsesReplicatedDatabase ? $"USE {ReplicatedDatabaseName};" + Environment.NewLine : string.Empty;
+        UsesReplicatedDatabase ? $"USE {ReplicatedDatabaseName};" + SqlText.NewLine : string.Empty;
 
     public string WithDatabaseContext(string sql) =>
-        UsesReplicatedDatabase ? UseReplicatedDatabaseSql() + Environment.NewLine + sql : sql;
+        UsesReplicatedDatabase ? UseReplicatedDatabaseSql() + SqlText.NewLine + sql : sql;
 
     public string DetachTableSql(string tableName) =>
         UsesReplicatedDatabase

@@ -207,7 +207,7 @@ public sealed class ClickHouseSchemaGenerator(
     {
         var fullPath = Path.GetFullPath(Path.Combine(configDirectory, outputPath));
         Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
-        File.WriteAllText(fullPath, sql);
+        File.WriteAllText(fullPath, SqlText.Normalize(sql));
     }
 
     private static Dictionary<string, FieldOverrideConfig> MergeFieldOverrides(

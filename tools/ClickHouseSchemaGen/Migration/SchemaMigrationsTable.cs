@@ -10,18 +10,20 @@ public static class SchemaMigrationsTable
 
     public const string DefaultScriptFileName = "00_schema_migrations.sql";
 
-    public const string CreateTableSql = """
-        CREATE TABLE IF NOT EXISTS schema_migrations
-        (
-            version             String,
-            name                String,
-            checksum            String,
-            applied_at          DateTime,
-            kind                LowCardinality(String) DEFAULT 'migration'
-        )
-        ENGINE = MergeTree
-        ORDER BY version
-        """;
+    public static string CreateTableSql { get; } = string.Join(
+        SqlText.NewLine,
+        [
+            "CREATE TABLE IF NOT EXISTS schema_migrations",
+            "(",
+            "    version             String,",
+            "    name                String,",
+            "    checksum            String,",
+            "    applied_at          DateTime,",
+            "    kind                LowCardinality(String) DEFAULT 'migration'",
+            ")",
+            "ENGINE = MergeTree",
+            "ORDER BY version"
+        ]);
 
     public static IReadOnlyList<string> UpgradeStatements { get; } = UpgradeStatementsFor(ClusterDdl.SingleNode);
 
@@ -69,7 +71,7 @@ public static class SchemaMigrationsTable
             checksum,
             InitKind,
             tableName: cluster?.HistoryTableName);
-        return $"{sql.TrimEnd()}{Environment.NewLine}{Environment.NewLine}{record};{Environment.NewLine}";
+        return $"{sql.TrimEnd()}{SqlText.NewLine}{SqlText.NewLine}{record};{SqlText.NewLine}";
     }
 
     public static string ParseInitVersion(string fileName)

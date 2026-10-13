@@ -44,7 +44,7 @@ public static partial class MigrationSqlGenerator
 
         AppendManualBlock(builder, plan, cluster);
 
-        return builder.ToString();
+        return SqlText.Normalize(builder.ToString());
     }
 
     private static void AppendMergeTreeAutomaticChanges(

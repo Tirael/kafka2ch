@@ -29,10 +29,10 @@ public static class MaterializedViewGenerator
             builder.AppendLine($"    {ResolveExpression(mapping),-28} AS {SqlColumnFormatter.FormatColumnName(mapping.Target)}{comma}");
         }
 
-        return builder
+        return SqlText.Normalize(builder
             .AppendLine($"FROM {config.SourceTable};")
             .AppendLine()
-            .ToString();
+            .ToString());
     }
 
     private static string ResolveExpression(PipelineColumnMapping mapping) =>
