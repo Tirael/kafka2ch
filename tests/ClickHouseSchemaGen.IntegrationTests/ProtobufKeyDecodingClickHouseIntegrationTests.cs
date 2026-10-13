@@ -6,9 +6,15 @@ public sealed class ProtobufKeyDecodingClickHouseIntegrationTests : IAsyncLifeti
 
     private static readonly byte[] ConfluentEnvelope = [0x00, 0x00, 0x00, 0x00, 0x2A, 0x00];
 
-    private readonly ClickHouseContainer _clickHouse = new ClickHouseBuilder("clickhouse/clickhouse-server:25.11")
-        .WithBindMount(RepoPaths.FormatSchemasDirectory, "/var/lib/clickhouse/format_schemas")
-        .Build();
+    private readonly ClickHouseContainer _clickHouse;
+
+    public ProtobufKeyDecodingClickHouseIntegrationTests()
+    {
+        TestContainersEnv.SetVariables();
+        _clickHouse = new ClickHouseBuilder(TestContainersEnv.FullClickHouseImageName)
+            .WithBindMount(RepoPaths.FormatSchemasDirectory, "/var/lib/clickhouse/format_schemas")
+            .Build();
+    }
 
     public async Task InitializeAsync() => await _clickHouse.StartAsync();
 

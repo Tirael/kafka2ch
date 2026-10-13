@@ -2,9 +2,15 @@ namespace ClickHouseSchemaGen.IntegrationTests;
 
 public sealed class GeneratedSchemaClickHouseIntegrationTests : IAsyncLifetime
 {
-    private readonly ClickHouseContainer _clickHouse = new ClickHouseBuilder("clickhouse/clickhouse-server:25.11")
-        .WithBindMount(RepoPaths.FormatSchemasDirectory, "/var/lib/clickhouse/format_schemas")
-        .Build();
+    private readonly ClickHouseContainer _clickHouse;
+
+    public GeneratedSchemaClickHouseIntegrationTests()
+    {
+        TestContainersEnv.SetVariables();
+        _clickHouse = new ClickHouseBuilder(TestContainersEnv.FullClickHouseImageName)
+            .WithBindMount(RepoPaths.FormatSchemasDirectory, "/var/lib/clickhouse/format_schemas")
+            .Build();
+    }
 
     public async Task InitializeAsync() => await _clickHouse.StartAsync();
 
