@@ -30,9 +30,10 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "clickhouse", "clickhouse", 
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "init", "init", "{C5D6E7F8-9012-3456-789A-BCDEF0123456}"
 	ProjectSection(SolutionItems) = preProject
+		docker\clickhouse\init\00_schema_migrations.sql = docker\clickhouse\init\00_schema_migrations.sql
 		docker\clickhouse\init\01_orders_queue.sql = docker\clickhouse\init\01_orders_queue.sql
-		docker\clickhouse\init\02_shipments_queue.sql = docker\clickhouse\init\02_shipments_queue.sql
-		docker\clickhouse\init\03_pipeline.sql = docker\clickhouse\init\03_pipeline.sql
+		docker\clickhouse\init\02_pipeline.sql = docker\clickhouse\init\02_pipeline.sql
+		docker\clickhouse\init\schema.snapshot.json = docker\clickhouse\init\schema.snapshot.json
 	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "format_schemas", "format_schemas", "{D6E7F890-1234-5678-9ABC-DEF012345678}"
@@ -40,6 +41,46 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "format_schemas", "format_sc
 		docker\clickhouse\format_schemas\common\money.proto = docker\clickhouse\format_schemas\common\money.proto
 		docker\clickhouse\format_schemas\order_event.proto = docker\clickhouse\format_schemas\order_event.proto
 		docker\clickhouse\format_schemas\order_key.proto = docker\clickhouse\format_schemas\order_key.proto
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "clickhouse-cluster", "clickhouse-cluster", "{E8F9A0B1-C2D3-4E5F-6789-0ABCDEF12345}"
+	ProjectSection(SolutionItems) = preProject
+		docker\clickhouse-cluster\bootstrap.sh = docker\clickhouse-cluster\bootstrap.sh
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "config", "config", "{E8F9A0B1-C2D3-4E5F-6789-0ABCDEF12346}"
+	ProjectSection(SolutionItems) = preProject
+		docker\clickhouse-cluster\config\cluster.xml = docker\clickhouse-cluster\config\cluster.xml
+		docker\clickhouse-cluster\config\keeper-01.xml = docker\clickhouse-cluster\config\keeper-01.xml
+		docker\clickhouse-cluster\config\keeper-02.xml = docker\clickhouse-cluster\config\keeper-02.xml
+		docker\clickhouse-cluster\config\keeper-03.xml = docker\clickhouse-cluster\config\keeper-03.xml
+		docker\clickhouse-cluster\config\keeper-test.xml = docker\clickhouse-cluster\config\keeper-test.xml
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "init", "init", "{E8F9A0B1-C2D3-4E5F-6789-0ABCDEF12347}"
+	ProjectSection(SolutionItems) = preProject
+		docker\clickhouse-cluster\init\00_schema_migrations.sql = docker\clickhouse-cluster\init\00_schema_migrations.sql
+		docker\clickhouse-cluster\init\01_orders_queue.sql = docker\clickhouse-cluster\init\01_orders_queue.sql
+		docker\clickhouse-cluster\init\02_pipeline.sql = docker\clickhouse-cluster\init\02_pipeline.sql
+		docker\clickhouse-cluster\init\schema.snapshot.json = docker\clickhouse-cluster\init\schema.snapshot.json
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "init-replicated-db", "init-replicated-db", "{E8F9A0B1-C2D3-4E5F-6789-0ABCDEF12348}"
+	ProjectSection(SolutionItems) = preProject
+		docker\clickhouse-cluster\init-replicated-db\00_schema_migrations.sql = docker\clickhouse-cluster\init-replicated-db\00_schema_migrations.sql
+		docker\clickhouse-cluster\init-replicated-db\01_orders_queue.sql = docker\clickhouse-cluster\init-replicated-db\01_orders_queue.sql
+		docker\clickhouse-cluster\init-replicated-db\02_pipeline.sql = docker\clickhouse-cluster\init-replicated-db\02_pipeline.sql
+		docker\clickhouse-cluster\init-replicated-db\schema.snapshot.json = docker\clickhouse-cluster\init-replicated-db\schema.snapshot.json
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "migrations", "migrations", "{E8F9A0B1-C2D3-4E5F-6789-0ABCDEF12349}"
+	ProjectSection(SolutionItems) = preProject
+		docker\clickhouse-cluster\migrations\.gitkeep = docker\clickhouse-cluster\migrations\.gitkeep
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "migrations-replicated-db", "migrations-replicated-db", "{E8F9A0B1-C2D3-4E5F-6789-0ABCDEF1234A}"
+	ProjectSection(SolutionItems) = preProject
+		docker\clickhouse-cluster\migrations-replicated-db\.gitkeep = docker\clickhouse-cluster\migrations-replicated-db\.gitkeep
 	EndProjectSection
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Sandbox.App", "src\Sandbox.App\Sandbox.App.csproj", "{67786B58-E81C-4CE7-9A67-19BEA50DFEA6}"
@@ -189,6 +230,12 @@ Global
 		{B4C5D6E7-F890-1234-5678-9ABCDEF01234} = {A3B4C5D6-E7F8-9012-3456-789ABCDEF012}
 		{C5D6E7F8-9012-3456-789A-BCDEF0123456} = {B4C5D6E7-F890-1234-5678-9ABCDEF01234}
 		{D6E7F890-1234-5678-9ABC-DEF012345678} = {B4C5D6E7-F890-1234-5678-9ABCDEF01234}
+		{E8F9A0B1-C2D3-4E5F-6789-0ABCDEF12345} = {A3B4C5D6-E7F8-9012-3456-789ABCDEF012}
+		{E8F9A0B1-C2D3-4E5F-6789-0ABCDEF12346} = {E8F9A0B1-C2D3-4E5F-6789-0ABCDEF12345}
+		{E8F9A0B1-C2D3-4E5F-6789-0ABCDEF12347} = {E8F9A0B1-C2D3-4E5F-6789-0ABCDEF12345}
+		{E8F9A0B1-C2D3-4E5F-6789-0ABCDEF12348} = {E8F9A0B1-C2D3-4E5F-6789-0ABCDEF12345}
+		{E8F9A0B1-C2D3-4E5F-6789-0ABCDEF12349} = {E8F9A0B1-C2D3-4E5F-6789-0ABCDEF12345}
+		{E8F9A0B1-C2D3-4E5F-6789-0ABCDEF1234A} = {E8F9A0B1-C2D3-4E5F-6789-0ABCDEF12345}
 		{67786B58-E81C-4CE7-9A67-19BEA50DFEA6} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{E2966807-5017-4468-B4DA-3F59C14CE56C} = {07C2787E-EAC7-C090-1BA3-A61EC2A24D84}
 		{221CF56A-6AD3-4946-BACB-DA98ABFA8D25} = {07C2787E-EAC7-C090-1BA3-A61EC2A24D84}
