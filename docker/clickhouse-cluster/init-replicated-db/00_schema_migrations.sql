@@ -14,4 +14,3 @@ ORDER BY version;
 
 USE kafka2ch;
 
-
