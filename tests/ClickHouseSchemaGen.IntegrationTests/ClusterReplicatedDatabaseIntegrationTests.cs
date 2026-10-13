@@ -2,7 +2,6 @@ namespace ClickHouseSchemaGen.IntegrationTests;
 
 public sealed class ClusterReplicatedDatabaseIntegrationTests : IAsyncLifetime
 {
-    private const string Image = "clickhouse/clickhouse-server:25.11";
     private const string ClusterName = "kafka2ch";
     private const string DatabaseName = "kafka2ch";
 
@@ -15,7 +14,8 @@ public sealed class ClusterReplicatedDatabaseIntegrationTests : IAsyncLifetime
 
     public ClusterReplicatedDatabaseIntegrationTests()
     {
-        _keeper = new ContainerBuilder(Image)
+        TestContainersEnv.SetVariables();
+        _keeper = new ContainerBuilder(TestContainersEnv.FullClickHouseImageName)
             .WithNetwork(_network)
             .WithNetworkAliases("clickhouse-keeper")
             .WithEntrypoint("clickhouse", "keeper", "--config-file=/etc/clickhouse-keeper/keeper.xml")
@@ -97,7 +97,7 @@ public sealed class ClusterReplicatedDatabaseIntegrationTests : IAsyncLifetime
     }
 
     private ClickHouseContainer CreateNode(string host, string shard) =>
-        new ClickHouseBuilder(Image)
+        new ClickHouseBuilder(TestContainersEnv.FullClickHouseImageName)
             .WithNetwork(_network)
             .WithNetworkAliases(host)
             .WithEnvironment("CLICKHOUSE_SHARD", shard)
