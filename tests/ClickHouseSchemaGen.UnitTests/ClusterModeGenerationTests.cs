@@ -40,7 +40,7 @@ public sealed class ClusterModeGenerationTests
             ENGINE = Distributed('kafka2ch', currentDatabase(), orders_local, rand());
 
 
-            """.ReplaceLineEndings());
+            """.ReplaceLineEndings("\n"));
     }
 
     [Fact]
@@ -138,7 +138,7 @@ public sealed class ClusterModeGenerationTests
         foreach (var (outputPath, sql) in scripts)
         {
             var committed = Path.Combine(RepoPaths.ClusterInitDirectory, Path.GetFileName(outputPath));
-            File.ReadAllText(committed).ReplaceLineEndings().Should().Be(sql.ReplaceLineEndings(), committed);
+            File.ReadAllText(committed).ReplaceLineEndings("\n").Should().Be(sql.ReplaceLineEndings("\n"), committed);
         }
     }
 
@@ -171,12 +171,12 @@ public sealed class ClusterModeGenerationTests
             """
             DETACH TABLE IF EXISTS orders_queue ON CLUSTER kafka2ch;
             -- await:kafka_consumers_empty orders_queue ON CLUSTER kafka2ch
-            """.ReplaceLineEndings());
+            """.ReplaceLineEndings("\n"));
         sql.Should().Contain(
             """
             ALTER TABLE orders_local ON CLUSTER kafka2ch ADD COLUMN IF NOT EXISTS kafka_partition UInt64 DEFAULT 0 AFTER kafka_headers;
             ALTER TABLE orders ON CLUSTER kafka2ch ADD COLUMN IF NOT EXISTS kafka_partition UInt64 DEFAULT 0 AFTER kafka_headers;
-            """.ReplaceLineEndings());
+            """.ReplaceLineEndings("\n"));
         sql.Should().Contain("DROP VIEW IF EXISTS orders_mv ON CLUSTER kafka2ch;");
         sql.Should().Contain("CREATE OR REPLACE FUNCTION protobufWireBytes ON CLUSTER kafka2ch AS");
         sql.Should().Contain("CREATE MATERIALIZED VIEW orders_mv ON CLUSTER kafka2ch TO orders_local AS");
@@ -238,7 +238,7 @@ public sealed class ClusterModeGenerationTests
         var sql = PersistPartitionMigrationFixture.GenerateSql(RepoPaths.CodegenConfigPath);
 
         sql.Should().Contain("DETACH TABLE IF EXISTS orders_queue;");
-        sql.Should().Contain("-- await:kafka_consumers_empty orders_queue" + Environment.NewLine);
+        sql.Should().Contain("-- await:kafka_consumers_empty orders_queue\n");
         sql.Should().Contain("ALTER TABLE orders ADD COLUMN IF NOT EXISTS kafka_partition UInt64 DEFAULT 0 AFTER kafka_headers;");
         sql.Should().NotContain("ON CLUSTER");
         sql.Should().NotContain("_local");
@@ -322,7 +322,7 @@ public sealed class ClusterModeGenerationTests
             CREATE DATABASE IF NOT EXISTS kafka2ch ON CLUSTER kafka2ch
             ENGINE = Replicated('/clickhouse/databases/{uuid}', '{replica}');
 
-            """.ReplaceLineEndings());
+            """.ReplaceLineEndings("\n"));
 
         var tableSql = MergeTreeTableGenerator.Generate(CreateTable(), cluster: cluster);
         tableSql.Should().Contain("CREATE TABLE orders_local\n(");
@@ -349,16 +349,16 @@ public sealed class ClusterModeGenerationTests
         config.Cluster.UsesReplicatedDatabase.Should().BeTrue();
         config.Cluster.MaterializedViewsWriteThroughDistributed.Should().BeTrue();
         File.ReadAllText(Path.Combine(RepoPaths.ClusterReplicatedDbInitDirectory, "00_schema_migrations.sql"))
-            .ReplaceLineEndings()
+            .ReplaceLineEndings("\n")
             .Should().Be(SchemaMigrationsScriptGenerator.Generate(
                 SchemaMigrationsScriptGenerator.ReadFromDirectory(
                     CodegenConfigLoader.ResolvePath(RepoPaths.ClusterReplicatedDbCodegenConfigPath, config.Migrations.MigrationsDirectory)),
-                ClusterDdl.For(config)).ReplaceLineEndings());
+                ClusterDdl.For(config)).ReplaceLineEndings("\n"));
 
         foreach (var (outputPath, sql) in scripts)
         {
             var committed = Path.Combine(RepoPaths.ClusterReplicatedDbInitDirectory, Path.GetFileName(outputPath));
-            File.ReadAllText(committed).ReplaceLineEndings().Should().Be(sql.ReplaceLineEndings(), committed);
+            File.ReadAllText(committed).ReplaceLineEndings("\n").Should().Be(sql.ReplaceLineEndings("\n"), committed);
         }
 
         var pipeline = scripts[config.Pipeline!.OutputPath];
