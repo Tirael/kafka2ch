@@ -10,7 +10,6 @@ public static class SchemaMigrationsTable
 
     public const string DefaultScriptFileName = "00_schema_migrations.sql";
 
-    // Built with explicit LF so Windows CRLF checkouts of this .cs file cannot embed \r into DDL.
     public static string CreateTableSql { get; } = string.Join(
         SqlText.NewLine,
         [
