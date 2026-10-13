@@ -112,38 +112,43 @@ public static partial class MigrationSqlGenerator
         HashSet<string> metaOnlyQueues,
         ClusterDdl cluster)
     {
-        var viewsToRecreate = plan.AutomaticChanges
+        var viewsToDrop = plan.AutomaticChanges
             .OfType<ViewChanged>()
             .Select(v => v.ViewName)
             .Concat(plan.ManualChanges.OfType<ViewChanged>().Select(v => v.ViewName))
+            .Concat(newPlan.MaterializedViews
+                .Where(v => kafkaRecreates.Contains(v.Config.SourceTable))
+                .Select(v => v.Config.Name))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(v => v, StringComparer.Ordinal)
             .ToList();
-        var attachedQueues = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var viewsToCreate = viewsToDrop
+            .Select(name => newPlan.MaterializedViews.FirstOrDefault(v =>
+                string.Equals(v.Config.Name, name, StringComparison.OrdinalIgnoreCase)))
+            .OfType<MaterializedViewPlan>()
+            .ToList();
 
-        foreach (var viewName in viewsToRecreate)
+        foreach (var viewName in viewsToDrop)
+            builder.AppendLine($"DROP VIEW IF EXISTS {viewName}{cluster.OnCluster};");
+
+        foreach (var queue in kafkaRecreates.OrderBy(q => q, StringComparer.Ordinal))
         {
-            var view = newPlan.MaterializedViews.First(v =>
-                string.Equals(v.Config.Name, viewName, StringComparison.OrdinalIgnoreCase));
-            var queue = view.Config.SourceTable;
-            var recreateKafka = kafkaRecreates.Contains(queue);
+            builder.AppendLine(cluster.AttachTableSql(queue));
+            builder.AppendLine($"DROP TABLE IF EXISTS {queue}{cluster.OnCluster};");
 
-            builder.AppendLine($"DROP VIEW IF EXISTS {view.Config.Name}{cluster.OnCluster};");
+            var kafkaPlan = newPlan.KafkaTables.First(t =>
+                string.Equals(t.Config.TableName, queue, StringComparison.OrdinalIgnoreCase));
+            builder.Append(KafkaTableGenerator.Generate(kafkaPlan.Config, kafkaPlan.Columns, ifNotExists: false, cluster));
+        }
 
-            if (recreateKafka)
-            {
-                builder.AppendLine($"DROP TABLE IF EXISTS {queue}{cluster.OnCluster};");
+        foreach (var queue in metaOnlyQueues.OrderBy(q => q, StringComparer.Ordinal))
+            builder.AppendLine(cluster.AttachTableSql(queue));
 
-                var kafkaPlan = newPlan.KafkaTables.First(t =>
-                    string.Equals(t.Config.TableName, queue, StringComparison.OrdinalIgnoreCase));
-                builder.Append(KafkaTableGenerator.Generate(kafkaPlan.Config, kafkaPlan.Columns, ifNotExists: false, cluster));
-                builder.AppendLine();
-            }
+        if (metaOnlyQueues.Count > 0 || (viewsToDrop.Count > 0 && kafkaRecreates.Count == 0))
+            builder.AppendLine();
 
-
-            if (!recreateKafka && metaOnlyQueues.Contains(queue) && attachedQueues.Add(queue))
-                builder.AppendLine(cluster.AttachTableSql(queue));
-
+        foreach (var view in viewsToCreate)
+        {
             var writeThrough = newPlan.MergeTreeTables
                 .FirstOrDefault(table => string.Equals(
                     table.Config.TableName,
@@ -154,34 +159,6 @@ public static partial class MigrationSqlGenerator
                 view.Config,
                 cluster: cluster,
                 writeThroughDistributed: writeThrough));
-
-            if (recreateKafka)
-                builder.AppendLine(cluster.AttachTableSql(queue));
-
-            builder.AppendLine();
-        }
-
-        foreach (var queue in kafkaRecreates.Except(viewsToRecreate.SelectMany(v =>
-                     newPlan.MaterializedViews.Where(mv => string.Equals(mv.Config.Name, v, StringComparison.OrdinalIgnoreCase))
-                         .Select(mv => mv.Config.SourceTable))))
-        {
-            if (viewsToRecreate.Any(v =>
-                {
-                    var source = newPlan.MaterializedViews
-                        .First(m => string.Equals(m.Config.Name, v, StringComparison.OrdinalIgnoreCase))
-                        .Config.SourceTable;
-                    return string.Equals(source, queue, StringComparison.OrdinalIgnoreCase);
-                }))
-            {
-                continue;
-            }
-
-            builder.AppendLine($"DROP TABLE IF EXISTS {queue}{cluster.OnCluster};");
-            var kafkaPlan = newPlan.KafkaTables.First(t =>
-                string.Equals(t.Config.TableName, queue, StringComparison.OrdinalIgnoreCase));
-            builder.Append(KafkaTableGenerator.Generate(kafkaPlan.Config, kafkaPlan.Columns, ifNotExists: false, cluster));
-            builder.AppendLine(cluster.AttachTableSql(queue));
-            builder.AppendLine();
         }
     }
 
