@@ -32,7 +32,7 @@ public sealed class ClusterTrailingSqlRewriterTests
 
         var rewritten = ClusterTrailingSqlRewriter.Rewrite(sql, Cluster, ["orders"]);
 
-        rewritten.ReplaceLineEndings().Should().Be(
+        SqlText.Normalize(rewritten).Should().Be(SqlText.Normalize(
             """
             CREATE TABLE orders_agg_1m_local ON CLUSTER kafka2ch
             (
@@ -51,7 +51,7 @@ public sealed class ClusterTrailingSqlRewriterTests
             GROUP BY minute;
 
 
-            """.ReplaceLineEndings());
+            """));
     }
 
     [Fact]

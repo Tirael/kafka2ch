@@ -25,7 +25,7 @@ public sealed class ClusterModeGenerationTests
 
         var sql = MergeTreeTableGenerator.Generate(table, cluster: Cluster);
 
-        sql.Should().Be(
+        sql.Should().Be(SqlText.Normalize(
             """
             CREATE TABLE orders_local ON CLUSTER kafka2ch
             (
@@ -40,7 +40,7 @@ public sealed class ClusterModeGenerationTests
             ENGINE = Distributed('kafka2ch', currentDatabase(), orders_local, rand());
 
 
-            """.ReplaceLineEndings());
+            """));
     }
 
     [Fact]
@@ -138,7 +138,7 @@ public sealed class ClusterModeGenerationTests
         foreach (var (outputPath, sql) in scripts)
         {
             var committed = Path.Combine(RepoPaths.ClusterInitDirectory, Path.GetFileName(outputPath));
-            File.ReadAllText(committed).ReplaceLineEndings().Should().Be(sql.ReplaceLineEndings(), committed);
+            SqlText.Normalize(File.ReadAllText(committed)).Should().Be(SqlText.Normalize(sql), committed);
         }
     }
 
@@ -167,16 +167,16 @@ public sealed class ClusterModeGenerationTests
     {
         var sql = PersistPartitionMigrationFixture.GenerateSql(RepoPaths.ClusterCodegenConfigPath);
 
-        sql.Should().Contain(
+        sql.Should().Contain(SqlText.Normalize(
             """
             DETACH TABLE IF EXISTS orders_queue ON CLUSTER kafka2ch;
             -- await:kafka_consumers_empty orders_queue ON CLUSTER kafka2ch
-            """.ReplaceLineEndings());
-        sql.Should().Contain(
+            """));
+        sql.Should().Contain(SqlText.Normalize(
             """
             ALTER TABLE orders_local ON CLUSTER kafka2ch ADD COLUMN IF NOT EXISTS kafka_partition UInt64 DEFAULT 0 AFTER kafka_headers;
             ALTER TABLE orders ON CLUSTER kafka2ch ADD COLUMN IF NOT EXISTS kafka_partition UInt64 DEFAULT 0 AFTER kafka_headers;
-            """.ReplaceLineEndings());
+            """));
         sql.Should().Contain("DROP VIEW IF EXISTS orders_mv ON CLUSTER kafka2ch;");
         sql.Should().Contain("CREATE OR REPLACE FUNCTION protobufWireBytes ON CLUSTER kafka2ch AS");
         sql.Should().Contain("CREATE MATERIALIZED VIEW orders_mv ON CLUSTER kafka2ch TO orders_local AS");
@@ -238,7 +238,7 @@ public sealed class ClusterModeGenerationTests
         var sql = PersistPartitionMigrationFixture.GenerateSql(RepoPaths.CodegenConfigPath);
 
         sql.Should().Contain("DETACH TABLE IF EXISTS orders_queue;");
-        sql.Should().Contain("-- await:kafka_consumers_empty orders_queue" + Environment.NewLine);
+        sql.Should().Contain(SqlText.Normalize("-- await:kafka_consumers_empty orders_queue\n"));
         sql.Should().Contain("ALTER TABLE orders ADD COLUMN IF NOT EXISTS kafka_partition UInt64 DEFAULT 0 AFTER kafka_headers;");
         sql.Should().NotContain("ON CLUSTER");
         sql.Should().NotContain("_local");
@@ -317,12 +317,12 @@ public sealed class ClusterModeGenerationTests
         });
 
         cluster.OnCluster.Should().BeEmpty();
-        cluster.CreateReplicatedDatabaseSql().Should().Be(
+        cluster.CreateReplicatedDatabaseSql().Should().Be(SqlText.Normalize(
             """
             CREATE DATABASE IF NOT EXISTS kafka2ch ON CLUSTER kafka2ch
             ENGINE = Replicated('/clickhouse/databases/{uuid}', '{replica}');
 
-            """.ReplaceLineEndings());
+            """));
 
         var tableSql = MergeTreeTableGenerator.Generate(CreateTable(), cluster: cluster);
         tableSql.Should().Contain("CREATE TABLE orders_local\n(");
@@ -348,17 +348,19 @@ public sealed class ClusterModeGenerationTests
 
         config.Cluster.UsesReplicatedDatabase.Should().BeTrue();
         config.Cluster.MaterializedViewsWriteThroughDistributed.Should().BeTrue();
-        File.ReadAllText(Path.Combine(RepoPaths.ClusterReplicatedDbInitDirectory, "00_schema_migrations.sql"))
-            .ReplaceLineEndings()
-            .Should().Be(SchemaMigrationsScriptGenerator.Generate(
-                SchemaMigrationsScriptGenerator.ReadFromDirectory(
-                    CodegenConfigLoader.ResolvePath(RepoPaths.ClusterReplicatedDbCodegenConfigPath, config.Migrations.MigrationsDirectory)),
-                ClusterDdl.For(config)).ReplaceLineEndings());
+        var committedMigrations = Path.Combine(RepoPaths.ClusterReplicatedDbInitDirectory, "00_schema_migrations.sql");
+        var generatedMigrations = SchemaMigrationsScriptGenerator.Generate(
+            SchemaMigrationsScriptGenerator.ReadFromDirectory(
+                CodegenConfigLoader.ResolvePath(
+                    RepoPaths.ClusterReplicatedDbCodegenConfigPath,
+                    config.Migrations.MigrationsDirectory)),
+            ClusterDdl.For(config));
+        SqlText.Normalize(File.ReadAllText(committedMigrations)).Should().Be(SqlText.Normalize(generatedMigrations));
 
         foreach (var (outputPath, sql) in scripts)
         {
             var committed = Path.Combine(RepoPaths.ClusterReplicatedDbInitDirectory, Path.GetFileName(outputPath));
-            File.ReadAllText(committed).ReplaceLineEndings().Should().Be(sql.ReplaceLineEndings(), committed);
+            SqlText.Normalize(File.ReadAllText(committed)).Should().Be(SqlText.Normalize(sql), committed);
         }
 
         var pipeline = scripts[config.Pipeline!.OutputPath];

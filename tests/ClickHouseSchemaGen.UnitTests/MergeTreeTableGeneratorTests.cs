@@ -21,12 +21,12 @@ public sealed class MergeTreeTableGeneratorTests
 
         var sql = MergeTreeTableGenerator.Generate(config);
 
-        sql.Should().Contain(
+        sql.Should().Contain(SqlText.Normalize(
             """
             ENGINE = MergeTree
             ORDER BY (event_time, order_id)
             TTL event_time + INTERVAL 90 DAY;
-            """);
+            """));
     }
 
     [Fact]

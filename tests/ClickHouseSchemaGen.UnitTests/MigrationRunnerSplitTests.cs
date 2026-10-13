@@ -35,7 +35,7 @@ public sealed class MigrationRunnerSplitTests
             """;
 
         var statements = MigrationRunner.SplitStatements(sql)
-            .Select(statement => statement.ReplaceLineEndings("\n"))
+            .Select(SqlText.Normalize)
             .ToList();
 
         statements.Should().Equal(
