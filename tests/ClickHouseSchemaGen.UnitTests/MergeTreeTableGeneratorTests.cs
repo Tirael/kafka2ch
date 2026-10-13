@@ -26,7 +26,7 @@ public sealed class MergeTreeTableGeneratorTests
             ENGINE = MergeTree
             ORDER BY (event_time, order_id)
             TTL event_time + INTERVAL 90 DAY;
-            """);
+            """.ReplaceLineEndings("\n"));
     }
 
     [Fact]
