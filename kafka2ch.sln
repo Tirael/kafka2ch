@@ -7,6 +7,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "common", "common", "{F4E8D2
 	ProjectSection(SolutionItems) = preProject
 		.dockerignore = .dockerignore
 		.env.example = .env.example
+		.gitattributes = .gitattributes
 		.gitignore = .gitignore
 		Directory.Build.props = Directory.Build.props
 		Directory.Packages.props = Directory.Packages.props
