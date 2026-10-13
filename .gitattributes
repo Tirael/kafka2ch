@@ -1,0 +1,2 @@
+# Shell scripts must stay LF; CRLF bind-mounts break `set -eu` under /bin/sh in Linux containers.
+*.sh text eol=lf

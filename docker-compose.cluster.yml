@@ -98,7 +98,11 @@ services:
   clickhouse-cluster-init:
     image: ${CLICKHOUSE_IMAGE}
     container_name: clickhouse-cluster-init
-    entrypoint: ["/bin/sh", "/cluster/bootstrap.sh"]
+    # Strip CR so Windows checkout (CRLF) does not break `set -eu` under /bin/sh.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - tr -d '\r' < /cluster/bootstrap.sh | /bin/sh
     environment:
       CLICKHOUSE_HOST: clickhouse
       CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
