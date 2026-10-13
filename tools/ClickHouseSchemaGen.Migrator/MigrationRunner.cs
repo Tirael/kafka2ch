@@ -23,6 +23,8 @@ public sealed class MigrationRunner(ILogger logger, TimeProvider timeProvider, C
 
     private static readonly TimeSpan ConsumerWaitTimeout = TimeSpan.FromSeconds(60);
 
+    private static readonly TimeSpan ReattachTimeout = TimeSpan.FromSeconds(30);
+
     public async Task ApplyAsync(string connectionString, string migrationsDirectory, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(migrationsDirectory);
@@ -158,7 +160,7 @@ public sealed class MigrationRunner(ILogger logger, TimeProvider timeProvider, C
         finally
         {
             if (!completed && detachedQueues.Count > 0)
-                await ReattachDetachedQueuesAsync(connection, detachedQueues, CancellationToken.None);
+                await ReattachDetachedQueuesAsync(connection, detachedQueues);
         }
     }
 
@@ -186,13 +188,13 @@ public sealed class MigrationRunner(ILogger logger, TimeProvider timeProvider, C
 
     private async Task ReattachDetachedQueuesAsync(
         ClickHouseConnection connection,
-        IReadOnlyDictionary<string, string?> detachedQueues,
-        CancellationToken cancellationToken)
+        IReadOnlyDictionary<string, string?> detachedQueues)
     {
+        using var timeout = new CancellationTokenSource(ReattachTimeout, timeProvider);
         foreach (var (tableName, clusterName) in detachedQueues)
         {
             var onCluster = clusterName is null ? string.Empty : $" ON CLUSTER {clusterName}";
-            var attachSql = $"ATTACH TABLE {tableName}{onCluster}";
+            var attachSql = $"ATTACH TABLE IF NOT EXISTS {tableName}{onCluster}";
             try
             {
                 logger.LogWarning(
@@ -200,9 +202,9 @@ public sealed class MigrationRunner(ILogger logger, TimeProvider timeProvider, C
                     tableName);
                 await using var command = connection.CreateCommand();
                 command.CommandText = attachSql;
-                await command.ExecuteNonQueryAsync(cancellationToken);
+                await command.ExecuteNonQueryAsync(timeout.Token);
             }
-            catch (Exception attachException) when (attachException is not OperationCanceledException)
+            catch (Exception attachException)
             {
                 logger.LogError(
                     attachException,

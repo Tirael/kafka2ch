@@ -182,13 +182,57 @@ public sealed class ClusterModeGenerationTests
         sql.Should().Contain("DROP VIEW IF EXISTS orders_mv ON CLUSTER kafka2ch;");
         sql.Should().Contain("CREATE OR REPLACE FUNCTION protobufWireBytes ON CLUSTER kafka2ch AS");
         sql.Should().Contain("CREATE MATERIALIZED VIEW orders_mv ON CLUSTER kafka2ch TO orders_local AS");
-        sql.Should().Contain("ATTACH TABLE orders_queue ON CLUSTER kafka2ch;");
+        sql.Should().Contain("ATTACH TABLE IF NOT EXISTS orders_queue ON CLUSTER kafka2ch;");
+        sql.Should().NotContain("DROP TABLE IF EXISTS orders_queue");
 
-        var mvIndex = sql.IndexOf("CREATE MATERIALIZED VIEW orders_mv ON CLUSTER kafka2ch", StringComparison.Ordinal);
-        var attachIndex = sql.IndexOf("ATTACH TABLE orders_queue ON CLUSTER kafka2ch", StringComparison.Ordinal);
-        mvIndex.Should().BeGreaterThanOrEqualTo(0);
-        attachIndex.Should().BeGreaterThan(mvIndex);
+        AssertAscending(sql,
+            "DROP VIEW IF EXISTS orders_mv ON CLUSTER kafka2ch;",
+            "ATTACH TABLE IF NOT EXISTS orders_queue ON CLUSTER kafka2ch;",
+            "CREATE MATERIALIZED VIEW orders_mv ON CLUSTER kafka2ch TO orders_local AS");
     }
+
+    [Fact]
+    public void GivenKafkaSettingsChanged_WhenGenerateMigration_ThenReattachesBeforeDropAndRecreatesPipeline()
+    {
+        var sql = KafkaRecreateMigrationFixture.GenerateSql(RepoPaths.CodegenConfigPath);
+
+        AssertAscending(sql,
+            "DETACH TABLE IF EXISTS orders_queue;",
+            "-- await:kafka_consumers_empty orders_queue",
+            "DROP VIEW IF EXISTS orders_mv;",
+            "ATTACH TABLE IF NOT EXISTS orders_queue;",
+            "DROP TABLE IF EXISTS orders_queue;",
+            "CREATE TABLE orders_queue",
+            $"kafka_num_consumers = {KafkaRecreateMigrationFixture.NewNumConsumers}",
+            "CREATE MATERIALIZED VIEW orders_mv TO orders AS");
+        CountOccurrences(sql, "ATTACH TABLE").Should().Be(1, "recreated queue is live after CREATE TABLE");
+        CountOccurrences(sql, "CREATE TABLE orders_queue").Should().Be(1);
+    }
+
+    [Fact]
+    public void GivenKafkaSettingsChangedOnCluster_WhenGenerateMigration_ThenQueueLifecycleUsesOnCluster()
+    {
+        var sql = KafkaRecreateMigrationFixture.GenerateSql(RepoPaths.ClusterCodegenConfigPath);
+
+        AssertAscending(sql,
+            "DETACH TABLE IF EXISTS orders_queue ON CLUSTER kafka2ch;",
+            "DROP VIEW IF EXISTS orders_mv ON CLUSTER kafka2ch;",
+            "ATTACH TABLE IF NOT EXISTS orders_queue ON CLUSTER kafka2ch;",
+            "DROP TABLE IF EXISTS orders_queue ON CLUSTER kafka2ch;",
+            "CREATE TABLE orders_queue ON CLUSTER kafka2ch",
+            "CREATE MATERIALIZED VIEW orders_mv ON CLUSTER kafka2ch TO orders_local AS");
+    }
+
+    private static void AssertAscending(string sql, params string[] fragments)
+    {
+        var indexes = fragments.Select(fragment => sql.IndexOf(fragment, StringComparison.Ordinal)).ToList();
+
+        indexes.Should().OnlyContain(index => index >= 0, sql);
+        indexes.Should().BeInAscendingOrder(sql);
+    }
+
+    private static int CountOccurrences(string text, string fragment) =>
+        (text.Length - text.Replace(fragment, string.Empty, StringComparison.Ordinal).Length) / fragment.Length;
 
     [Fact]
     public void GivenSingleNodeConfig_WhenGenerateMigration_ThenHasNoClusterClauses()
@@ -201,10 +245,11 @@ public sealed class ClusterModeGenerationTests
         sql.Should().NotContain("ON CLUSTER");
         sql.Should().NotContain("_local");
 
-        var mvIndex = sql.IndexOf("CREATE MATERIALIZED VIEW orders_mv", StringComparison.Ordinal);
-        var attachIndex = sql.IndexOf("ATTACH TABLE orders_queue;", StringComparison.Ordinal);
-        mvIndex.Should().BeGreaterThanOrEqualTo(0);
-        attachIndex.Should().BeGreaterThan(mvIndex);
+        AssertAscending(sql,
+            "DROP VIEW IF EXISTS orders_mv;",
+            "ATTACH TABLE IF NOT EXISTS orders_queue;",
+            "CREATE MATERIALIZED VIEW orders_mv TO orders AS");
+        CountOccurrences(sql, "ATTACH TABLE").Should().Be(1);
     }
 
 

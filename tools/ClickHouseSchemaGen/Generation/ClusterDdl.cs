@@ -99,7 +99,7 @@ public sealed partial class ClusterDdl
             : $"DETACH TABLE IF EXISTS {tableName}{OnCluster};";
 
     public string AttachTableSql(string tableName) =>
-        $"ATTACH TABLE {tableName}{OnCluster};";
+        $"ATTACH TABLE IF NOT EXISTS {tableName}{OnCluster};";
 
     public string AwaitKafkaConsumersEmpty(string queueName)
     {
