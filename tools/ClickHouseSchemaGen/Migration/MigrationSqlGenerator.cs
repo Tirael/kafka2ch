@@ -153,9 +153,6 @@ public static partial class MigrationSqlGenerator
             builder.AppendLine();
         }
 
-        // Re-attach only queues that stayed DETACHed (meta-only). Recreated queues are already
-        // live after CREATE TABLE; ATTACH after CREATE would fail and leave consumption stopped
-        // until ClickHouse restart for any earlier DETACH that had not yet been cleared.
         foreach (var queue in metaOnlyQueues.OrderBy(q => q, StringComparer.Ordinal))
             builder.AppendLine(cluster.AttachTableSql(queue));
 
