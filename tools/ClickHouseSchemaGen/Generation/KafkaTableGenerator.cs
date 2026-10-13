@@ -46,7 +46,7 @@ public static class KafkaTableGenerator
         SqlScriptWriter.AppendCommaSeparatedLines(builder, settings);
         builder.AppendLine();
 
-        return builder.ToString();
+        return SqlText.Normalize(builder.ToString());
     }
 
     private static bool IsOneofPresenceColumn(ClickHouseColumn column) =>

@@ -17,7 +17,7 @@ public static class SchemaMigrationsScriptGenerator
             .AppendLine();
 
         if (ddl.UsesReplicatedDatabase)
-            builder.AppendLine(ddl.UseReplicatedDatabaseSql()).AppendLine();
+            builder.Append(ddl.UseReplicatedDatabaseSql()).AppendLine().AppendLine();
 
         foreach (var migration in migrations.OrderBy(m => m.Version, StringComparer.Ordinal))
         {
@@ -31,7 +31,7 @@ public static class SchemaMigrationsScriptGenerator
                 .AppendLine(";");
         }
 
-        return builder.ToString();
+        return SqlText.Normalize(builder.ToString());
     }
 
     public static IReadOnlyList<MigrationFileInfo> ReadFromDirectory(string migrationsDirectory)

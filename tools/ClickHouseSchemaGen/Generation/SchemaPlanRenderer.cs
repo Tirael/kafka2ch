@@ -66,6 +66,6 @@ public static class SchemaPlanRenderer
             pipelineBuilder.AppendLine(trailingSql.Trim());
         }
 
-        return pipelineBuilder.ToString();
+        return SqlText.Normalize(pipelineBuilder.ToString());
     }
 }

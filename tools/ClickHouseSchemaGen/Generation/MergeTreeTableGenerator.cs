@@ -46,7 +46,7 @@ public static class MergeTreeTableGenerator
                 .AppendLine();
         }
 
-        return builder.ToString();
+        return SqlText.Normalize(builder.ToString());
     }
 
     private static bool RequiresFlattenNested(IReadOnlyList<PipelineColumnConfig> columns) =>
