@@ -4,11 +4,13 @@ public static class TestContainersEnv
 {
     public const string HubImageNamePrefixVariable = "TESTCONTAINERS_HUB_IMAGE_NAME_PREFIX";
     public const string RyukContainerImageVariable = "TESTCONTAINERS_RYUK_CONTAINER_IMAGE";
+    public const string DockerApiVersionVariable = "DOCKER_API_VERSION";
 
     public const string HubImageNamePrefix = "";
     public const string RyukImageName = "testcontainers/ryuk:0.11.0";
     // 26.5.6.64-checked is not published on Docker Hub; pin the public 26.5.6.64 tag.
     public const string ClickHouseImageName = "clickhouse/clickhouse-server:26.5.6.64";
+    public const string DockerApiVersion = "1.41";
 
     public static string FullClickHouseImageName => HubImageNamePrefix + ClickHouseImageName;
 
@@ -16,5 +18,9 @@ public static class TestContainersEnv
     {
         Environment.SetEnvironmentVariable(HubImageNamePrefixVariable, HubImageNamePrefix);
         Environment.SetEnvironmentVariable(RyukContainerImageVariable, RyukImageName);
+        if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable(DockerApiVersionVariable)))
+        {
+            Environment.SetEnvironmentVariable(DockerApiVersionVariable, DockerApiVersion);
+        }
     }
 }
