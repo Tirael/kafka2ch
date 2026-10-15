@@ -33,7 +33,15 @@
     </PropertyGroup>
   </Target>
 
-  <Target Name="_ClickHouseSchemaGen_PackTaskAssemblies" DependsOnTargets="Build">
+  <!--
+    Do not DependsOnTargets="Build": Pack already builds when NoBuild is unset.
+    Depending on Build breaks pack with NoBuild=true (NETSDK1085).
+    When NoBuild=true, Release outputs must already exist under $(TargetDir).
+  -->
+  <Target Name="_ClickHouseSchemaGen_PackTaskAssemblies">
+    <Error
+      Text="ClickHouseSchemaGen.Tasks pack expected outputs in '$(TargetDir)' but $(AssemblyName).dll was missing. Build the project before packing with NoBuild=true."
+      Condition="'$(NoBuild)' == 'true' And !Exists('$(TargetDir)$(AssemblyName).dll')" />
     <ItemGroup>
       <TfmSpecificPackageFile Include="$(TargetDir)*.dll" PackagePath="tools\net8.0\" />
       <TfmSpecificPackageFile Include="$(TargetDir)*.json" PackagePath="tools\net8.0\" Condition="Exists('%(Identity)')" />

@@ -10,11 +10,18 @@ export PATH="${DOTNET_ROOT}:${PATH}"
 mkdir -p "${OUT}"
 rm -f "${OUT}"/ClickHouseSchemaGen*.nupkg "${OUT}"/ClickHouseSchemaGen*.snupkg
 
-echo "==> Pack"
-dotnet pack "${ROOT}/tools/ClickHouseSchemaGen/ClickHouseSchemaGen.csproj" -c Release -o "${OUT}" --nologo
-dotnet pack "${ROOT}/tools/ClickHouseSchemaGen.Tasks/ClickHouseSchemaGen.Tasks.csproj" -c Release -o "${OUT}" --nologo
-dotnet pack "${ROOT}/tools/ClickHouseSchemaGen.Cli/ClickHouseSchemaGen.Cli.csproj" -c Release -o "${OUT}" --nologo
-dotnet pack "${ROOT}/tools/ClickHouseSchemaGen.Migrator/ClickHouseSchemaGen.Migrator.csproj" -c Release -o "${OUT}" --nologo
+echo "==> Build (Release)"
+dotnet build "${ROOT}/tools/ClickHouseSchemaGen/ClickHouseSchemaGen.csproj" -c Release --nologo
+dotnet build "${ROOT}/tools/ClickHouseSchemaGen.Tasks/ClickHouseSchemaGen.Tasks.csproj" -c Release --nologo
+dotnet build "${ROOT}/tools/ClickHouseSchemaGen.Cli/ClickHouseSchemaGen.Cli.csproj" -c Release --nologo
+dotnet build "${ROOT}/tools/ClickHouseSchemaGen.Migrator/ClickHouseSchemaGen.Migrator.csproj" -c Release --nologo
+
+# --no-build matches CI that packs after a separate build; Tasks must not invoke Build (NETSDK1085).
+echo "==> Pack (--no-build)"
+dotnet pack "${ROOT}/tools/ClickHouseSchemaGen/ClickHouseSchemaGen.csproj" -c Release -o "${OUT}" --no-build --nologo
+dotnet pack "${ROOT}/tools/ClickHouseSchemaGen.Tasks/ClickHouseSchemaGen.Tasks.csproj" -c Release -o "${OUT}" --no-build --nologo
+dotnet pack "${ROOT}/tools/ClickHouseSchemaGen.Cli/ClickHouseSchemaGen.Cli.csproj" -c Release -o "${OUT}" --no-build --nologo
+dotnet pack "${ROOT}/tools/ClickHouseSchemaGen.Migrator/ClickHouseSchemaGen.Migrator.csproj" -c Release -o "${OUT}" --no-build --nologo
 
 echo "==> Packages:"
 ls -1 "${OUT}"/ClickHouseSchemaGen*.nupkg
