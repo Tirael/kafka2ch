@@ -33,7 +33,10 @@
     </PropertyGroup>
   </Target>
 
-  <Target Name="_ClickHouseSchemaGen_PackTaskAssemblies" DependsOnTargets="Build">
+  <Target Name="_ClickHouseSchemaGen_PackTaskAssemblies">
+    <Error
+      Text="ClickHouseSchemaGen.Tasks pack expected outputs in '$(TargetDir)' but $(AssemblyName).dll was missing. Build the project before packing with NoBuild=true."
+      Condition="'$(NoBuild)' == 'true' And !Exists('$(TargetDir)$(AssemblyName).dll')" />
     <ItemGroup>
       <TfmSpecificPackageFile Include="$(TargetDir)*.dll" PackagePath="tools\net8.0\" />
       <TfmSpecificPackageFile Include="$(TargetDir)*.json" PackagePath="tools\net8.0\" Condition="Exists('%(Identity)')" />
