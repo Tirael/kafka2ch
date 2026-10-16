@@ -65,7 +65,7 @@ public static class SchemaMigrationsTable
         ArgumentNullException.ThrowIfNull(sql);
 
         var fileName = Path.GetFileName(outputPath);
-        var checksum = SchemaSnapshotSerializer.ComputeChecksum(sql);
+        var checksum = SqlChecksum.Compute(sql);
         var record = InsertSql(
             ParseInitVersion(fileName),
             fileName,

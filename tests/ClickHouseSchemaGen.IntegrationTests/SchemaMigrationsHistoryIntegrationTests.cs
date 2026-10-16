@@ -66,7 +66,7 @@ public sealed class SchemaMigrationsHistoryIntegrationTests : IAsyncLifetime
         const string migrationSql = "CREATE TABLE IF NOT EXISTS legacy_t (id String) ENGINE = MergeTree ORDER BY id;\n";
         var migrationPath = Path.Combine(_migrationsDirectory, "20260101000000_legacy.sql");
         await File.WriteAllTextAsync(migrationPath, migrationSql);
-        var checksum = SchemaSnapshotSerializer.ComputeChecksum(migrationSql);
+        var checksum = SqlChecksum.Compute(migrationSql);
 
         var legacySetup = $"""
             CREATE TABLE schema_migrations
@@ -89,6 +89,31 @@ public sealed class SchemaMigrationsHistoryIntegrationTests : IAsyncLifetime
         rows.Should().Equal(("20260101000000", "20260101000000_legacy.sql", "migration"));
         Convert.ToInt32(await ScalarAsync("EXISTS TABLE legacy_t"))
             .Should().Be(0, "already applied migration must not rerun");
+    }
+
+    [Fact]
+    public async Task GivenAppliedMigration_WhenFileCheckedOutWithCrLfAndBom_ThenNoChecksumMismatch()
+    {
+        const string migrationSql =
+            "CREATE TABLE IF NOT EXISTS eol_t (id String) ENGINE = MergeTree ORDER BY id;\n\n"
+            + "ALTER TABLE eol_t ADD COLUMN IF NOT EXISTS note String DEFAULT '';\n";
+        var migrationPath = Path.Combine(_migrationsDirectory, "20990101000001_eol_note.sql");
+        await File.WriteAllTextAsync(migrationPath, migrationSql);
+        await CreateRunner().ApplyAsync(_clickHouse.GetConnectionString(), _migrationsDirectory, CancellationToken.None);
+
+        await File.WriteAllTextAsync(
+            migrationPath,
+            migrationSql.ReplaceLineEndings("\r\n"),
+            new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
+        var reapply = () => CreateRunner().ApplyAsync(
+            _clickHouse.GetConnectionString(),
+            _migrationsDirectory,
+            CancellationToken.None);
+
+        await reapply.Should().NotThrowAsync();
+        Convert.ToString(await ScalarAsync(
+                "SELECT checksum FROM schema_migrations WHERE version = '20990101000001'"))
+            .Should().Be(SqlChecksum.Compute(migrationSql));
     }
 
     private static MigrationRunner CreateRunner() => new(NullLogger.Instance, TimeProvider.System);

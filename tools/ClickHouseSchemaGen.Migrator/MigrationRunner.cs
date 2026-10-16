@@ -45,7 +45,7 @@ public sealed class MigrationRunner(ILogger logger, TimeProvider timeProvider, C
         foreach (var file in files)
         {
             var version = ParseVersion(file.Name);
-            var checksum = ComputeChecksum(file.FullName);
+            var checksum = SqlChecksum.ComputeFile(file.FullName);
             if (applied.TryGetValue(version, out var existingChecksum))
             {
                 if (!string.Equals(existingChecksum, checksum, StringComparison.OrdinalIgnoreCase))
@@ -291,12 +291,5 @@ public sealed class MigrationRunner(ILogger logger, TimeProvider timeProvider, C
         if (underscore <= 0)
             throw new InvalidOperationException($"Migration file '{fileName}' must be named '{{version}}_{{name}}.sql'.");
         return fileName[..underscore];
-    }
-
-    private static string ComputeChecksum(string path)
-    {
-        var bytes = File.ReadAllBytes(path);
-        var hash = SHA256.HashData(bytes);
-        return Convert.ToHexString(hash).ToLowerInvariant();
     }
 }

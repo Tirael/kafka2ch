@@ -51,7 +51,7 @@ public static class SchemaMigrationsScriptGenerator
 
                 var version = fileName[..underscore];
                 var name = fileName[(underscore + 1)..];
-                var checksum = SchemaSnapshotSerializer.ComputeChecksum(File.ReadAllText(path));
+                var checksum = SqlChecksum.ComputeFile(path);
                 return new MigrationFileInfo(version, name, checksum, path);
             })
             .OrderBy(m => m.Version, StringComparer.Ordinal)
