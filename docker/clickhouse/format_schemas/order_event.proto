@@ -31,4 +31,19 @@ message OrderEvent {
   repeated sandbox.common.v1.OrderStatus status_history = 15;
   optional int32 loyalty_points = 16;
   OrderAttachments attachments = 17;
+
+  map<int64, OrderLine2> order_lines2_by_line_id = 18;
+}
+
+message OrderLine2 {
+  int64 line2_id = 1;
+  PriceValue2 value2 = 2;
+  bool is_active2 = 3;
+}
+
+message PriceValue2 {
+  double price2 = 1;
+  int32 quantity2 = 2;
+  google.protobuf.Timestamp created_at2 = 3;
+  google.protobuf.Timestamp changed_at2 = 4;
 }
