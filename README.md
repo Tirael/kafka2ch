@@ -116,6 +116,8 @@ dotnet exec tools/ClickHouseSchemaGen.Cli/bin/Debug/net8.0/ClickHouseSchemaGen.C
 ```
 
 4. Закоммитьте SQL в `docker/clickhouse/migrations/`, обновлённый `schema.snapshot.json` и `00_schema_migrations.sql`
+   (пересобрать `00_schema_migrations.sql` из каталога миграций без новой миграции: `… ClickHouseSchemaGen.Cli.dll migrate versions --config <path>`).
+   Checksum в `schema_migrations` (init, baseline и миграции) — SHA-256 от канонического текста `SqlChecksum` (LF, без BOM, без хвостовых пробелов и пустых строк, UTF-8), поэтому не зависит от CRLF/LF checkout на Windows и Linux.
 5. Apply: сервис `clickhouse-migrate` при `docker compose up`, либо вручную:
 
 ```bash
