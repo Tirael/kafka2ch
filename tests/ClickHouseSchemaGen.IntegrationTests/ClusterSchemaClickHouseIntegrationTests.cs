@@ -97,7 +97,7 @@ public sealed class ClusterSchemaClickHouseIntegrationTests : IAsyncLifetime
                 "SELECT getMacro('replica'), count(), countIf(kind = 'init'), countIf(version = '" + PersistPartitionMigrationFixture.Version + "') " +
                 "FROM clusterAllReplicas('kafka2ch', currentDatabase(), schema_migrations) GROUP BY 1 ORDER BY 1"))
             .Select(row => $"{row[0]}:{row[1]}:{row[2]}:{row[3]}")
-            .Should().Equal("ch1:3:2:1", "ch2:3:2:1");
+            .Should().Equal("ch1:4:2:1", "ch2:4:2:1");
     }
 
     private ClickHouseContainer CreateNode(string host, string shard) =>

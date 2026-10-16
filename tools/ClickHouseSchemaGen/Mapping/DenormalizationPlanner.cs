@@ -7,7 +7,7 @@ public sealed class DenormalizationPlanner
     public DenormalizationPlanner()
         => _strategies =
         [
-            new MapFieldStrategy(),
+            new MapFieldStrategy(this),
             new RepeatedFieldStrategy(this),
             new MessageFieldStrategy(this),
             new ScalarFieldStrategy()

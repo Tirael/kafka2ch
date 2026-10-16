@@ -21,7 +21,8 @@ CREATE TABLE orders_queue
     promo_code           Nullable(String),
     status_history       Array(Enum8('ORDER_STATUS_UNSPECIFIED' = 0, 'ORDER_STATUS_CREATED' = 1, 'ORDER_STATUS_PAID' = 2)),
     loyalty_points       Nullable(Int32),
-    attachments          Tuple(invoices Array(Tuple(name String, note Nullable(String))), receipts Array(Tuple(name String, note Nullable(String))))
+    attachments          Tuple(invoices Array(Tuple(name String, note Nullable(String))), receipts Array(Tuple(name String, note Nullable(String)))),
+    order_lines2_by_line_id Map(Int64, Tuple(line2_id Int64, value2_price2 Float64, value2_quantity2 Int32, value2_created_at2_seconds Int64, value2_created_at2_nanos Int32, value2_changed_at2_seconds Int64, value2_changed_at2_nanos Int32, is_active2 UInt8))
 )
 ENGINE = Kafka
 SETTINGS
@@ -36,4 +37,4 @@ SETTINGS
     input_format_protobuf_oneof_presence = 1,
     input_format_protobuf_flatten_google_wrappers = 1;
 
-INSERT INTO schema_migrations (version, name, checksum, applied_at, kind) VALUES ('01', '01_orders_queue.sql', '8a8d39544306b11390082a086b1958f8291fc0c4954da36d4e97fd1669e5e281', now(), 'init');
+INSERT INTO schema_migrations (version, name, checksum, applied_at, kind) VALUES ('01', '01_orders_queue.sql', '6261d3bc133f2595ccb5fc963edba15aeb933d9847aefdf8c428ec9c2dbf0b78', now(), 'init');

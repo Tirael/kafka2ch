@@ -1,5 +1,6 @@
 {
   "version": 1,
+  "parentChecksum": "7e74b8b7bcdce3fdc795c3e9108fb2bfa0ef506252aa38630cea163e5e0d8f6d",
   "trailingSqlHash": "96a513268308a899d300ed515c2c5ee2bdfae24998b566a46159e17c136cae83",
   "kafkaTables": [
     {
@@ -80,6 +81,11 @@
           "name": "attachments",
           "type": "Tuple(invoices Array(Tuple(name String, note Nullable(String))), receipts Array(Tuple(name String, note Nullable(String))))",
           "fieldNumberPath": "17"
+        },
+        {
+          "name": "order_lines2_by_line_id",
+          "type": "Map(Int64, Tuple(line2_id Int64, value2_price2 Float64, value2_quantity2 Int32, value2_created_at2_seconds Int64, value2_created_at2_nanos Int32, value2_changed_at2_seconds Int64, value2_changed_at2_nanos Int32, is_active2 UInt8))",
+          "fieldNumberPath": "18"
         },
         {
           "name": "category",
