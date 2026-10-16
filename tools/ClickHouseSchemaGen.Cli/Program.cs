@@ -43,7 +43,7 @@ static int RunMigrate(string[] args)
 {
     if (args.Length == 0)
     {
-        Console.Error.WriteLine("Missing migrate subcommand (init|status|--name).");
+        Console.Error.WriteLine("Missing migrate subcommand (init|status|versions|--name).");
         return 1;
     }
 
@@ -54,6 +54,14 @@ static int RunMigrate(string[] args)
         var configPath = RequireConfig(args.AsSpan(1).ToArray());
         orchestrator.Init(configPath);
         Console.WriteLine($"Initialized schema snapshot for '{configPath}'.");
+        return 0;
+    }
+
+    if (args[0] == "versions")
+    {
+        var configPath = RequireConfig(args.AsSpan(1).ToArray());
+        var versionsPath = orchestrator.WriteVersionsScript(configPath);
+        Console.WriteLine($"Regenerated migration baseline '{versionsPath}'.");
         return 0;
     }
 
@@ -136,6 +144,7 @@ static void PrintUsage()
           clickhouse-schema-gen generate --config <path> [--assemblies <dll[;dll…]>]
           clickhouse-schema-gen migrate init --config <path> [--assemblies <dll[;dll…]>]
           clickhouse-schema-gen migrate status --config <path> [--assemblies <dll[;dll…]>]
+          clickhouse-schema-gen migrate versions --config <path>   (rewrite versionsOutputPath from migrations)
           clickhouse-schema-gen migrate --config <path> --name <name> [--assemblies <dll[;dll…]>] [--allow-manual]
           clickhouse-schema-gen --config <path> [--assemblies <dll[;dll…]>]   (alias for generate)
 

@@ -36,4 +36,4 @@ SETTINGS
     input_format_protobuf_oneof_presence = 1,
     input_format_protobuf_flatten_google_wrappers = 1;
 
-INSERT INTO schema_migrations (version, name, checksum, applied_at, kind) VALUES ('01', '01_orders_queue.sql', '521a62f25f557f6b925574c4b30d2da67705c890c32d7e01432e6d6cec33b26a', now(), 'init');
+INSERT INTO schema_migrations (version, name, checksum, applied_at, kind) VALUES ('01', '01_orders_queue.sql', '8a24295fce64c4edef08e66c3778bf1b9461465ea1ea7d321a25561976018160', now(), 'init');

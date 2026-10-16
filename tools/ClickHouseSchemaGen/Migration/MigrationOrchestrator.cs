@@ -107,16 +107,28 @@ public sealed class MigrationOrchestrator(ClickHouseSchemaGenerator generator, T
         }
 
         SchemaSnapshotSerializer.Save(paths.SnapshotPath, newSnapshot);
-
-        var migrations = SchemaMigrationsScriptGenerator.ReadFromDirectory(paths.MigrationsDirectory);
-        File.WriteAllText(
-            paths.VersionsOutputPath,
-            SqlText.Normalize(SchemaMigrationsScriptGenerator.Generate(migrations, ClusterDdl.For(config))));
+        WriteVersionsScript(config, paths);
 
         return new MigrationRunResult(
             ExitCode: 0,
             MigrationPath: migrationPath,
             Message: $"Migration written to '{migrationPath}' and snapshot updated.");
+    }
+
+    public string WriteVersionsScript(string configPath)
+    {
+        var (config, paths) = LoadContext(configPath);
+        WriteVersionsScript(config, paths);
+        return paths.VersionsOutputPath;
+    }
+
+    private static void WriteVersionsScript(CodegenConfig config, MigrationPaths paths)
+    {
+        var migrations = SchemaMigrationsScriptGenerator.ReadFromDirectory(paths.MigrationsDirectory);
+        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(paths.VersionsOutputPath))!);
+        File.WriteAllText(
+            paths.VersionsOutputPath,
+            SqlText.Normalize(SchemaMigrationsScriptGenerator.Generate(migrations, ClusterDdl.For(config))));
     }
 
     private static (CodegenConfig Config, MigrationPaths Paths) LoadContext(string configPath)
