@@ -22,6 +22,16 @@ message MapFieldsMessage {
   map<string, string> labels = 1;
 }
 
+message MapMessageValueFieldsMessage {
+  map<int64, MapValuePayload> values_by_id = 1;
+}
+
+message MapValuePayload {
+  int64 id = 1;
+  string label = 2;
+  bool enabled = 3;
+}
+
 message TimestampFieldsMessage {
   google.protobuf.Timestamp created_at = 1;
 }

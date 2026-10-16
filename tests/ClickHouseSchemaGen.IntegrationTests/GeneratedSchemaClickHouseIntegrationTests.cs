@@ -57,11 +57,13 @@ public sealed class GeneratedSchemaClickHouseIntegrationTests : IAsyncLifetime
             "promo_code",
             "status_history",
             "loyalty_points",
-            "attachments"
+            "attachments",
+            "order_lines2_by_line_id"
         ], options => options.WithStrictOrdering());
         columns.Single(column => column.Name == "items").Type.Should().Contain("parts Array(Tuple(");
         columns.Single(column => column.Name == "metadata").Type.Should().Be("Map(String, String)");
         columns.Single(column => column.Name == "note").Type.Should().Be("Nullable(String)");
+        columns.Single(column => column.Name == "order_lines2_by_line_id").Type.Should().StartWith("Map(Int64, Tuple(");
     }
 
     [Fact]
@@ -120,6 +122,20 @@ public sealed class GeneratedSchemaClickHouseIntegrationTests : IAsyncLifetime
         orderEvent.Metadata["source"] = "integration-test";
         orderEvent.StatusHistory.Add(OrderStatus.Created);
         orderEvent.StatusHistory.Add(OrderStatus.Paid);
+        var lineTime = Timestamp.FromDateTimeOffset(
+            DateTimeOffset.FromUnixTimeMilliseconds(1_700_000_000_000));
+        orderEvent.OrderLines2ByLineId[7] = new OrderLine2
+        {
+            Line2Id = 7,
+            IsActive2 = true,
+            Value2 = new PriceValue2
+            {
+                Price2 = 12.5,
+                Quantity2 = 3,
+                CreatedAt2 = lineTime,
+                ChangedAt2 = lineTime
+            }
+        };
 
         using var payload = new MemoryStream();
         orderEvent.WriteTo(payload);
@@ -150,7 +166,10 @@ public sealed class GeneratedSchemaClickHouseIntegrationTests : IAsyncLifetime
                 toJSONString(items.parts.sku) AS part_skus,
                 toJSONString(items.parts.weight) AS part_weights,
                 toJSONString(attachments.invoices.note) AS invoice_notes,
-                toJSONString(attachments.receipts.name) AS receipt_names
+                toJSONString(attachments.receipts.name) AS receipt_names,
+                order_lines2_by_line_id[7].line2_id,
+                order_lines2_by_line_id[7].value2_price2,
+                order_lines2_by_line_id[7].is_active2
             FROM order_events_ingest
             WHERE order_id = 'ord-integration-1'
             """;
@@ -176,6 +195,9 @@ public sealed class GeneratedSchemaClickHouseIntegrationTests : IAsyncLifetime
         reader.GetString(15).Should().Contain("0.4");
         reader.GetString(16).Should().Contain("paid");
         reader.GetString(17).Should().Contain("receipt.pdf");
+        reader.GetInt64(18).Should().Be(7);
+        reader.GetDouble(19).Should().Be(12.5);
+        reader.GetFieldValue<byte>(20).Should().Be(1);
     }
 
     [Fact]

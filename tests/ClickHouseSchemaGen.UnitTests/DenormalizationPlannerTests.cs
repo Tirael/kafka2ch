@@ -25,6 +25,18 @@ public sealed class DenormalizationPlannerTests
     }
 
     [Fact]
+    public void GivenMapWithMessageValues_WhenMapped_ThenUsesMapOfTuple()
+    {
+        var columns = _sut.MapMessage(
+            MapMessageValueFieldsMessage.Descriptor,
+            _defaults,
+            MappingTestSupport.EmptyOverrides);
+
+        columns.Single().Type.Should().Be(
+            "Map(Int64, Tuple(id Int64, label String, enabled UInt8))");
+    }
+
+    [Fact]
     public void GivenOneofMessage_WhenMapped_ThenCreatesBranchAndPresenceColumns()
     {
         var columns = _sut.MapMessage(OneofMessage.Descriptor, _defaults, MappingTestSupport.EmptyOverrides);

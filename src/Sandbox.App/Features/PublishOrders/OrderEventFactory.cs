@@ -77,6 +77,8 @@ public static class OrderEventFactory
         if (Random.Shared.Next(0, 2) == 0)
             orderEvent.LoyaltyPoints = Random.Shared.Next(10, 500);
 
+        ApplyOrderLines(orderEvent, now);
+
         return (key, orderEvent);
     }
 
@@ -114,5 +116,27 @@ public static class OrderEventFactory
     {
         orderEvent.StatusHistory.Add(OrderStatus.Unspecified);
         orderEvent.StatusHistory.Add(orderEvent.Status);
+    }
+
+    private static void ApplyOrderLines(OrderEvent orderEvent, DateTimeOffset now)
+    {
+        var lineCount = Random.Shared.Next(1, 4);
+        for (var i = 0; i < lineCount; i++)
+        {
+            var lineId = Random.Shared.NextInt64(1, 1000);
+            var timestamp = Google.Protobuf.WellKnownTypes.Timestamp.FromDateTimeOffset(now);
+            orderEvent.OrderLines2ByLineId[lineId] = new OrderLine2
+            {
+                Line2Id = lineId,
+                IsActive2 = Random.Shared.Next(0, 2) == 0,
+                Value2 = new PriceValue2
+                {
+                    Price2 = Random.Shared.NextDouble() * 100,
+                    Quantity2 = Random.Shared.Next(1, 10),
+                    CreatedAt2 = timestamp,
+                    ChangedAt2 = timestamp
+                }
+            };
+        }
     }
 }
