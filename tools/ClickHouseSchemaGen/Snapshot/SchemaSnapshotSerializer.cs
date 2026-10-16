@@ -33,7 +33,7 @@ public static class SchemaSnapshotSerializer
         ArgumentNullException.ThrowIfNull(snapshot);
 
         var normalized = NormalizeForDeterministicSerialization(snapshot);
-        var json = JsonSerializer.Serialize(normalized, WriteOptions);
+        var json = JsonSerializer.Serialize(normalized, WriteOptions).ReplaceLineEndings("\n");
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
         File.WriteAllText(path, json);
     }
@@ -41,7 +41,8 @@ public static class SchemaSnapshotSerializer
     public static string SerializeToString(SchemaSnapshot snapshot)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
-        return JsonSerializer.Serialize(NormalizeForDeterministicSerialization(snapshot), WriteOptions);
+        return JsonSerializer.Serialize(NormalizeForDeterministicSerialization(snapshot), WriteOptions)
+            .ReplaceLineEndings("\n");
     }
 
     public static string ComputeChecksum(string content) =>

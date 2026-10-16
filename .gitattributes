@@ -2,4 +2,8 @@
 *.sh text eol=lf
 
 # Generated/committed ClickHouse SQL must stay LF for golden tests and Linux init.
+# Checksums are computed over normalized text (SqlChecksum), but keep checkouts identical anyway.
 *.sql text eol=lf
+
+# Schema snapshots are generated with LF and feed snapshot parent checksums.
+*.snapshot.json text eol=lf
