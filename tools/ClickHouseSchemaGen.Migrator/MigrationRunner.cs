@@ -306,12 +306,27 @@ public sealed class MigrationRunner(ILogger logger, TimeProvider timeProvider, C
             if (!savedObjectDdl.TryGetValue(objectName, out var createSql))
                 continue;
 
+            var onCluster = clusterName is null ? string.Empty : $" ON CLUSTER {clusterName}";
             var restoreSql = WithClusterClause(createSql, clusterName);
             try
             {
                 logger.LogWarning(
                     "Migration failed after DROP of {Object}; restoring previous definition",
                     objectName);
+                try
+                {
+                    await using var attachCommand = connection.CreateCommand();
+                    attachCommand.CommandText = $"ATTACH TABLE IF NOT EXISTS {objectName}{onCluster}";
+                    await attachCommand.ExecuteNonQueryAsync(timeout.Token);
+
+                    await using var dropCommand = connection.CreateCommand();
+                    dropCommand.CommandText = $"DROP TABLE IF EXISTS {objectName}{onCluster}";
+                    await dropCommand.ExecuteNonQueryAsync(timeout.Token);
+                }
+                catch (Exception)
+                {
+                }
+
                 await using var command = connection.CreateCommand();
                 command.CommandText = restoreSql;
                 await command.ExecuteNonQueryAsync(timeout.Token);

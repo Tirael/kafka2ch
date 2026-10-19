@@ -93,9 +93,10 @@ public sealed class MigrationQueueLifecycleIntegrationTests : IAsyncLifetime
         await File.WriteAllTextAsync(
             Path.Combine(_migrationsDirectory, $"{version}_broken_recreate.sql"),
             """
-            DROP VIEW IF EXISTS orders_mv;
-            DETACH TABLE IF EXISTS orders_queue PERMANENTLY;
+            DETACH TABLE IF EXISTS orders_queue;
             -- await:kafka_consumers_empty orders_queue
+            DROP VIEW IF EXISTS orders_mv;
+            ATTACH TABLE IF NOT EXISTS orders_queue;
             DROP TABLE IF EXISTS orders_queue;
             CREATE TABLE IF NOT EXISTS orders_queue (broken NoSuchType) ENGINE = Kafka;
             """);
