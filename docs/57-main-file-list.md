@@ -2,6 +2,7 @@
 
 Files changed on branch [`cursor/fix-tla-tlc-defects-61e3`](https://github.com/Tirael/kafka2ch/pull/57) relative to `main`, each linked to its raw GitHub content URL on that branch.
 
+- [docs/57-main-file-list.md](https://raw.githubusercontent.com/Tirael/kafka2ch/cursor/fix-tla-tlc-defects-61e3/docs/57-main-file-list.md)
 - [tests/ClickHouseSchemaGen.IntegrationTests/MigrationQueueLifecycleIntegrationTests.cs](https://raw.githubusercontent.com/Tirael/kafka2ch/cursor/fix-tla-tlc-defects-61e3/tests/ClickHouseSchemaGen.IntegrationTests/MigrationQueueLifecycleIntegrationTests.cs)
 - [tests/ClickHouseSchemaGen.UnitTests/ClickHouseSchemaGeneratorTests.cs](https://raw.githubusercontent.com/Tirael/kafka2ch/cursor/fix-tla-tlc-defects-61e3/tests/ClickHouseSchemaGen.UnitTests/ClickHouseSchemaGeneratorTests.cs)
 - [tests/ClickHouseSchemaGen.UnitTests/CodegenConfigValidatorTests.cs](https://raw.githubusercontent.com/Tirael/kafka2ch/cursor/fix-tla-tlc-defects-61e3/tests/ClickHouseSchemaGen.UnitTests/CodegenConfigValidatorTests.cs)
