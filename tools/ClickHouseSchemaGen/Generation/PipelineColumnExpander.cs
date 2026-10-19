@@ -13,6 +13,7 @@ public static class PipelineColumnExpander
         PersistKafkaMetaConfig meta,
         IReadOnlyList<ClickHouseColumn>? keyColumns = null)
     {
+        var effectiveMeta = KafkaMetaColumnFactory.Resolve(meta, tableOverride: null, table.IncludeKafkaMeta);
         List<PipelineColumnConfig> columns;
 
         if (table.Columns.Count > 0)
@@ -28,7 +29,7 @@ public static class PipelineColumnExpander
                 .ToList();
 
             if (table.IncludeKafkaMeta == true)
-                AppendMissingMetaColumns(columns, meta, keyColumns);
+                AppendMissingMetaColumns(columns, effectiveMeta, keyColumns);
         }
         else
         {
@@ -46,8 +47,8 @@ public static class PipelineColumnExpander
                 })
                 .ToList();
 
-            if (meta.AnyEnabled)
-                AppendMissingMetaColumns(columns, meta, keyColumns);
+            if (effectiveMeta.AnyEnabled)
+                AppendMissingMetaColumns(columns, effectiveMeta, keyColumns);
         }
 
         return new MergeTreeTableConfig
@@ -75,6 +76,10 @@ public static class PipelineColumnExpander
         MergeTreeTableConfig? targetTable,
         IReadOnlyList<ClickHouseColumn>? keyColumns = null)
     {
+        var effectiveMeta = KafkaMetaColumnFactory.Resolve(
+            meta,
+            tableOverride: null,
+            view.IncludeKafkaMeta ?? targetTable?.IncludeKafkaMeta);
         List<PipelineColumnMapping> columns;
 
         if (view.Columns.Count > 0)
@@ -83,7 +88,7 @@ public static class PipelineColumnExpander
             var includeMeta = view.IncludeKafkaMeta == true
                 || (view.IncludeKafkaMeta is null && targetTable?.IncludeKafkaMeta == true);
             if (includeMeta)
-                AppendMissingMetaMappings(columns, meta, keyColumns);
+                AppendMissingMetaMappings(columns, effectiveMeta, keyColumns);
         }
         else
         {
@@ -100,8 +105,8 @@ public static class PipelineColumnExpander
                 })
                 .ToList();
 
-            if (meta.AnyEnabled)
-                AppendMissingMetaMappings(columns, meta, keyColumns);
+            if (effectiveMeta.AnyEnabled)
+                AppendMissingMetaMappings(columns, effectiveMeta, keyColumns);
         }
 
         return new MaterializedViewConfig

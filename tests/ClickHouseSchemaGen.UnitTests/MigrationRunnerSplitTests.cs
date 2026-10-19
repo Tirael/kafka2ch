@@ -69,13 +69,64 @@ public sealed class MigrationRunnerSplitTests
     }
 
     [Fact]
-    public void GivenDetachThenDrop_WhenTrackLifecycle_ThenQueueIsCleared()
+    public void GivenDetachThenDrop_WhenTrackLifecycle_ThenQueueMovesFromDetachedToDroppedUntilRecreated()
     {
         var detached = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+        var dropped = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
 
-        MigrationRunner.TrackQueueLifecycle("DETACH TABLE IF EXISTS orders_queue PERMANENTLY", detached);
-        MigrationRunner.TrackQueueLifecycle("DROP TABLE IF EXISTS orders_queue", detached);
+        MigrationRunner.TrackQueueLifecycle("DETACH TABLE IF EXISTS orders_queue PERMANENTLY", detached, dropped);
+        MigrationRunner.TrackQueueLifecycle("DROP TABLE IF EXISTS orders_queue ON CLUSTER kafka2ch", detached, dropped);
 
         detached.Should().BeEmpty();
+        dropped.Should().ContainKey("orders_queue");
+        dropped["orders_queue"].Should().Be("kafka2ch");
+
+        MigrationRunner.TrackQueueLifecycle("CREATE TABLE IF NOT EXISTS orders_queue (id String) ENGINE = Kafka", detached, dropped);
+
+        dropped.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void GivenDropViewThenCreateView_WhenTrackViewLifecycle_ThenViewIsTrackedUntilRecreated()
+    {
+        var droppedViews = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+
+        MigrationRunner.TrackViewLifecycle("DROP VIEW IF EXISTS orders_mv ON CLUSTER kafka2ch", droppedViews);
+
+        droppedViews.Should().ContainKey("orders_mv");
+        droppedViews["orders_mv"].Should().Be("kafka2ch");
+
+        MigrationRunner.TrackViewLifecycle(
+            "CREATE MATERIALIZED VIEW IF NOT EXISTS orders_mv ON CLUSTER kafka2ch TO orders AS SELECT * FROM orders_queue",
+            droppedViews);
+
+        droppedViews.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void GivenDetachOrDropStatement_WhenExtractTargetObjectForBackup_ThenReturnsObjectName()
+    {
+        MigrationRunner.ExtractTargetObjectForBackup("DETACH TABLE IF EXISTS orders_queue PERMANENTLY")
+            .Should().Be("orders_queue");
+        MigrationRunner.ExtractTargetObjectForBackup("DROP TABLE IF EXISTS orders_queue ON CLUSTER kafka2ch")
+            .Should().Be("orders_queue");
+        MigrationRunner.ExtractTargetObjectForBackup("DROP VIEW IF EXISTS orders_mv ON CLUSTER kafka2ch")
+            .Should().Be("orders_mv");
+        MigrationRunner.ExtractTargetObjectForBackup("ALTER TABLE orders ADD COLUMN IF NOT EXISTS note String")
+            .Should().BeNull();
+    }
+
+    [Fact]
+    public void GivenShowCreateTableOutputAndCluster_WhenWithClusterClause_ThenInjectsOnCluster()
+    {
+        var tableSql = "CREATE TABLE default.orders_queue (`order_id` String) ENGINE = Kafka";
+        var viewSql = "CREATE MATERIALIZED VIEW default.orders_mv TO default.orders AS SELECT order_id FROM default.orders_queue";
+
+        MigrationRunner.WithClusterClause(tableSql, "kafka2ch")
+            .Should().Be("CREATE TABLE default.orders_queue ON CLUSTER kafka2ch (`order_id` String) ENGINE = Kafka");
+        MigrationRunner.WithClusterClause(viewSql, "kafka2ch")
+            .Should().Be("CREATE MATERIALIZED VIEW default.orders_mv ON CLUSTER kafka2ch TO default.orders AS SELECT order_id FROM default.orders_queue");
+        MigrationRunner.WithClusterClause(tableSql, null)
+            .Should().Be(tableSql);
     }
 }

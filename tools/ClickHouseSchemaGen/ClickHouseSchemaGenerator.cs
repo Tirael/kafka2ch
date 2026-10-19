@@ -61,10 +61,9 @@ public sealed class ClickHouseSchemaGenerator(
         var expandedTables = originalMergeTree
             .Select(table =>
             {
-                var meta = ResolveMetaForMergeTree(table, metaByQueue, config.Defaults.PersistKafkaMeta);
-                var keyColumns = KeyColumnsFor(
-                    table.SourceTable ?? FindViewSourceTable(config.Pipeline, table.TableName),
-                    keyColumnsByQueue);
+                var sourceTable = table.SourceTable ?? FindViewSourceTable(config.Pipeline, table.TableName);
+                var meta = ResolveMetaForMergeTree(table, sourceTable, metaByQueue, config.Defaults.PersistKafkaMeta);
+                var keyColumns = KeyColumnsFor(sourceTable, keyColumnsByQueue);
                 return (
                     Original: table,
                     Expanded: PipelineColumnExpander.ExpandMergeTreeTable(table, queueColumnsByTable, meta, keyColumns),
@@ -93,9 +92,11 @@ public sealed class ClickHouseSchemaGenerator(
             .Select(view =>
             {
                 expandedByName.TryGetValue(view.TargetTable, out var target);
-                var meta = target.Meta
-                    ?? metaByQueue.GetValueOrDefault(view.SourceTable)
-                    ?? config.Defaults.PersistKafkaMeta;
+                var meta = ResolveMetaForMaterializedView(
+                    view,
+                    target.Original,
+                    metaByQueue,
+                    config.Defaults.PersistKafkaMeta);
                 var keyColumns = KeyColumnsFor(view.SourceTable, keyColumnsByQueue);
                 var expanded = PipelineColumnExpander.ExpandMaterializedView(
                     view,
@@ -147,12 +148,13 @@ public sealed class ClickHouseSchemaGenerator(
         foreach (var (outputPath, sql) in scripts)
             WriteGeneratedSql(configDirectory, CodegenConfigLoader.ResolveInitScriptPath(config, outputPath), sql);
 
-        new MigrationOrchestrator(this).WriteVersionsScript(configPath);
+        var snapshotPath = CodegenConfigLoader.ResolvePath(configPath, config.Migrations.SnapshotPath);
+        if (File.Exists(snapshotPath))
+            new MigrationOrchestrator(this).WriteVersionsScript(configPath);
 
         if (!checkSnapshot)
             return;
 
-        var snapshotPath = CodegenConfigLoader.ResolvePath(configPath, config.Migrations.SnapshotPath);
         if (!File.Exists(snapshotPath))
         {
             Console.Error.WriteLine(
@@ -178,14 +180,31 @@ public sealed class ClickHouseSchemaGenerator(
 
     private static PersistKafkaMetaConfig ResolveMetaForMergeTree(
         MergeTreeTableConfig table,
+        string? sourceTable,
         IReadOnlyDictionary<string, PersistKafkaMetaConfig> metaByQueue,
         PersistKafkaMetaConfig defaults)
     {
         PersistKafkaMetaConfig? fromQueue = null;
-        if (!string.IsNullOrWhiteSpace(table.SourceTable))
-            metaByQueue.TryGetValue(table.SourceTable, out fromQueue);
+        if (!string.IsNullOrWhiteSpace(sourceTable))
+            metaByQueue.TryGetValue(sourceTable, out fromQueue);
 
         return KafkaMetaColumnFactory.Resolve(defaults, fromQueue, table.IncludeKafkaMeta);
+    }
+
+    private static PersistKafkaMetaConfig ResolveMetaForMaterializedView(
+        MaterializedViewConfig view,
+        MergeTreeTableConfig? targetTable,
+        IReadOnlyDictionary<string, PersistKafkaMetaConfig> metaByQueue,
+        PersistKafkaMetaConfig defaults)
+    {
+        PersistKafkaMetaConfig? fromQueue = null;
+        if (!string.IsNullOrWhiteSpace(view.SourceTable))
+            metaByQueue.TryGetValue(view.SourceTable, out fromQueue);
+
+        return KafkaMetaColumnFactory.Resolve(
+            defaults,
+            fromQueue,
+            view.IncludeKafkaMeta ?? targetTable?.IncludeKafkaMeta);
     }
 
     private static void EnsureTtlReferencesKnownColumns(MergeTreeTableConfig table)

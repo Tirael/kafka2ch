@@ -47,6 +47,8 @@ public sealed record OrderByOrTtlChanged(
 
 public sealed record OriginChanged(string TableName, PlanOrigin OldOrigin, PlanOrigin NewOrigin) : SchemaChange;
 
+public sealed record SourceTableChanged(string TableName, string? OldSourceTable, string? NewSourceTable) : SchemaChange;
+
 public sealed record SchemaDiff
 {
     public IReadOnlyList<SchemaChange> Changes { get; init; } = [];
@@ -68,6 +70,8 @@ public sealed record MigrationPlan
         change switch
         {
             ColumnRemoved => true,
+            ColumnRenamed => true,
+            ColumnAdded => true,
             ColumnTypeChanged { Kind: TypeChangeKind.Destructive or TypeChangeKind.Manual } => true,
             OrderByOrTtlChanged => true,
             OriginChanged => true,

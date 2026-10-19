@@ -18,6 +18,22 @@ public sealed class MigrationRunner(ILogger logger, TimeProvider timeProvider, C
         @"^\s*DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?<table>[A-Za-z_][A-Za-z0-9_]*)(?:\s+ON\s+CLUSTER\s+(?<cluster>[A-Za-z_][A-Za-z0-9_]*))?(?:\s+SYNC)?\s*;?\s*$",
         RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
 
+    private static readonly Regex CreateTableStatement = new(
+        @"^\s*CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:[A-Za-z_][A-Za-z0-9_]*\.)?(?<table>[A-Za-z_][A-Za-z0-9_]*)\b",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+
+    private static readonly Regex DropViewStatement = new(
+        @"^\s*DROP\s+VIEW\s+(?:IF\s+EXISTS\s+)?(?<view>[A-Za-z_][A-Za-z0-9_]*)(?:\s+ON\s+CLUSTER\s+(?<cluster>[A-Za-z_][A-Za-z0-9_]*))?(?:\s+SYNC)?\s*;?\s*$",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+
+    private static readonly Regex CreateMaterializedViewStatement = new(
+        @"^\s*CREATE\s+MATERIALIZED\s+VIEW\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:[A-Za-z_][A-Za-z0-9_]*\.)?(?<view>[A-Za-z_][A-Za-z0-9_]*)\b",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+
+    private static readonly Regex CreateObjectHeader = new(
+        @"^(?<prefix>\s*CREATE\s+(?:MATERIALIZED\s+VIEW|TABLE)\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:`?[A-Za-z_][A-Za-z0-9_]*`?\.)?`?[A-Za-z_][A-Za-z0-9_]*`?)",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+
     private readonly ClusterDdl _cluster = new(cluster);
 
     private static readonly TimeSpan ConsumerWaitTimeout = TimeSpan.FromSeconds(60);
@@ -131,6 +147,9 @@ public sealed class MigrationRunner(ILogger logger, TimeProvider timeProvider, C
     {
         var sql = await File.ReadAllTextAsync(path, cancellationToken);
         var detachedQueues = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+        var droppedQueues = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+        var droppedViews = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+        var savedObjectDdl = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
         var completed = false;
         try
@@ -155,22 +174,37 @@ public sealed class MigrationRunner(ILogger logger, TimeProvider timeProvider, C
                     || statement.TrimStart().StartsWith("--", StringComparison.Ordinal))
                     continue;
 
+                await SnapshotObjectDdlBeforeChangeAsync(connection, statement, savedObjectDdl, cancellationToken);
+
                 await using var command = connection.CreateCommand();
                 command.CommandText = statement;
                 await command.ExecuteNonQueryAsync(cancellationToken);
-                TrackQueueLifecycle(statement, detachedQueues);
+                TrackQueueLifecycle(statement, detachedQueues, droppedQueues);
+                TrackViewLifecycle(statement, droppedViews);
             }
 
             completed = true;
         }
         finally
         {
-            if (!completed && detachedQueues.Count > 0)
-                await ReattachDetachedQueuesAsync(connection, detachedQueues);
+            if (!completed)
+            {
+                if (droppedQueues.Count > 0)
+                    await RestoreDroppedObjectsAsync(connection, droppedQueues, savedObjectDdl);
+
+                if (detachedQueues.Count > 0)
+                    await ReattachDetachedQueuesAsync(connection, detachedQueues);
+
+                if (droppedViews.Count > 0)
+                    await RestoreDroppedObjectsAsync(connection, droppedViews, savedObjectDdl);
+            }
         }
     }
 
-    public static void TrackQueueLifecycle(string statement, IDictionary<string, string?> detachedQueues)
+    public static void TrackQueueLifecycle(
+        string statement,
+        IDictionary<string, string?> detachedQueues,
+        IDictionary<string, string?>? droppedQueues = null)
     {
         var detach = DetachTableStatement.Match(statement);
         if (detach.Success)
@@ -189,8 +223,114 @@ public sealed class MigrationRunner(ILogger logger, TimeProvider timeProvider, C
 
         var drop = DropTableStatement.Match(statement);
         if (drop.Success)
-            detachedQueues.Remove(drop.Groups["table"].Value);
+        {
+            var tableName = drop.Groups["table"].Value;
+            detachedQueues.Remove(tableName);
+            if (droppedQueues is not null)
+            {
+                droppedQueues[tableName] =
+                    drop.Groups["cluster"] is { Success: true, Value: var value } ? value : null;
+            }
+
+            return;
+        }
+
+        if (droppedQueues is null)
+            return;
+
+        var create = CreateTableStatement.Match(statement);
+        if (create.Success)
+            droppedQueues.Remove(create.Groups["table"].Value);
     }
+
+    public static void TrackViewLifecycle(string statement, IDictionary<string, string?> droppedViews)
+    {
+        var drop = DropViewStatement.Match(statement);
+        if (drop.Success)
+        {
+            droppedViews[drop.Groups["view"].Value] =
+                drop.Groups["cluster"] is { Success: true, Value: var value } ? value : null;
+            return;
+        }
+
+        var create = CreateMaterializedViewStatement.Match(statement);
+        if (create.Success)
+            droppedViews.Remove(create.Groups["view"].Value);
+    }
+
+    private static async Task SnapshotObjectDdlBeforeChangeAsync(
+        ClickHouseConnection connection,
+        string statement,
+        IDictionary<string, string> savedObjectDdl,
+        CancellationToken cancellationToken)
+    {
+        var objectName = ExtractTargetObjectForBackup(statement);
+        if (objectName is null || savedObjectDdl.ContainsKey(objectName))
+            return;
+
+        try
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandText = $"SHOW CREATE TABLE {objectName}";
+            var createSql = Convert.ToString(await command.ExecuteScalarAsync(cancellationToken));
+            if (!string.IsNullOrWhiteSpace(createSql))
+                savedObjectDdl[objectName] = createSql;
+        }
+        catch (Exception)
+        {
+        }
+    }
+
+    public static string? ExtractTargetObjectForBackup(string statement)
+    {
+        var detach = DetachTableStatement.Match(statement);
+        if (detach.Success)
+            return detach.Groups["table"].Value;
+
+        var dropTable = DropTableStatement.Match(statement);
+        if (dropTable.Success)
+            return dropTable.Groups["table"].Value;
+
+        var dropView = DropViewStatement.Match(statement);
+        return dropView.Success ? dropView.Groups["view"].Value : null;
+    }
+
+    private async Task RestoreDroppedObjectsAsync(
+        ClickHouseConnection connection,
+        IReadOnlyDictionary<string, string?> droppedObjects,
+        IReadOnlyDictionary<string, string> savedObjectDdl)
+    {
+        using var timeout = new CancellationTokenSource(ReattachTimeout, timeProvider);
+        foreach (var (objectName, clusterName) in droppedObjects)
+        {
+            if (!savedObjectDdl.TryGetValue(objectName, out var createSql))
+                continue;
+
+            var restoreSql = WithClusterClause(createSql, clusterName);
+            try
+            {
+                logger.LogWarning(
+                    "Migration failed after DROP of {Object}; restoring previous definition",
+                    objectName);
+                await using var command = connection.CreateCommand();
+                command.CommandText = restoreSql;
+                await command.ExecuteNonQueryAsync(timeout.Token);
+            }
+            catch (Exception restoreException)
+            {
+                logger.LogError(
+                    restoreException,
+                    "Failed to restore {Object} after migration failure",
+                    objectName);
+            }
+        }
+    }
+
+    public static string WithClusterClause(string createSql, string? clusterName) =>
+        string.IsNullOrWhiteSpace(clusterName)
+        || createSql.Contains(" ON CLUSTER ", StringComparison.OrdinalIgnoreCase)
+            ? createSql
+            : CreateObjectHeader.Replace(createSql, $"${{prefix}} ON CLUSTER {clusterName}", 1);
 
     private async Task ReattachDetachedQueuesAsync(
         ClickHouseConnection connection,

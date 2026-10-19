@@ -81,6 +81,95 @@ public sealed class MaterializedViewAutoGeneratorTests
             .WithMessage("*orders_raw_mv*already used*");
     }
 
+    [Fact]
+    public void GivenAutoTableDisablesKafkaMetaWhenDefaultsEnableIt_WhenCreate_ThenAutoViewOmitsKafkaMeta()
+    {
+        var original = new MergeTreeTableConfig
+        {
+            TableName = "orders_raw",
+            SourceTable = "orders_queue",
+            OrderBy = "(order_id)",
+            Columns = [],
+            IncludeKafkaMeta = false
+        };
+        var expanded = WithColumns(original, "order_id");
+        var queueMeta = new Dictionary<string, PersistKafkaMetaConfig>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["orders_queue"] = new PersistKafkaMetaConfig { Key = true, Headers = true }
+        };
+
+        var created = MaterializedViewAutoGenerator.CreateForAutoColumns(
+            [original],
+            [expanded],
+            [],
+            queue => queueMeta[queue]);
+
+        created.Should().ContainSingle();
+        created[0].Columns.Select(column => column.Target).Should().Equal("order_id");
+    }
+
+    [Fact]
+    public void GivenAutoTableEnablesKafkaMetaWhenDefaultsDisableIt_WhenCreate_ThenAutoViewIncludesKafkaMeta()
+    {
+        var original = new MergeTreeTableConfig
+        {
+            TableName = "orders_raw",
+            SourceTable = "orders_queue",
+            OrderBy = "(order_id)",
+            Columns = [],
+            IncludeKafkaMeta = true
+        };
+        var expanded = new MergeTreeTableConfig
+        {
+            TableName = "orders_raw",
+            SourceTable = "orders_queue",
+            OrderBy = "(order_id)",
+            Columns =
+            [
+                new PipelineColumnConfig { Name = "order_id", Type = "String" },
+                .. KafkaMetaColumnFactory.CreateMergeTreeColumns(new PersistKafkaMetaConfig { Key = true, Headers = true })
+            ],
+            IncludeKafkaMeta = true
+        };
+        var queueMeta = new Dictionary<string, PersistKafkaMetaConfig>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["orders_queue"] = new PersistKafkaMetaConfig { Key = false, Headers = false }
+        };
+
+        var created = MaterializedViewAutoGenerator.CreateForAutoColumns(
+            [original],
+            [expanded],
+            [],
+            queue => queueMeta[queue]);
+
+        created.Should().ContainSingle();
+        created[0].Columns.Select(column => column.Target).Should().Equal(
+            "order_id",
+            "kafka_key",
+            "kafka_headers");
+    }
+
+    [Fact]
+    public void GivenAutoViewNameCollidesWithMergeTreeTableName_WhenCreate_ThenThrows()
+    {
+        var original = AutoTable("orders_raw", "orders_queue");
+        var collidingTable = new MergeTreeTableConfig
+        {
+            TableName = "orders_raw_mv",
+            OrderBy = "(order_id)",
+            Columns = [new PipelineColumnConfig { Name = "order_id", Type = "String" }]
+        };
+        var expanded = WithColumns(original, "order_id");
+
+        var act = () => MaterializedViewAutoGenerator.CreateForAutoColumns(
+            [original, collidingTable],
+            [expanded, collidingTable],
+            []);
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*orders_raw_mv*already used*");
+    }
+
     private static MergeTreeTableConfig AutoTable(string tableName, string sourceTable) => new()
     {
         TableName = tableName,

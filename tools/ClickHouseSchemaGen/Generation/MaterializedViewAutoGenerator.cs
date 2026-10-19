@@ -28,6 +28,7 @@ public static class MaterializedViewAutoGenerator
 
         var usedNames = explicitViews
             .Select(view => view.Name)
+            .Concat(originalTables.Select(table => table.TableName))
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         var created = new List<MaterializedViewConfig>();
 
@@ -53,7 +54,8 @@ public static class MaterializedViewAutoGenerator
                 })
                 .ToList();
 
-            var meta = metaForSourceTable?.Invoke(original.SourceTable!) ?? new PersistKafkaMetaConfig();
+            var queueMeta = metaForSourceTable?.Invoke(original.SourceTable!);
+            var meta = KafkaMetaColumnFactory.Resolve(queueMeta, tableOverride: null, original.IncludeKafkaMeta);
             if (meta.AnyEnabled)
             {
                 columns.RemoveAll(mapping => KafkaMetaColumnFactory.IsKafkaMetaPath(

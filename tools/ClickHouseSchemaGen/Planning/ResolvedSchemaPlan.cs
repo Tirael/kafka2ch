@@ -11,6 +11,8 @@ public sealed record ResolvedSchemaPlan
     public required IReadOnlyList<MaterializedViewPlan> MaterializedViews { get; init; }
 
     public string? TrailingSql { get; init; }
+
+    public string? TrailingSqlHash { get; init; }
 }
 
 public sealed record KafkaTablePlan

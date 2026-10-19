@@ -16,9 +16,20 @@ public static class ProtoCompatibilityValidator
     {
         List<string> violations = [];
 
-        var oldProtoColumns = CollectProtoColumns(oldPlan);
-        var newProtoColumns = CollectProtoColumns(newPlan);
+        var oldByTable = CollectProtoColumnsByTable(oldPlan);
+        var newByTable = CollectProtoColumnsByTable(newPlan);
 
+        foreach (var tableName in oldByTable.Keys.Intersect(newByTable.Keys, StringComparer.OrdinalIgnoreCase))
+            CollectTableViolations(oldByTable[tableName], newByTable[tableName], violations);
+
+        return violations;
+    }
+
+    private static void CollectTableViolations(
+        IReadOnlyDictionary<string, ProtoColumnRef> oldProtoColumns,
+        IReadOnlyDictionary<string, ProtoColumnRef> newProtoColumns,
+        List<string> violations)
+    {
         foreach (var path in oldProtoColumns.Keys.Intersect(newProtoColumns.Keys, StringComparer.Ordinal))
         {
             var oldColumn = oldProtoColumns[path];
@@ -78,8 +89,6 @@ public static class ProtoCompatibilityValidator
         }
 
         CheckScalarKindChanges(oldProtoColumns, newProtoColumns, violations);
-
-        return violations;
     }
 
     private static void CheckScalarKindChanges(
@@ -100,12 +109,14 @@ public static class ProtoCompatibilityValidator
         }
     }
 
-    private static Dictionary<string, ProtoColumnRef> CollectProtoColumns(ResolvedSchemaPlan plan)
+    private static Dictionary<string, Dictionary<string, ProtoColumnRef>> CollectProtoColumnsByTable(
+        ResolvedSchemaPlan plan)
     {
-        Dictionary<string, ProtoColumnRef> columns = new(StringComparer.Ordinal);
+        Dictionary<string, Dictionary<string, ProtoColumnRef>> tables = new(StringComparer.OrdinalIgnoreCase);
 
         foreach (var kafkaTable in plan.KafkaTables)
         {
+            Dictionary<string, ProtoColumnRef> columns = new(StringComparer.Ordinal);
             foreach (var column in kafkaTable.Columns.Where(c =>
                          !KafkaMetaColumnFactory.IsKafkaMetaPath(c.FieldNumberPath)))
             {
@@ -116,10 +127,16 @@ public static class ProtoCompatibilityValidator
                     path,
                     column.Type);
             }
+
+            tables[kafkaTable.Config.TableName] = columns;
         }
+
+        if (plan.KafkaTables.Count > 0)
+            return tables;
 
         foreach (var mergeTree in plan.MergeTreeTables)
         {
+            Dictionary<string, ProtoColumnRef> columns = new(StringComparer.Ordinal);
             foreach (var column in mergeTree.Config.Columns.Where(c =>
                          !KafkaMetaColumnFactory.IsKafkaMetaPath(c.FieldNumberPath)))
             {
@@ -128,9 +145,11 @@ public static class ProtoCompatibilityValidator
                     path,
                     new ProtoColumnRef(mergeTree.Config.TableName, column.Name, path, column.Type));
             }
+
+            tables[mergeTree.Config.TableName] = columns;
         }
 
-        return columns;
+        return tables;
     }
 
     private static bool ReusesFieldNumber(string leftPath, string rightPath)

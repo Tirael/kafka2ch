@@ -86,6 +86,31 @@ public sealed class MigrationQueueLifecycleIntegrationTests : IAsyncLifetime
             .Should().Be(0);
     }
 
+    [Fact]
+    public async Task GivenMigrationFailsAfterDropQueueAndView_WhenApplied_ThenQueueAndViewAreRestoredAndMigrationNotRecorded()
+    {
+        const string version = "20990104000000";
+        await File.WriteAllTextAsync(
+            Path.Combine(_migrationsDirectory, $"{version}_broken_recreate.sql"),
+            """
+            DROP VIEW IF EXISTS orders_mv;
+            DETACH TABLE IF EXISTS orders_queue PERMANENTLY;
+            -- await:kafka_consumers_empty orders_queue
+            DROP TABLE IF EXISTS orders_queue;
+            CREATE TABLE IF NOT EXISTS orders_queue (broken NoSuchType) ENGINE = Kafka;
+            """);
+
+        var act = () => CreateRunner().ApplyAsync(_clickHouse.GetConnectionString(), _migrationsDirectory, CancellationToken.None);
+
+        await act.Should().ThrowAsync<Exception>();
+        Convert.ToInt32(await ScalarAsync("EXISTS TABLE orders_queue"))
+            .Should().Be(1, "dropped queue must be restored from its pre-migration DDL when recreate fails");
+        Convert.ToInt32(await ScalarAsync("EXISTS TABLE orders_mv"))
+            .Should().Be(1, "dropped materialized view must be restored when recreate fails");
+        Convert.ToInt32(await ScalarAsync($"SELECT count() FROM schema_migrations WHERE version = '{version}'"))
+            .Should().Be(0);
+    }
+
     private async Task ApplyInitScriptsAsync()
     {
         var initDirectory = Path.Combine(RepoPaths.RepositoryRoot, "docker", "clickhouse", "init");
