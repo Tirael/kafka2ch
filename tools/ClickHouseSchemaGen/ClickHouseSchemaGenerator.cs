@@ -147,6 +147,8 @@ public sealed class ClickHouseSchemaGenerator(
         foreach (var (outputPath, sql) in scripts)
             WriteGeneratedSql(configDirectory, CodegenConfigLoader.ResolveInitScriptPath(config, outputPath), sql);
 
+        new MigrationOrchestrator(this).WriteVersionsScript(configPath);
+
         if (!checkSnapshot)
             return;
 
