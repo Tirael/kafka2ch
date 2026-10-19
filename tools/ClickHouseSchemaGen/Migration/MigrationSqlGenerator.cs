@@ -22,7 +22,8 @@ public static partial class MigrationSqlGenerator
         var builder = new StringBuilder();
 
         var kafkaRecreates = CollectKafkaRecreates(plan);
-        var metaOnlyQueues = CollectMetaOnlyQueues(plan, kafkaRecreates, newPlan);
+        var addedKafkaTables = CollectAddedKafkaTables(plan);
+        var metaOnlyQueues = CollectMetaOnlyQueues(plan, kafkaRecreates, addedKafkaTables, oldPlan, newPlan);
         var detachedQueues = kafkaRecreates
             .Concat(metaOnlyQueues)
             .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -40,6 +41,7 @@ public static partial class MigrationSqlGenerator
 
         AppendMergeTreeAutomaticChanges(builder, plan, cluster);
         AppendNewMergeTreeTables(builder, plan, newPlan, cluster);
+        AppendNewKafkaTables(builder, plan, newPlan, cluster);
         AppendPipelineRecreates(builder, plan, newPlan, kafkaRecreates, metaOnlyQueues, cluster);
 
         AppendManualBlock(builder, plan, cluster);
@@ -74,10 +76,15 @@ public static partial class MigrationSqlGenerator
                         typeChanged.TableName,
                         $"MODIFY COLUMN {SqlColumnFormatter.FormatColumnName(typeChanged.ColumnName)} {typeChanged.NewType}");
                     break;
+                case SourceTableChanged sourceChanged:
+                    builder.AppendLine(
+                        $"-- MergeTree table {sourceChanged.TableName} sourceTable changed: "
+                            + $"'{sourceChanged.OldSourceTable ?? "<none>"}' -> '{sourceChanged.NewSourceTable ?? "<none>"}'.");
+                    break;
             }
         }
 
-        if (plan.AutomaticChanges.Any(c => c is ColumnAdded or ColumnRenamed or ColumnTypeChanged))
+        if (plan.AutomaticChanges.Any(c => c is ColumnAdded or ColumnRenamed or ColumnTypeChanged or SourceTableChanged))
             builder.AppendLine();
     }
 
@@ -101,6 +108,24 @@ public static partial class MigrationSqlGenerator
             var table = newPlan.MergeTreeTables.First(t =>
                 string.Equals(t.Config.TableName, added.TableName, StringComparison.OrdinalIgnoreCase));
             builder.Append(MergeTreeTableGenerator.Generate(table.Config, ifNotExists: true, cluster));
+        }
+    }
+
+    private static void AppendNewKafkaTables(
+        StringBuilder builder,
+        MigrationPlan plan,
+        ResolvedSchemaPlan newPlan,
+        ClusterDdl cluster)
+    {
+        foreach (var added in plan.AutomaticChanges.OfType<TableAdded>().Where(t => t.Engine == "Kafka"))
+        {
+            var kafkaPlan = newPlan.KafkaTables.First(t =>
+                string.Equals(t.Config.TableName, added.TableName, StringComparison.OrdinalIgnoreCase));
+            builder.Append(KafkaTableGenerator.Generate(
+                kafkaPlan.Config,
+                kafkaPlan.Columns,
+                ifNotExists: true,
+                cluster));
         }
     }
 
@@ -231,7 +256,7 @@ public static partial class MigrationSqlGenerator
     {
         var defaultClause = BuildDefaultClause(added.ColumnType);
         var afterClause = string.IsNullOrWhiteSpace(added.AfterColumn)
-            ? string.Empty
+            ? " FIRST"
             : $" AFTER {SqlColumnFormatter.FormatColumnName(added.AfterColumn)}";
 
         var definition = SqlColumnFormatter.FormatBareDefinition(added.ColumnName, added.ColumnType);
@@ -291,18 +316,34 @@ public static partial class MigrationSqlGenerator
             .Select(c => c.TableName)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
+    private static HashSet<string> CollectAddedKafkaTables(MigrationPlan plan) =>
+        plan.AutomaticChanges
+            .OfType<TableAdded>()
+            .Where(t => t.Engine == "Kafka")
+            .Select(t => t.TableName)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
     private static HashSet<string> CollectMetaOnlyQueues(
         MigrationPlan plan,
         HashSet<string> kafkaRecreates,
+        HashSet<string> addedKafkaTables,
+        ResolvedSchemaPlan oldPlan,
         ResolvedSchemaPlan newPlan)
     {
         HashSet<string> queues = new(StringComparer.OrdinalIgnoreCase);
+        var existingQueues = oldPlan.KafkaTables
+            .Select(t => t.Config.TableName)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         foreach (var viewChanged in plan.AutomaticChanges.OfType<ViewChanged>())
         {
             var source = viewChanged.SourceTable;
-            if (!kafkaRecreates.Contains(source))
+            if (!kafkaRecreates.Contains(source)
+                && !addedKafkaTables.Contains(source)
+                && (existingQueues.Count == 0 || existingQueues.Contains(source)))
+            {
                 queues.Add(source);
+            }
         }
 
         foreach (var added in plan.AutomaticChanges.OfType<ColumnAdded>())
@@ -312,8 +353,13 @@ public static partial class MigrationSqlGenerator
                 var queue = newPlan.MaterializedViews
                     .FirstOrDefault(v => string.Equals(v.Config.TargetTable, added.TableName, StringComparison.OrdinalIgnoreCase))
                     ?.Config.SourceTable;
-                if (!string.IsNullOrWhiteSpace(queue) && !kafkaRecreates.Contains(queue))
+                if (!string.IsNullOrWhiteSpace(queue)
+                    && !kafkaRecreates.Contains(queue)
+                    && !addedKafkaTables.Contains(queue)
+                    && (existingQueues.Count == 0 || existingQueues.Contains(queue)))
+                {
                     queues.Add(queue);
+                }
             }
         }
 

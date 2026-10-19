@@ -1,0 +1,26 @@
+# Changed files in PR #57
+
+Files changed on branch [`cursor/fix-tla-tlc-defects-61e3`](https://github.com/Tirael/kafka2ch/pull/57) relative to `main`, each linked to its raw GitHub content URL on that branch.
+
+- [docs/57-main-file-list.md](https://raw.githubusercontent.com/Tirael/kafka2ch/cursor/fix-tla-tlc-defects-61e3/docs/57-main-file-list.md)
+- [tests/ClickHouseSchemaGen.IntegrationTests/MigrationQueueLifecycleIntegrationTests.cs](https://raw.githubusercontent.com/Tirael/kafka2ch/cursor/fix-tla-tlc-defects-61e3/tests/ClickHouseSchemaGen.IntegrationTests/MigrationQueueLifecycleIntegrationTests.cs)
+- [tests/ClickHouseSchemaGen.UnitTests/ClickHouseSchemaGeneratorTests.cs](https://raw.githubusercontent.com/Tirael/kafka2ch/cursor/fix-tla-tlc-defects-61e3/tests/ClickHouseSchemaGen.UnitTests/ClickHouseSchemaGeneratorTests.cs)
+- [tests/ClickHouseSchemaGen.UnitTests/CodegenConfigValidatorTests.cs](https://raw.githubusercontent.com/Tirael/kafka2ch/cursor/fix-tla-tlc-defects-61e3/tests/ClickHouseSchemaGen.UnitTests/CodegenConfigValidatorTests.cs)
+- [tests/ClickHouseSchemaGen.UnitTests/MaterializedViewAutoGeneratorTests.cs](https://raw.githubusercontent.com/Tirael/kafka2ch/cursor/fix-tla-tlc-defects-61e3/tests/ClickHouseSchemaGen.UnitTests/MaterializedViewAutoGeneratorTests.cs)
+- [tests/ClickHouseSchemaGen.UnitTests/MigrationRunnerSplitTests.cs](https://raw.githubusercontent.com/Tirael/kafka2ch/cursor/fix-tla-tlc-defects-61e3/tests/ClickHouseSchemaGen.UnitTests/MigrationRunnerSplitTests.cs)
+- [tests/ClickHouseSchemaGen.UnitTests/MigrationSupportTests.cs](https://raw.githubusercontent.com/Tirael/kafka2ch/cursor/fix-tla-tlc-defects-61e3/tests/ClickHouseSchemaGen.UnitTests/MigrationSupportTests.cs)
+- [tests/ClickHouseSchemaGen.UnitTests/PipelineColumnExpanderTests.cs](https://raw.githubusercontent.com/Tirael/kafka2ch/cursor/fix-tla-tlc-defects-61e3/tests/ClickHouseSchemaGen.UnitTests/PipelineColumnExpanderTests.cs)
+- [tools/ClickHouseSchemaGen.Migrator/MigrationRunner.cs](https://raw.githubusercontent.com/Tirael/kafka2ch/cursor/fix-tla-tlc-defects-61e3/tools/ClickHouseSchemaGen.Migrator/MigrationRunner.cs)
+- [tools/ClickHouseSchemaGen/ClickHouseSchemaGenerator.cs](https://raw.githubusercontent.com/Tirael/kafka2ch/cursor/fix-tla-tlc-defects-61e3/tools/ClickHouseSchemaGen/ClickHouseSchemaGenerator.cs)
+- [tools/ClickHouseSchemaGen/Generation/MaterializedViewAutoGenerator.cs](https://raw.githubusercontent.com/Tirael/kafka2ch/cursor/fix-tla-tlc-defects-61e3/tools/ClickHouseSchemaGen/Generation/MaterializedViewAutoGenerator.cs)
+- [tools/ClickHouseSchemaGen/Generation/PipelineColumnExpander.cs](https://raw.githubusercontent.com/Tirael/kafka2ch/cursor/fix-tla-tlc-defects-61e3/tools/ClickHouseSchemaGen/Generation/PipelineColumnExpander.cs)
+- [tools/ClickHouseSchemaGen/Migration/MigrationPolicy.cs](https://raw.githubusercontent.com/Tirael/kafka2ch/cursor/fix-tla-tlc-defects-61e3/tools/ClickHouseSchemaGen/Migration/MigrationPolicy.cs)
+- [tools/ClickHouseSchemaGen/Migration/MigrationSqlGenerator.cs](https://raw.githubusercontent.com/Tirael/kafka2ch/cursor/fix-tla-tlc-defects-61e3/tools/ClickHouseSchemaGen/Migration/MigrationSqlGenerator.cs)
+- [tools/ClickHouseSchemaGen/Migration/ProtoCompatibilityValidator.cs](https://raw.githubusercontent.com/Tirael/kafka2ch/cursor/fix-tla-tlc-defects-61e3/tools/ClickHouseSchemaGen/Migration/ProtoCompatibilityValidator.cs)
+- [tools/ClickHouseSchemaGen/Migration/SchemaChange.cs](https://raw.githubusercontent.com/Tirael/kafka2ch/cursor/fix-tla-tlc-defects-61e3/tools/ClickHouseSchemaGen/Migration/SchemaChange.cs)
+- [tools/ClickHouseSchemaGen/Migration/SchemaDiffer.cs](https://raw.githubusercontent.com/Tirael/kafka2ch/cursor/fix-tla-tlc-defects-61e3/tools/ClickHouseSchemaGen/Migration/SchemaDiffer.cs)
+- [tools/ClickHouseSchemaGen/Migration/TypeCompatibility.cs](https://raw.githubusercontent.com/Tirael/kafka2ch/cursor/fix-tla-tlc-defects-61e3/tools/ClickHouseSchemaGen/Migration/TypeCompatibility.cs)
+- [tools/ClickHouseSchemaGen/Planning/ResolvedSchemaPlan.cs](https://raw.githubusercontent.com/Tirael/kafka2ch/cursor/fix-tla-tlc-defects-61e3/tools/ClickHouseSchemaGen/Planning/ResolvedSchemaPlan.cs)
+- [tools/ClickHouseSchemaGen/Snapshot/SchemaSnapshotMapper.cs](https://raw.githubusercontent.com/Tirael/kafka2ch/cursor/fix-tla-tlc-defects-61e3/tools/ClickHouseSchemaGen/Snapshot/SchemaSnapshotMapper.cs)
+- [tools/ClickHouseSchemaGen/Snapshot/SnapshotDriftChecker.cs](https://raw.githubusercontent.com/Tirael/kafka2ch/cursor/fix-tla-tlc-defects-61e3/tools/ClickHouseSchemaGen/Snapshot/SnapshotDriftChecker.cs)
+- [tools/ClickHouseSchemaGen/Validation/CodegenConfigValidator.cs](https://raw.githubusercontent.com/Tirael/kafka2ch/cursor/fix-tla-tlc-defects-61e3/tools/ClickHouseSchemaGen/Validation/CodegenConfigValidator.cs)

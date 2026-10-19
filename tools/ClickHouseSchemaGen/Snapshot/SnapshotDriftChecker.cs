@@ -55,6 +55,12 @@ public static class SnapshotDriftChecker
             if (!actualByName.TryGetValue(name, out var actualTable))
                 continue;
 
+            if (!string.Equals(expectedTable.ProtoFile, actualTable.ProtoFile, StringComparison.Ordinal))
+                differences.Add($"Kafka table '{name}' protoFile changed.");
+
+            if (!string.Equals(expectedTable.MessageName, actualTable.MessageName, StringComparison.Ordinal))
+                differences.Add($"Kafka table '{name}' messageName changed.");
+
             CompareKafkaSettings(name, expectedTable.Kafka, actualTable.Kafka, differences);
             ComparePersistKafkaMeta(name, expectedTable.PersistKafkaMeta, actualTable.PersistKafkaMeta, differences);
             CompareColumns($"Kafka table '{name}'", expectedTable.Columns, actualTable.Columns, differences);

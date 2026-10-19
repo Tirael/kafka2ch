@@ -33,6 +33,11 @@ public sealed class CodegenConfigValidator : AbstractValidator<CodegenConfig>
             .WithMessage("Kafka table output paths must be unique.");
 
         RuleFor(config => config)
+            .Must(config => FindObjectNameConflict(config) is null)
+            .WithMessage(config => FindObjectNameConflict(config) ?? "ClickHouse object names must be unique.")
+            .When(config => config.Pipeline is not null);
+
+        RuleFor(config => config)
             .Must(HasValidMaterializedViewReferences)
             .WithMessage(config => BuildMaterializedViewReferenceError(config))
             .When(config => config.Pipeline?.MaterializedViews.Count > 0);
@@ -65,20 +70,53 @@ public sealed class CodegenConfigValidator : AbstractValidator<CodegenConfig>
                 "into schema_migrations.");
     }
 
+    private static string? FindObjectNameConflict(CodegenConfig config)
+    {
+        if (config.Pipeline is null)
+            return null;
+
+        var kafkaNames = config.KafkaTables
+            .Select(table => table.TableName)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var table in config.Pipeline.MergeTreeTables)
+        {
+            if (kafkaNames.Contains(table.TableName))
+                return $"MergeTree table '{table.TableName}' conflicts with a Kafka table of the same name.";
+        }
+
+        var tableNames = kafkaNames
+            .Concat(config.Pipeline.MergeTreeTables.Select(table => table.TableName))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var view in config.Pipeline.MaterializedViews)
+        {
+            if (tableNames.Contains(view.Name))
+                return $"Materialized view '{view.Name}' conflicts with an existing table of the same name.";
+        }
+
+        return null;
+    }
+
     private static string? FindLocalTableNameConflict(CodegenConfig config)
     {
         if (config.Pipeline is null)
             return null;
 
+        var autoViewNames = config.Pipeline.MergeTreeTables
+            .Where(table => MaterializedViewAutoGenerator.ShouldCreate(table, config.Pipeline.MaterializedViews))
+            .Select(table => MaterializedViewAutoGenerator.DefaultName(table.TableName));
+
         var names = config.KafkaTables.Select(table => table.TableName)
             .Concat(config.Pipeline.MergeTreeTables.Select(table => table.TableName))
             .Concat(config.Pipeline.MaterializedViews.Select(view => view.Name))
+            .Concat(autoViewNames)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         foreach (var table in config.Pipeline.MergeTreeTables)
         {
             var localName = table.TableName + config.Cluster.LocalTableSuffix;
-            if (names.Contains(localName))
+            if (!names.Add(localName))
             {
                 return $"MergeTree table '{table.TableName}' stores rows in '{localName}' in cluster mode, " +
                     "but that name is already used. Rename the table or change cluster.localTableSuffix.";
@@ -193,8 +231,10 @@ public sealed class CodegenConfigValidator : AbstractValidator<CodegenConfig>
             return null;
 
         var explicitViews = config.Pipeline.MaterializedViews;
-        var usedNames = explicitViews
-            .Select(view => view.Name)
+        var usedNames = config.KafkaTables
+            .Select(table => table.TableName)
+            .Concat(config.Pipeline.MergeTreeTables.Select(table => table.TableName))
+            .Concat(explicitViews.Select(view => view.Name))
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         foreach (var table in config.Pipeline.MergeTreeTables)

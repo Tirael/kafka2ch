@@ -49,16 +49,11 @@ public static partial class TypeCompatibility
     private static string StripLowCardinality(string type) =>
         type["LowCardinality(".Length..^1];
 
-    private static bool IsIntegerWidening(string oldType, string newType)
-    {
-        if (!IntegerRank.TryGetValue(oldType, out var oldRank)
-            || !IntegerRank.TryGetValue(newType, out var newRank))
-        {
-            return false;
-        }
-
-        return newRank > oldRank;
-    }
+    private static bool IsIntegerWidening(string oldType, string newType) =>
+        IntegerTypes.TryGetValue(oldType, out var oldInt)
+        && IntegerTypes.TryGetValue(newType, out var newInt)
+        && (!oldInt.Signed || newInt.Signed)
+        && newInt.Bits > oldInt.Bits;
 
     private static bool TryClassifyEnumChange(string oldType, string newType, out TypeChangeKind kind)
     {
@@ -113,16 +108,18 @@ public static partial class TypeCompatibility
 
     private sealed record EnumTypeInfo(int Width, HashSet<string> Values);
 
-    private static readonly Dictionary<string, int> IntegerRank = new(StringComparer.Ordinal)
+    private sealed record IntegerTypeInfo(bool Signed, int Bits);
+
+    private static readonly Dictionary<string, IntegerTypeInfo> IntegerTypes = new(StringComparer.Ordinal)
     {
-        ["Int8"] = 1,
-        ["Int16"] = 2,
-        ["Int32"] = 3,
-        ["Int64"] = 4,
-        ["UInt8"] = 5,
-        ["UInt16"] = 6,
-        ["UInt32"] = 7,
-        ["UInt64"] = 8
+        ["Int8"] = new(true, 8),
+        ["Int16"] = new(true, 16),
+        ["Int32"] = new(true, 32),
+        ["Int64"] = new(true, 64),
+        ["UInt8"] = new(false, 8),
+        ["UInt16"] = new(false, 16),
+        ["UInt32"] = new(false, 32),
+        ["UInt64"] = new(false, 64)
     };
 
     [GeneratedRegex(@"^Enum(?<width>8|16)\((?<values>.+)\)$", RegexOptions.CultureInvariant)]

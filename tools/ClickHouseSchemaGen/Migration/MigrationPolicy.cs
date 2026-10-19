@@ -52,7 +52,12 @@ public static class MigrationPolicy
             }
         }
 
-        foreach (var tableName in manualTables.ToList())
+        var allTableNames = oldPlan.MergeTreeTables
+            .Select(t => t.Config.TableName)
+            .Concat(newPlan.MergeTreeTables.Select(t => t.Config.TableName))
+            .Distinct(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var tableName in allTableNames)
         {
             if (TouchesOrderByColumn(tableName, diff, oldPlan, newPlan))
                 manualTables.Add(tableName);
@@ -76,6 +81,7 @@ public static class MigrationPolicy
             KafkaTableChanged => false,
             ViewChanged => false,
             TableAdded => false,
+            SourceTableChanged => false,
             ColumnAdded => false,
             ColumnRenamed => false,
             ColumnTypeChanged { Kind: TypeChangeKind.Safe or TypeChangeKind.Rewrite } => false,
@@ -88,26 +94,32 @@ public static class MigrationPolicy
         ResolvedSchemaPlan oldPlan,
         ResolvedSchemaPlan newPlan)
     {
+        var oldTable = oldPlan.MergeTreeTables.FirstOrDefault(t =>
+            string.Equals(t.Config.TableName, tableName, StringComparison.OrdinalIgnoreCase));
         var newTable = newPlan.MergeTreeTables.FirstOrDefault(t =>
             string.Equals(t.Config.TableName, tableName, StringComparison.OrdinalIgnoreCase));
-        if (newTable is null)
+        if (oldTable is null && newTable is null)
             return false;
 
-        var orderByColumns = ParseOrderByColumns(newTable.Config.OrderBy);
+        var orderByColumns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (oldTable is not null)
+            orderByColumns.UnionWith(ParseOrderByColumns(oldTable.Config.OrderBy));
+        if (newTable is not null)
+            orderByColumns.UnionWith(ParseOrderByColumns(newTable.Config.OrderBy));
+
         return diff.Changes.Any(change => change switch
         {
             ColumnRenamed renamed when string.Equals(renamed.TableName, tableName, StringComparison.OrdinalIgnoreCase)
-                => orderByColumns.Contains(renamed.OldName, StringComparer.OrdinalIgnoreCase),
+                => orderByColumns.Contains(renamed.OldName) || orderByColumns.Contains(renamed.NewName),
             ColumnRemoved removed when string.Equals(removed.TableName, tableName, StringComparison.OrdinalIgnoreCase)
-                => orderByColumns.Contains(removed.ColumnName, StringComparer.OrdinalIgnoreCase),
+                => orderByColumns.Contains(removed.ColumnName),
             ColumnTypeChanged typeChanged when string.Equals(typeChanged.TableName, tableName, StringComparison.OrdinalIgnoreCase)
-                => orderByColumns.Contains(typeChanged.ColumnName, StringComparer.OrdinalIgnoreCase),
+                => orderByColumns.Contains(typeChanged.ColumnName),
             _ => false
         });
     }
 
     private static HashSet<string> ParseOrderByColumns(string orderBy) =>
-        orderBy.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Select(token => token.Split('(', 2)[0].Trim())
+        ValidationRules.ExtractColumnCandidates(orderBy)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 }

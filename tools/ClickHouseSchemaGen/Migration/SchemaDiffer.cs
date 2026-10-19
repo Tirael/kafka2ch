@@ -23,8 +23,8 @@ public static class SchemaDiffer
         ResolvedSchemaPlan newPlan,
         List<SchemaChange> changes)
     {
-        var oldHash = SchemaSnapshotMapper.ComputeTrailingSqlHash(oldPlan.TrailingSql);
-        var newHash = SchemaSnapshotMapper.ComputeTrailingSqlHash(newPlan.TrailingSql);
+        var oldHash = oldPlan.TrailingSqlHash ?? SchemaSnapshotMapper.ComputeTrailingSqlHash(oldPlan.TrailingSql);
+        var newHash = newPlan.TrailingSqlHash ?? SchemaSnapshotMapper.ComputeTrailingSqlHash(newPlan.TrailingSql);
         if (!string.Equals(oldHash, newHash, StringComparison.OrdinalIgnoreCase))
             changes.Add(new TrailingSqlChanged(oldHash, newHash));
     }
@@ -123,6 +123,9 @@ public static class SchemaDiffer
             if (oldTable.Origin != newTable.Origin)
                 changes.Add(new OriginChanged(name, oldTable.Origin, newTable.Origin));
 
+            if (!string.Equals(oldTable.Config.SourceTable, newTable.Config.SourceTable, StringComparison.OrdinalIgnoreCase))
+                changes.Add(new SourceTableChanged(name, oldTable.Config.SourceTable, newTable.Config.SourceTable));
+
             if (!string.Equals(oldTable.Config.OrderBy, newTable.Config.OrderBy, StringComparison.Ordinal)
                 || !string.Equals(oldTable.Config.Ttl?.Trim(), newTable.Config.Ttl?.Trim(), StringComparison.Ordinal))
             {
@@ -134,7 +137,13 @@ public static class SchemaDiffer
                     newTable.Config.Ttl));
             }
 
-            DiffColumns(name, oldTable.Config.Columns, newTable.Config.Columns, changes, newTable.Config.OrderBy);
+            DiffColumns(
+                name,
+                oldTable.Config.Columns,
+                newTable.Config.Columns,
+                changes,
+                oldTable.Config.OrderBy,
+                newTable.Config.OrderBy);
         }
     }
 
@@ -163,7 +172,8 @@ public static class SchemaDiffer
             if (!newByName.TryGetValue(name, out var newView))
                 continue;
 
-            if (MappingsEqual(oldView.Config.Columns, newView.Config.Columns)
+            if (oldView.Origin == newView.Origin
+                && MappingsEqual(oldView.Config.Columns, newView.Config.Columns)
                 && string.Equals(oldView.Config.SourceTable, newView.Config.SourceTable, StringComparison.OrdinalIgnoreCase)
                 && string.Equals(oldView.Config.TargetTable, newView.Config.TargetTable, StringComparison.OrdinalIgnoreCase))
             {
@@ -179,12 +189,14 @@ public static class SchemaDiffer
         IReadOnlyList<PipelineColumnConfig> oldColumns,
         IReadOnlyList<PipelineColumnConfig> newColumns,
         List<SchemaChange> changes,
-        string orderBy)
+        string oldOrderBy,
+        string newOrderBy)
     {
         var oldByKey = oldColumns.ToDictionary(ColumnKey, StringComparer.Ordinal);
         var newByKey = newColumns.ToDictionary(ColumnKey, StringComparer.Ordinal);
 
-        var orderByColumns = ParseOrderByColumns(orderBy);
+        var orderByColumns = ParseOrderByColumns(oldOrderBy);
+        orderByColumns.UnionWith(ParseOrderByColumns(newOrderBy));
 
         foreach (var key in newByKey.Keys.Except(oldByKey.Keys, StringComparer.Ordinal))
         {
@@ -210,7 +222,7 @@ public static class SchemaDiffer
             if (!string.Equals(oldColumn.Type, newColumn.Type, StringComparison.Ordinal))
             {
                 var kind = TypeCompatibility.Classify(oldColumn.Type, newColumn.Type);
-                if (orderByColumns.Contains(oldColumn.Name, StringComparer.OrdinalIgnoreCase)
+                if ((orderByColumns.Contains(oldColumn.Name) || orderByColumns.Contains(newColumn.Name))
                     && kind is TypeChangeKind.Safe or TypeChangeKind.Rewrite)
                 {
                     kind = TypeChangeKind.Manual;
@@ -299,7 +311,6 @@ public static class SchemaDiffer
     }
 
     private static HashSet<string> ParseOrderByColumns(string orderBy) =>
-        orderBy.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Select(token => token.Split('(', 2)[0].Trim())
+        ValidationRules.ExtractColumnCandidates(orderBy)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 }

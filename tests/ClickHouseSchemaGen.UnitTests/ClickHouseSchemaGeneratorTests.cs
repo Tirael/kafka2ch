@@ -506,6 +506,59 @@ public sealed class ClickHouseSchemaGeneratorTests
         sql.Should().Contain("_key                         AS message_key");
     }
 
+    [Fact]
+    public void GivenDefaultsPersistKafkaMetaAndAutoTableDisablesIt_WhenBuildPlan_ThenTableAndAutoViewBothOmitKafkaMeta()
+    {
+        var config = CreateProtobufKeyConfig(new MergeTreeTableConfig
+        {
+            TableName = "orders_raw",
+            SourceTable = "orders_queue",
+            OrderBy = "order_id",
+            Columns = [],
+            IncludeKafkaMeta = false
+        });
+        config.Defaults.PersistKafkaMeta = new PersistKafkaMetaConfig { Key = true, Headers = true };
+
+        var plan = _sut.BuildPlan(config);
+
+        var tableColumns = plan.MergeTreeTables.Single().Config.Columns.Select(column => column.Name).ToList();
+        var viewTargets = plan.MaterializedViews.Single().Config.Columns.Select(mapping => mapping.Target).ToList();
+
+        tableColumns.Should().NotContain(name => name.StartsWith("kafka_", StringComparison.Ordinal));
+        viewTargets.Should().Equal(tableColumns);
+    }
+
+    [Fact]
+    public void GivenDefaultsDisableKafkaMetaAndExplicitViewAndTableEnableIt_WhenBuildPlan_ThenBothIncludeTypedProtobufKeyColumns()
+    {
+        var config = CreateProtobufKeyConfig(
+            new MergeTreeTableConfig
+            {
+                TableName = "orders_raw",
+                SourceTable = "orders_queue",
+                OrderBy = "order_id",
+                Columns = [],
+                IncludeKafkaMeta = true
+            },
+            new MaterializedViewConfig
+            {
+                Name = "orders_raw_mv",
+                SourceTable = "orders_queue",
+                TargetTable = "orders_raw",
+                Columns = [],
+                IncludeKafkaMeta = true
+            });
+        config.Defaults.PersistKafkaMeta = new PersistKafkaMetaConfig { Key = false, Headers = false };
+
+        var plan = _sut.BuildPlan(config);
+
+        var tableColumns = plan.MergeTreeTables.Single().Config.Columns.Select(column => column.Name).ToList();
+        var viewTargets = plan.MaterializedViews.Single().Config.Columns.Select(mapping => mapping.Target).ToList();
+
+        tableColumns.Should().Contain(["kafka_key", "kafka_key.tenant", "kafka_headers"]);
+        viewTargets.Should().Equal(tableColumns);
+    }
+
     private static CodegenConfig CreateProtobufKeyConfig(
         MergeTreeTableConfig mergeTreeTable,
         MaterializedViewConfig? materializedView = null)

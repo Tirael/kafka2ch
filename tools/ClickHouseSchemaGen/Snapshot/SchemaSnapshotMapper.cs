@@ -17,7 +17,7 @@ public static class SchemaSnapshotMapper
         return new SchemaSnapshot
         {
             ParentChecksum = parentChecksum,
-            TrailingSqlHash = ComputeTrailingSqlHash(plan.TrailingSql),
+            TrailingSqlHash = plan.TrailingSqlHash ?? ComputeTrailingSqlHash(plan.TrailingSql),
             KafkaTables = plan.KafkaTables
                 .Select(kafka => ToKafkaSnapshot(kafka, metaByQueue[kafka.Config.TableName]))
                 .ToList(),
@@ -37,11 +37,7 @@ public static class SchemaSnapshotMapper
 
         var kafkaPlans = snapshot.KafkaTables.Select(snapshotTable =>
         {
-            if (!kafkaByTable.TryGetValue(snapshotTable.TableName, out var configEntry))
-            {
-                throw new InvalidOperationException(
-                    $"Snapshot kafka table '{snapshotTable.TableName}' has no matching entry in codegen config.");
-            }
+            kafkaByTable.TryGetValue(snapshotTable.TableName, out var configEntry);
 
             var config = CloneKafkaConfig(configEntry, snapshotTable);
             var columns = snapshotTable.Columns
@@ -60,14 +56,15 @@ public static class SchemaSnapshotMapper
             .ToList();
 
         var pipeline = configForMessageTypes.Pipeline is null
+            && mergeTreePlans.Count == 0
+            && viewPlans.Count == 0
             ? null
             : new PipelineConfig
             {
-                OutputPath = configForMessageTypes.Pipeline.OutputPath,
-                TrailingSql = configForMessageTypes.Pipeline.TrailingSql,
+                OutputPath = configForMessageTypes.Pipeline?.OutputPath ?? "init/02_pipeline.sql",
+                TrailingSql = configForMessageTypes.Pipeline?.TrailingSql,
                 MergeTreeTables = mergeTreePlans.Select(p => p.Config).ToList(),
                 MaterializedViews = viewPlans
-                    .Where(v => v.Origin == PlanOrigin.Explicit)
                     .Select(v => v.Config)
                     .ToList()
             };
@@ -87,7 +84,8 @@ public static class SchemaSnapshotMapper
             KafkaTables = kafkaPlans,
             MergeTreeTables = mergeTreePlans,
             MaterializedViews = viewPlans,
-            TrailingSql = pipeline?.TrailingSql
+            TrailingSql = pipeline?.TrailingSql,
+            TrailingSqlHash = snapshot.TrailingSqlHash
         };
     }
 
@@ -200,14 +198,14 @@ public static class SchemaSnapshotMapper
             }
         };
 
-    private static KafkaTableConfig CloneKafkaConfig(KafkaTableConfig template, KafkaTableSnapshot snapshot) =>
+    private static KafkaTableConfig CloneKafkaConfig(KafkaTableConfig? template, KafkaTableSnapshot snapshot) =>
         new()
         {
-            MessageType = template.MessageType,
+            MessageType = template?.MessageType ?? snapshot.MessageName,
             TableName = snapshot.TableName,
             ProtoFile = snapshot.ProtoFile,
             MessageName = snapshot.MessageName,
-            OutputPath = template.OutputPath,
+            OutputPath = template?.OutputPath ?? $"init/01_{snapshot.TableName}.sql",
             Kafka = new KafkaSettingsConfig
             {
                 BrokerList = snapshot.Kafka.BrokerList,
@@ -220,6 +218,7 @@ public static class SchemaSnapshotMapper
                 ProtobufFlattenGoogleWrappers = snapshot.Kafka.ProtobufFlattenGoogleWrappers
             },
             PersistKafkaMeta = snapshot.PersistKafkaMeta,
-            FieldOverrides = template.FieldOverrides
+            FieldOverrides = template?.FieldOverrides
+                ?? new Dictionary<string, FieldOverrideConfig>(StringComparer.OrdinalIgnoreCase)
         };
 }

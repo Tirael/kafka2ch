@@ -96,4 +96,80 @@ public sealed class PipelineColumnExpanderTests
         act.Should().Throw<InvalidOperationException>()
             .WithMessage("*no sourceTable*");
     }
+
+    [Fact]
+    public void GivenExplicitViewDisablesKafkaMetaWhenDefaultsEnableIt_WhenExpand_ThenOmitsKafkaMetaMappings()
+    {
+        var meta = new PersistKafkaMetaConfig { Key = true, Headers = true };
+        var table = new MergeTreeTableConfig
+        {
+            TableName = "orders_raw",
+            SourceTable = "orders_queue",
+            OrderBy = "(order_id)",
+            Columns = [],
+            IncludeKafkaMeta = false
+        };
+        var view = new MaterializedViewConfig
+        {
+            Name = "orders_raw_mv",
+            SourceTable = "orders_queue",
+            TargetTable = "orders_raw",
+            Columns = [],
+            IncludeKafkaMeta = false
+        };
+
+        var expandedTable = PipelineColumnExpander.ExpandMergeTreeTable(table, QueueColumns, meta);
+        var expandedView = PipelineColumnExpander.ExpandMaterializedView(view, QueueColumns, meta, expandedTable);
+
+        expandedTable.Columns.Select(column => column.Name).Should().NotContain(["kafka_key", "kafka_headers"]);
+        expandedView.Columns.Select(mapping => mapping.Target).Should().Equal(
+            expandedTable.Columns.Select(column => column.Name));
+    }
+
+    [Fact]
+    public void GivenExplicitViewInheritsTargetIncludeKafkaMetaFalse_WhenExpand_ThenOmitsKafkaMetaMappings()
+    {
+        var meta = new PersistKafkaMetaConfig { Key = true };
+        var table = new MergeTreeTableConfig
+        {
+            TableName = "orders_raw",
+            SourceTable = "orders_queue",
+            OrderBy = "(order_id)",
+            Columns = [],
+            IncludeKafkaMeta = false
+        };
+        var view = new MaterializedViewConfig
+        {
+            Name = "orders_raw_mv",
+            SourceTable = "orders_queue",
+            TargetTable = "orders_raw",
+            Columns = [],
+            IncludeKafkaMeta = null
+        };
+
+        var expandedTable = PipelineColumnExpander.ExpandMergeTreeTable(table, QueueColumns, meta);
+        var expandedView = PipelineColumnExpander.ExpandMaterializedView(view, QueueColumns, meta, expandedTable);
+
+        expandedView.Columns.Select(mapping => mapping.Target).Should().NotContain("kafka_key");
+        expandedView.Columns.Select(mapping => mapping.Target).Should().Equal(
+            expandedTable.Columns.Select(column => column.Name));
+    }
+
+    [Fact]
+    public void GivenExplicitViewEnablesKafkaMetaWhenDefaultsDisableIt_WhenExpand_ThenAddsKafkaKeyAndHeadersMappings()
+    {
+        var meta = new PersistKafkaMetaConfig { Key = false, Headers = false };
+        var view = new MaterializedViewConfig
+        {
+            Name = "orders_raw_mv",
+            SourceTable = "orders_queue",
+            TargetTable = "orders_raw",
+            Columns = [],
+            IncludeKafkaMeta = true
+        };
+
+        var expandedView = PipelineColumnExpander.ExpandMaterializedView(view, QueueColumns, meta, targetTable: null);
+
+        expandedView.Columns.Select(mapping => mapping.Target).Should().Contain(["kafka_key", "kafka_headers"]);
+    }
 }
