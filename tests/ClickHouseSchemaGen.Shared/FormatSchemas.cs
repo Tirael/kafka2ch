@@ -1,9 +1,5 @@
 namespace ClickHouseSchemaGen.Shared;
 
-/// <summary>
-/// Prepares a ClickHouse format_schemas tree from <c>protos/</c> plus embedded google.protobuf stubs,
-/// without depending on <c>docker/clickhouse/format_schemas</c>.
-/// </summary>
 public static class FormatSchemas
 {
     private static readonly object Gate = new();

@@ -1,8 +1,5 @@
 namespace ClickHouseSchemaGen.Shared;
 
-/// <summary>
-/// Renders ordered ClickHouse init scripts from a codegen config without reading docker/ artifacts.
-/// </summary>
 public static class InitScriptsFixture
 {
     public static IReadOnlyList<(string FileName, string Sql)> Generate(
