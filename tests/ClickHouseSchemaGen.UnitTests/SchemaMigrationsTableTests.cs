@@ -18,7 +18,7 @@ public sealed class SchemaMigrationsTableTests
     [Fact]
     public void GivenPlan_WhenRenderInitScripts_ThenEveryScriptRecordsItself()
     {
-        var config = CodegenConfigLoader.Load(RepoPaths.CodegenConfigPath);
+        var config = CodegenConfigLoader.Load(TestContractsPaths.CodegenConfigPath);
         var plan = SchemaGeneratorFactory.Create().BuildPlan(config);
 
         var scripts = SchemaPlanRenderer.RenderInitScripts(plan);
@@ -49,7 +49,7 @@ public sealed class SchemaMigrationsTableTests
     [Fact]
     public void GivenGeneratedInitScripts_ThenVersionsScriptRunsFirstAndInitScriptsRecordThemselves()
     {
-        var scripts = InitScriptsFixture.Generate(RepoPaths.CodegenConfigPath);
+        var scripts = InitScriptsFixture.Generate(TestContractsPaths.CodegenConfigPath);
 
         scripts[0].FileName.Should().Be(SchemaMigrationsTable.DefaultScriptFileName);
         foreach (var (fileName, sql) in scripts.Skip(1))

@@ -1,0 +1,46 @@
+syntax = "proto3";
+
+package testcontracts.orders.v1;
+
+import "common/money.proto";
+import "google/protobuf/wrappers.proto";
+
+option csharp_namespace = "ClickHouseSchemaGen.TestContracts";
+
+message LineItem {
+  string sku = 1;
+  uint32 qty = 2;
+  double unit_price = 3;
+  testcontracts.common.v1.OrderStatus line_status = 4;
+  repeated ItemPart parts = 5;
+}
+
+message ItemPart {
+  string sku = 1;
+  uint32 qty = 2;
+  google.protobuf.DoubleValue weight = 3;
+}
+
+message OrderAttachments {
+  repeated Attachment invoices = 1;
+  repeated Attachment receipts = 2;
+}
+
+message Attachment {
+  string name = 1;
+  google.protobuf.StringValue note = 2;
+}
+
+message CardPayment {
+  string last4 = 1;
+  string network = 2;
+}
+
+message CashPayment {
+  double received = 1;
+}
+
+message WalletPayment {
+  string provider = 1;
+  string wallet_id = 2;
+}

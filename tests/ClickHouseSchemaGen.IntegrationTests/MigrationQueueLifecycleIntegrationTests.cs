@@ -32,7 +32,7 @@ public sealed class MigrationQueueLifecycleIntegrationTests : IAsyncLifetime
     {
         await File.WriteAllTextAsync(
             Path.Combine(_migrationsDirectory, KafkaRecreateMigrationFixture.FileName),
-            KafkaRecreateMigrationFixture.GenerateSql(RepoPaths.CodegenConfigPath));
+            KafkaRecreateMigrationFixture.GenerateSql(TestContractsPaths.CodegenConfigPath));
 
         await CreateRunner().ApplyAsync(_clickHouse.GetConnectionString(), _migrationsDirectory, CancellationToken.None);
         await CreateRunner().ApplyAsync(_clickHouse.GetConnectionString(), _migrationsDirectory, CancellationToken.None);
@@ -51,7 +51,7 @@ public sealed class MigrationQueueLifecycleIntegrationTests : IAsyncLifetime
     {
         await File.WriteAllTextAsync(
             Path.Combine(_migrationsDirectory, PersistPartitionMigrationFixture.FileName),
-            PersistPartitionMigrationFixture.GenerateSql(RepoPaths.CodegenConfigPath));
+            PersistPartitionMigrationFixture.GenerateSql(TestContractsPaths.CodegenConfigPath));
 
         await CreateRunner().ApplyAsync(_clickHouse.GetConnectionString(), _migrationsDirectory, CancellationToken.None);
         await CreateRunner().ApplyAsync(_clickHouse.GetConnectionString(), _migrationsDirectory, CancellationToken.None);
@@ -114,7 +114,7 @@ public sealed class MigrationQueueLifecycleIntegrationTests : IAsyncLifetime
 
     private async Task ApplyInitScriptsAsync()
     {
-        foreach (var (fileName, sql) in InitScriptsFixture.Generate(RepoPaths.CodegenConfigPath))
+        foreach (var (fileName, sql) in InitScriptsFixture.Generate(TestContractsPaths.CodegenConfigPath))
         {
             var execResult = await _clickHouse.ExecScriptAsync(sql);
             execResult.ExitCode.Should().Be(0, $"{fileName}: {execResult.Stderr}");

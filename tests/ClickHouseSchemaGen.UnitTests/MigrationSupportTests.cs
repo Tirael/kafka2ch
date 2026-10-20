@@ -206,12 +206,12 @@ public sealed class MigrationDefectTests
     [Fact]
     public void GivenSnapshotWithTrailingSqlRemoved_WhenDiffFromMappedSnapshot_ThenEmitsTrailingSqlChanged()
     {
-        var config = CodegenConfigLoader.Load(RepoPaths.CodegenConfigPath);
+        var config = CodegenConfigLoader.Load(TestContractsPaths.CodegenConfigPath);
         var generator = SchemaGeneratorFactory.Create();
         var oldPlan = generator.BuildPlan(config);
         var snapshot = SchemaSnapshotMapper.FromPlan(oldPlan);
 
-        var newConfig = CodegenConfigLoader.Load(RepoPaths.CodegenConfigPath);
+        var newConfig = CodegenConfigLoader.Load(TestContractsPaths.CodegenConfigPath);
         newConfig.Pipeline!.TrailingSql = string.Empty;
         var newPlan = generator.BuildPlan(newConfig);
         var mappedOldPlan = SchemaSnapshotMapper.ToPlan(snapshot, newConfig);
@@ -282,7 +282,7 @@ public sealed class MigrationDefectTests
         var newPlan = generator.BuildPlan(explicitConfig);
         var mappedOldPlan = SchemaSnapshotMapper.ToPlan(snapshot, explicitConfig);
 
-        var driftAct = () => SnapshotDriftChecker.Check(newPlan, snapshot, RepoPaths.CodegenConfigPath);
+        var driftAct = () => SnapshotDriftChecker.Check(newPlan, snapshot, TestContractsPaths.CodegenConfigPath);
         driftAct.Should().Throw<SchemaDriftException>();
 
         var diff = SchemaDiffer.Diff(mappedOldPlan, newPlan);
@@ -352,16 +352,16 @@ public sealed class MigrationDefectTests
     [Fact]
     public void GivenKafkaProtoFileOrMessageNameChanged_WhenCheckDrift_ThenThrowsSchemaDriftException()
     {
-        var config = CodegenConfigLoader.Load(RepoPaths.CodegenConfigPath);
+        var config = CodegenConfigLoader.Load(TestContractsPaths.CodegenConfigPath);
         var generator = SchemaGeneratorFactory.Create();
         var plan = generator.BuildPlan(config);
         var snapshot = SchemaSnapshotMapper.FromPlan(plan);
 
-        var modifiedConfig = CodegenConfigLoader.Load(RepoPaths.CodegenConfigPath);
+        var modifiedConfig = CodegenConfigLoader.Load(TestContractsPaths.CodegenConfigPath);
         modifiedConfig.KafkaTables[0].ProtoFile = "renamed_order_event";
         var modifiedPlan = generator.BuildPlan(modifiedConfig);
 
-        var act = () => SnapshotDriftChecker.Check(modifiedPlan, snapshot, RepoPaths.CodegenConfigPath);
+        var act = () => SnapshotDriftChecker.Check(modifiedPlan, snapshot, TestContractsPaths.CodegenConfigPath);
 
         act.Should().Throw<SchemaDriftException>()
             .Which.Differences.Should().Contain(difference => difference.Contains("protoFile", StringComparison.Ordinal));
@@ -563,11 +563,11 @@ public sealed class SnapshotDriftCheckerTests
     [Fact]
     public void GivenMatchingSnapshot_WhenCheck_ThenDoesNotThrow()
     {
-        var config = CodegenConfigLoader.Load(RepoPaths.CodegenConfigPath);
+        var config = CodegenConfigLoader.Load(TestContractsPaths.CodegenConfigPath);
         var plan = SchemaGeneratorFactory.Create().BuildPlan(config);
         var snapshot = SchemaSnapshotMapper.FromPlan(plan);
 
-        var act = () => SnapshotDriftChecker.Check(plan, snapshot, RepoPaths.CodegenConfigPath);
+        var act = () => SnapshotDriftChecker.Check(plan, snapshot, TestContractsPaths.CodegenConfigPath);
 
         act.Should().NotThrow();
     }
@@ -575,11 +575,11 @@ public sealed class SnapshotDriftCheckerTests
     [Fact]
     public void GivenDriftedSnapshot_WhenCheck_ThenThrowsWithDifferences()
     {
-        var config = CodegenConfigLoader.Load(RepoPaths.CodegenConfigPath);
+        var config = CodegenConfigLoader.Load(TestContractsPaths.CodegenConfigPath);
         var plan = SchemaGeneratorFactory.Create().BuildPlan(config);
         var snapshot = SchemaSnapshotMapper.FromPlan(plan) with { TrailingSqlHash = "deadbeef" };
 
-        var act = () => SnapshotDriftChecker.Check(plan, snapshot, RepoPaths.CodegenConfigPath);
+        var act = () => SnapshotDriftChecker.Check(plan, snapshot, TestContractsPaths.CodegenConfigPath);
 
         act.Should().Throw<SchemaDriftException>()
             .Which.Differences.Should().Contain(difference => difference.Contains("trailingSql"));

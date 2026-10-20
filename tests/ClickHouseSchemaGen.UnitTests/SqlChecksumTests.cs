@@ -13,9 +13,9 @@ public sealed class SqlChecksumTests
 
     public static TheoryData<string> CodegenConfigs => new()
     {
-        RepoPaths.CodegenConfigPath,
-        RepoPaths.ClusterCodegenConfigPath,
-        RepoPaths.ClusterReplicatedDbCodegenConfigPath
+        TestContractsPaths.CodegenConfigPath,
+        TestContractsPaths.ClusterCodegenConfigPath,
+        TestContractsPaths.ClusterReplicatedDbCodegenConfigPath
     };
 
     [Fact]
@@ -75,7 +75,7 @@ public sealed class SqlChecksumTests
 
     [Theory]
     [MemberData(nameof(CodegenConfigs))]
-    public void GivenRepoConfig_WhenGenerateVersionsScript_ThenIsIdempotent(string configPath)
+    public void GivenFixtureConfig_WhenGenerateVersionsScript_ThenIsIdempotent(string configPath)
     {
         var config = CodegenConfigLoader.Load(configPath);
         var migrations = new[]

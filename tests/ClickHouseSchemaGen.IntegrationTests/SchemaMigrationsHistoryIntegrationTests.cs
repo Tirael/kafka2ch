@@ -29,7 +29,7 @@ public sealed class SchemaMigrationsHistoryIntegrationTests : IAsyncLifetime
     [Fact]
     public async Task GivenGeneratedInitScripts_WhenBootstrappedAndMigrated_ThenHistoryHasInitAndMigrationRows()
     {
-        foreach (var (fileName, sql) in InitScriptsFixture.Generate(RepoPaths.CodegenConfigPath))
+        foreach (var (fileName, sql) in InitScriptsFixture.Generate(TestContractsPaths.CodegenConfigPath))
         {
             var execResult = await _clickHouse.ExecScriptAsync(sql);
             execResult.ExitCode.Should().Be(0, $"{fileName}: {execResult.Stderr}");

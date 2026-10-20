@@ -274,6 +274,8 @@ dotnet test tests/ClickHouseSchemaGen.UnitTests
 dotnet test tests/ClickHouseSchemaGen.IntegrationTests
 ```
 
+Тесты не зависят от `src/Sandbox.Contracts` и `docker/`: собственные `.proto`, фикстуры `clickhouse.codegen*.json` и `keeper-test.xml` лежат в [`tests/ClickHouseSchemaGen.TestContracts`](tests/ClickHouseSchemaGen.TestContracts) и копируются в `bin/…/TestContracts/` (пути — `TestContractsPaths`).
+
 ### NuGet-пакеты (внешний consumer)
 
 Генератор можно подключить **без** `ProjectReference` на этот репозиторий. Пакеты:
@@ -356,6 +358,7 @@ src/Sandbox.App/          # worker: PublishOrders, ReadAggregates
 src/Sandbox.Contracts/    # protobuf + clickhouse.codegen.json
 tools/ClickHouseSchemaGen # proto3 → ClickHouse DDL (+ .Tasks / .Cli / .Migrator NuGet)
 samples/NuGetCodegenSmoke # smoke: restore Tasks package + generate
+tests/ClickHouseSchemaGen.TestContracts # test-only protobuf + codegen/Keeper fixtures
 docker/clickhouse/        # init SQL + format schemas
 docker/clickhouse-cluster/ # init SQL, migrations и конфиги кластерного варианта
 scripts/verify-pipeline.sh

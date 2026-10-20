@@ -22,7 +22,7 @@ public sealed class KafkaKeyColumnMapperTests
         table.Key = new KafkaKeyConfig
         {
             Format = KafkaKeyFormats.Protobuf,
-            MessageType = "Sandbox.Contracts.OrderKey, Sandbox.Contracts"
+            MessageType = "ClickHouseSchemaGen.TestContracts.OrderKey, ClickHouseSchemaGen.TestContracts"
         };
 
         var columns = _sut.MapKeyColumns(table, OrdersQueueTestConfig.Defaults);
@@ -90,7 +90,7 @@ public sealed class KafkaKeyColumnMapperTests
         table.Key = new KafkaKeyConfig
         {
             Format = KafkaKeyFormats.Protobuf,
-            MessageType = "Sandbox.Contracts.TestFixtures.RepeatedKey, Sandbox.Contracts"
+            MessageType = "ClickHouseSchemaGen.TestContracts.Fixtures.RepeatedKey, ClickHouseSchemaGen.TestContracts"
         };
 
         var act = () => _sut.MapKeyColumns(table, OrdersQueueTestConfig.Defaults);

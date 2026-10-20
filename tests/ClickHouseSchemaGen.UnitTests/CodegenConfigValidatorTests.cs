@@ -280,7 +280,7 @@ public sealed class CodegenConfigValidatorTests
         config.KafkaTables[0].Key = new KafkaKeyConfig
         {
             Format = "Protobuf",
-            MessageType = "Sandbox.Contracts.OrderKey, Sandbox.Contracts",
+            MessageType = "ClickHouseSchemaGen.TestContracts.OrderKey, ClickHouseSchemaGen.TestContracts",
             SkipBytes = 6,
             FieldOverrides = new Dictionary<string, FieldOverrideConfig>
             {
@@ -322,7 +322,7 @@ public sealed class CodegenConfigValidatorTests
     public void GivenStringKeyWithProtobufSettings_WhenValidate_ThenFails()
     {
         var config = CreateValidConfig();
-        config.KafkaTables[0].Key.MessageType = "Sandbox.Contracts.OrderKey, Sandbox.Contracts";
+        config.KafkaTables[0].Key.MessageType = "ClickHouseSchemaGen.TestContracts.OrderKey, ClickHouseSchemaGen.TestContracts";
 
         var result = _sut.Validate(config);
 
@@ -338,7 +338,7 @@ public sealed class CodegenConfigValidatorTests
         config.KafkaTables[0].Key = new KafkaKeyConfig
         {
             Format = KafkaKeyFormats.Protobuf,
-            MessageType = "Sandbox.Contracts.OrderKey, Sandbox.Contracts",
+            MessageType = "ClickHouseSchemaGen.TestContracts.OrderKey, ClickHouseSchemaGen.TestContracts",
             SkipBytes = -1,
             FieldOverrides = new Dictionary<string, FieldOverrideConfig> { ["bad path"] = new() }
         };
@@ -455,7 +455,7 @@ public sealed class CodegenConfigValidatorTests
 
     private static KafkaTableConfig CreateKafkaTable(string tableName, string topic, string outputPath) => new()
     {
-        MessageType = "Sandbox.Contracts.OrderEvent, Sandbox.Contracts",
+        MessageType = "ClickHouseSchemaGen.TestContracts.OrderEvent, ClickHouseSchemaGen.TestContracts",
         TableName = tableName,
         ProtoFile = "order_event",
         MessageName = "OrderEvent",

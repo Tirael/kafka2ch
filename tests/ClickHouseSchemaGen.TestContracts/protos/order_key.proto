@@ -1,0 +1,7 @@
+syntax = "proto3";
+package testcontracts.orders.v1;
+option csharp_namespace = "ClickHouseSchemaGen.TestContracts";
+
+message OrderKey {
+  string order_id = 1;
+}

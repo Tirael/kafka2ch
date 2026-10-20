@@ -102,11 +102,11 @@ public sealed class ProtoToClickHouseMapperTests
     [Fact]
     public void GivenAssemblyQualifiedMessageType_WhenResolved_ThenDescriptorMatchesOrderEvent()
     {
-        const string messageType = "Sandbox.Contracts.OrderEvent, Sandbox.Contracts";
+        const string messageType = "ClickHouseSchemaGen.TestContracts.OrderEvent, ClickHouseSchemaGen.TestContracts";
 
         var descriptor = ProtoToClickHouseMapper.ResolveDescriptor(messageType);
 
         descriptor.Name.Should().Be("OrderEvent");
-        descriptor.FullName.Should().Be("sandbox.orders.v1.OrderEvent");
+        descriptor.FullName.Should().Be("testcontracts.orders.v1.OrderEvent");
     }
 }

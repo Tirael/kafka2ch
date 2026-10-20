@@ -19,7 +19,7 @@ public sealed class ClusterReplicatedDatabaseIntegrationTests : IAsyncLifetime
             .WithNetwork(_network)
             .WithNetworkAliases("clickhouse-keeper")
             .WithEntrypoint("clickhouse", "keeper", "--config-file=/etc/clickhouse-keeper/keeper.xml")
-            .WithResourceMapping(File.ReadAllBytes(RepoPaths.KeeperTestConfigPath), "/etc/clickhouse-keeper/keeper.xml")
+            .WithResourceMapping(File.ReadAllBytes(TestContractsPaths.KeeperTestConfigPath), "/etc/clickhouse-keeper/keeper.xml")
             .WithWaitStrategy(Wait.ForUnixContainer().UntilInternalTcpPortIsAvailable(9181))
             .Build();
         _shard1 = CreateNode("ch1", shard: "01");
@@ -46,13 +46,13 @@ public sealed class ClusterReplicatedDatabaseIntegrationTests : IAsyncLifetime
     [Fact]
     public async Task GivenReplicatedDatabaseInit_WhenBootstrappedAndMigrated_ThenDdlReplicatesWithoutOnCluster()
     {
-        foreach (var (fileName, sql) in InitScriptsFixture.Generate(RepoPaths.ClusterReplicatedDbCodegenConfigPath))
+        foreach (var (fileName, sql) in InitScriptsFixture.Generate(TestContractsPaths.ClusterReplicatedDbCodegenConfigPath))
         {
             var execResult = await _shard1.ExecScriptAsync(sql);
             execResult.ExitCode.Should().Be(0, $"{fileName}: {execResult.Stderr}");
         }
 
-        var migrationSql = PersistPartitionMigrationFixture.GenerateSql(RepoPaths.ClusterReplicatedDbCodegenConfigPath);
+        var migrationSql = PersistPartitionMigrationFixture.GenerateSql(TestContractsPaths.ClusterReplicatedDbCodegenConfigPath);
         migrationSql.Should().Contain("-- await:kafka_consumers_empty orders_queue ON CLUSTER kafka2ch");
         migrationSql.Should().Contain("DETACH TABLE IF EXISTS orders_queue PERMANENTLY;");
         migrationSql.Should().NotContain("DETACH TABLE IF EXISTS orders_queue ON CLUSTER");

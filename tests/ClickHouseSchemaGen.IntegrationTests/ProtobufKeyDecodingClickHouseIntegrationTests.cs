@@ -91,12 +91,12 @@ public sealed class ProtobufKeyDecodingClickHouseIntegrationTests : IAsyncLifeti
     }
 
     [Fact]
-    public async Task GivenRepositoryCodegenConfig_WhenGeneratedScriptsApplied_ThenKeyMappedViewsAreCreated()
+    public async Task GivenFixtureCodegenConfig_WhenGeneratedScriptsApplied_ThenKeyMappedViewsAreCreated()
     {
         var outputDirectory = Path.Combine(Path.GetTempPath(), $"clickhouse-schema-gen-{Guid.NewGuid():N}");
         var configPath = Path.Combine(outputDirectory, "clickhouse.codegen.json");
         Directory.CreateDirectory(outputDirectory);
-        File.WriteAllText(configPath, File.ReadAllText(RepoPaths.CodegenConfigPath).Replace("../../docker/clickhouse/init/", ""));
+        File.WriteAllText(configPath, File.ReadAllText(TestContractsPaths.CodegenConfigPath).Replace("clickhouse/init/", ""));
 
         try
         {

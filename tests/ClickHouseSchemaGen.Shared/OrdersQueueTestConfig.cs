@@ -13,7 +13,7 @@ public static class OrdersQueueTestConfig
 
     public static KafkaTableConfig Create() => new()
     {
-        MessageType = "Sandbox.Contracts.OrderEvent, Sandbox.Contracts",
+        MessageType = "ClickHouseSchemaGen.TestContracts.OrderEvent, ClickHouseSchemaGen.TestContracts",
         TableName = "orders_queue",
         ProtoFile = "order_event",
         MessageName = "OrderEvent",
@@ -42,7 +42,7 @@ public static class OrdersQueueTestConfig
         table.Key = new KafkaKeyConfig
         {
             Format = KafkaKeyFormats.Protobuf,
-            MessageType = "Sandbox.Contracts.TestFixtures.CompositeKey, Sandbox.Contracts",
+            MessageType = "ClickHouseSchemaGen.TestContracts.Fixtures.CompositeKey, ClickHouseSchemaGen.TestContracts",
             FieldOverrides = new Dictionary<string, FieldOverrideConfig>(StringComparer.OrdinalIgnoreCase)
             {
                 ["tenant"] = new() { Type = "LowCardinality(String)" }
