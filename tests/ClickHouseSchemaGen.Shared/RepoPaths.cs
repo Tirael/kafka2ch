@@ -16,4 +16,7 @@ public static class RepoPaths
 
     public static string ClusterReplicatedDbCodegenConfigPath =>
         Path.Combine(RepositoryRoot, "src", "Sandbox.Contracts", "clickhouse.codegen.cluster.replicated-db.json");
+
+    public static string KeeperTestConfigPath =>
+        Path.Combine(RepositoryRoot, "tests", "ClickHouseSchemaGen.Shared", "Fixtures", "keeper-test.xml");
 }

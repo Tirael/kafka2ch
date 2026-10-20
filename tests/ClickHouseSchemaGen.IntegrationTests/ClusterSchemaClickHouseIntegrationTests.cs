@@ -18,7 +18,7 @@ public sealed class ClusterSchemaClickHouseIntegrationTests : IAsyncLifetime
             .WithNetwork(_network)
             .WithNetworkAliases("clickhouse-keeper")
             .WithEntrypoint("clickhouse", "keeper", "--config-file=/etc/clickhouse-keeper/keeper.xml")
-            .WithResourceMapping(KeeperTestConfig.Utf8Bytes, "/etc/clickhouse-keeper/keeper.xml")
+            .WithResourceMapping(File.ReadAllBytes(RepoPaths.KeeperTestConfigPath), "/etc/clickhouse-keeper/keeper.xml")
             .WithWaitStrategy(Wait.ForUnixContainer().UntilInternalTcpPortIsAvailable(9181))
             .Build();
         _shard1 = CreateNode("ch1", shard: "01");
@@ -106,7 +106,7 @@ public sealed class ClusterSchemaClickHouseIntegrationTests : IAsyncLifetime
             .WithNetworkAliases(host)
             .WithEnvironment("CLICKHOUSE_SHARD", shard)
             .WithEnvironment("CLICKHOUSE_REPLICA", host)
-            .WithBindMount(FormatSchemas.Directory, "/var/lib/clickhouse/format_schemas")
+            .WithResourceMapping(FormatSchemas.Directory, "/var/lib/clickhouse/format_schemas")
             .WithResourceMapping(Encoding.UTF8.GetBytes(ClusterXml), "/etc/clickhouse-server/config.d/cluster.xml")
             .Build();
 
