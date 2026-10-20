@@ -1,0 +1,45 @@
+# Changed files in PR #59
+
+Files changed on branch [`cursor/decouple-tests-from-sandbox-contracts-1d58`](https://github.com/Tirael/kafka2ch/pull/59) relative to `main`, each linked to its raw GitHub content URL on that branch.
+
+- [docs/59-main-file-list.md](https://raw.githubusercontent.com/Tirael/kafka2ch/cursor/decouple-tests-from-sandbox-contracts-1d58/docs/59-main-file-list.md)
+- [README.md](https://raw.githubusercontent.com/Tirael/kafka2ch/cursor/decouple-tests-from-sandbox-contracts-1d58/README.md)
+- [kafka2ch.sln](https://raw.githubusercontent.com/Tirael/kafka2ch/cursor/decouple-tests-from-sandbox-contracts-1d58/kafka2ch.sln)
+- [tests/ClickHouseSchemaGen.IntegrationTests/ClickHouseSchemaGen.IntegrationTests.csproj](https://raw.githubusercontent.com/Tirael/kafka2ch/cursor/decouple-tests-from-sandbox-contracts-1d58/tests/ClickHouseSchemaGen.IntegrationTests/ClickHouseSchemaGen.IntegrationTests.csproj)
+- [tests/ClickHouseSchemaGen.IntegrationTests/ClusterReplicatedDatabaseIntegrationTests.cs](https://raw.githubusercontent.com/Tirael/kafka2ch/cursor/decouple-tests-from-sandbox-contracts-1d58/tests/ClickHouseSchemaGen.IntegrationTests/ClusterReplicatedDatabaseIntegrationTests.cs)
+- [tests/ClickHouseSchemaGen.IntegrationTests/ClusterSchemaClickHouseIntegrationTests.cs](https://raw.githubusercontent.com/Tirael/kafka2ch/cursor/decouple-tests-from-sandbox-contracts-1d58/tests/ClickHouseSchemaGen.IntegrationTests/ClusterSchemaClickHouseIntegrationTests.cs)
+- [tests/ClickHouseSchemaGen.IntegrationTests/GlobalUsings.cs](https://raw.githubusercontent.com/Tirael/kafka2ch/cursor/decouple-tests-from-sandbox-contracts-1d58/tests/ClickHouseSchemaGen.IntegrationTests/GlobalUsings.cs)
+- [tests/ClickHouseSchemaGen.IntegrationTests/MigrationQueueLifecycleIntegrationTests.cs](https://raw.githubusercontent.com/Tirael/kafka2ch/cursor/decouple-tests-from-sandbox-contracts-1d58/tests/ClickHouseSchemaGen.IntegrationTests/MigrationQueueLifecycleIntegrationTests.cs)
+- [tests/ClickHouseSchemaGen.IntegrationTests/ProtobufKeyDecodingClickHouseIntegrationTests.cs](https://raw.githubusercontent.com/Tirael/kafka2ch/cursor/decouple-tests-from-sandbox-contracts-1d58/tests/ClickHouseSchemaGen.IntegrationTests/ProtobufKeyDecodingClickHouseIntegrationTests.cs)
+- [tests/ClickHouseSchemaGen.IntegrationTests/SchemaMigrationsHistoryIntegrationTests.cs](https://raw.githubusercontent.com/Tirael/kafka2ch/cursor/decouple-tests-from-sandbox-contracts-1d58/tests/ClickHouseSchemaGen.IntegrationTests/SchemaMigrationsHistoryIntegrationTests.cs)
+- [tests/ClickHouseSchemaGen.Shared/ClickHouseSchemaGen.Shared.csproj](https://raw.githubusercontent.com/Tirael/kafka2ch/cursor/decouple-tests-from-sandbox-contracts-1d58/tests/ClickHouseSchemaGen.Shared/ClickHouseSchemaGen.Shared.csproj)
+- [tests/ClickHouseSchemaGen.Shared/FormatSchemas.cs](https://raw.githubusercontent.com/Tirael/kafka2ch/cursor/decouple-tests-from-sandbox-contracts-1d58/tests/ClickHouseSchemaGen.Shared/FormatSchemas.cs)
+- [tests/ClickHouseSchemaGen.Shared/OrdersQueueTestConfig.cs](https://raw.githubusercontent.com/Tirael/kafka2ch/cursor/decouple-tests-from-sandbox-contracts-1d58/tests/ClickHouseSchemaGen.Shared/OrdersQueueTestConfig.cs)
+- [tests/ClickHouseSchemaGen.Shared/TestContractsPaths.cs](https://raw.githubusercontent.com/Tirael/kafka2ch/cursor/decouple-tests-from-sandbox-contracts-1d58/tests/ClickHouseSchemaGen.Shared/TestContractsPaths.cs)
+- [tests/ClickHouseSchemaGen.TestContracts/ClickHouseSchemaGen.TestContracts.csproj](https://raw.githubusercontent.com/Tirael/kafka2ch/cursor/decouple-tests-from-sandbox-contracts-1d58/tests/ClickHouseSchemaGen.TestContracts/ClickHouseSchemaGen.TestContracts.csproj)
+- [tests/ClickHouseSchemaGen.TestContracts/Fixtures/clickhouse.codegen.cluster.json](https://raw.githubusercontent.com/Tirael/kafka2ch/cursor/decouple-tests-from-sandbox-contracts-1d58/tests/ClickHouseSchemaGen.TestContracts/Fixtures/clickhouse.codegen.cluster.json)
+- [tests/ClickHouseSchemaGen.TestContracts/Fixtures/clickhouse.codegen.cluster.replicated-db.json](https://raw.githubusercontent.com/Tirael/kafka2ch/cursor/decouple-tests-from-sandbox-contracts-1d58/tests/ClickHouseSchemaGen.TestContracts/Fixtures/clickhouse.codegen.cluster.replicated-db.json)
+- [tests/ClickHouseSchemaGen.TestContracts/Fixtures/clickhouse.codegen.json](https://raw.githubusercontent.com/Tirael/kafka2ch/cursor/decouple-tests-from-sandbox-contracts-1d58/tests/ClickHouseSchemaGen.TestContracts/Fixtures/clickhouse.codegen.json)
+- [tests/ClickHouseSchemaGen.TestContracts/Fixtures/keeper-test.xml](https://raw.githubusercontent.com/Tirael/kafka2ch/cursor/decouple-tests-from-sandbox-contracts-1d58/tests/ClickHouseSchemaGen.TestContracts/Fixtures/keeper-test.xml)
+- [tests/ClickHouseSchemaGen.TestContracts/protos/common/address.proto](https://raw.githubusercontent.com/Tirael/kafka2ch/cursor/decouple-tests-from-sandbox-contracts-1d58/tests/ClickHouseSchemaGen.TestContracts/protos/common/address.proto)
+- [tests/ClickHouseSchemaGen.TestContracts/protos/common/money.proto](https://raw.githubusercontent.com/Tirael/kafka2ch/cursor/decouple-tests-from-sandbox-contracts-1d58/tests/ClickHouseSchemaGen.TestContracts/protos/common/money.proto)
+- [tests/ClickHouseSchemaGen.TestContracts/protos/mapping_fixtures.proto](https://raw.githubusercontent.com/Tirael/kafka2ch/cursor/decouple-tests-from-sandbox-contracts-1d58/tests/ClickHouseSchemaGen.TestContracts/protos/mapping_fixtures.proto)
+- [tests/ClickHouseSchemaGen.TestContracts/protos/order_event.proto](https://raw.githubusercontent.com/Tirael/kafka2ch/cursor/decouple-tests-from-sandbox-contracts-1d58/tests/ClickHouseSchemaGen.TestContracts/protos/order_event.proto)
+- [tests/ClickHouseSchemaGen.TestContracts/protos/order_key.proto](https://raw.githubusercontent.com/Tirael/kafka2ch/cursor/decouple-tests-from-sandbox-contracts-1d58/tests/ClickHouseSchemaGen.TestContracts/protos/order_key.proto)
+- [tests/ClickHouseSchemaGen.TestContracts/protos/order_types.proto](https://raw.githubusercontent.com/Tirael/kafka2ch/cursor/decouple-tests-from-sandbox-contracts-1d58/tests/ClickHouseSchemaGen.TestContracts/protos/order_types.proto)
+- [tests/ClickHouseSchemaGen.UnitTests/ClickHouseSchemaGen.UnitTests.csproj](https://raw.githubusercontent.com/Tirael/kafka2ch/cursor/decouple-tests-from-sandbox-contracts-1d58/tests/ClickHouseSchemaGen.UnitTests/ClickHouseSchemaGen.UnitTests.csproj)
+- [tests/ClickHouseSchemaGen.UnitTests/ClickHouseSchemaGeneratorTests.cs](https://raw.githubusercontent.com/Tirael/kafka2ch/cursor/decouple-tests-from-sandbox-contracts-1d58/tests/ClickHouseSchemaGen.UnitTests/ClickHouseSchemaGeneratorTests.cs)
+- [tests/ClickHouseSchemaGen.UnitTests/ClusterConfigTests.cs](https://raw.githubusercontent.com/Tirael/kafka2ch/cursor/decouple-tests-from-sandbox-contracts-1d58/tests/ClickHouseSchemaGen.UnitTests/ClusterConfigTests.cs)
+- [tests/ClickHouseSchemaGen.UnitTests/ClusterModeGenerationTests.cs](https://raw.githubusercontent.com/Tirael/kafka2ch/cursor/decouple-tests-from-sandbox-contracts-1d58/tests/ClickHouseSchemaGen.UnitTests/ClusterModeGenerationTests.cs)
+- [tests/ClickHouseSchemaGen.UnitTests/CodegenConfigValidatorTests.cs](https://raw.githubusercontent.com/Tirael/kafka2ch/cursor/decouple-tests-from-sandbox-contracts-1d58/tests/ClickHouseSchemaGen.UnitTests/CodegenConfigValidatorTests.cs)
+- [tests/ClickHouseSchemaGen.UnitTests/GlobalUsings.cs](https://raw.githubusercontent.com/Tirael/kafka2ch/cursor/decouple-tests-from-sandbox-contracts-1d58/tests/ClickHouseSchemaGen.UnitTests/GlobalUsings.cs)
+- [tests/ClickHouseSchemaGen.UnitTests/KafkaKeyColumnMapperTests.cs](https://raw.githubusercontent.com/Tirael/kafka2ch/cursor/decouple-tests-from-sandbox-contracts-1d58/tests/ClickHouseSchemaGen.UnitTests/KafkaKeyColumnMapperTests.cs)
+- [tests/ClickHouseSchemaGen.UnitTests/MigrationSupportTests.cs](https://raw.githubusercontent.com/Tirael/kafka2ch/cursor/decouple-tests-from-sandbox-contracts-1d58/tests/ClickHouseSchemaGen.UnitTests/MigrationSupportTests.cs)
+- [tests/ClickHouseSchemaGen.UnitTests/ProtoToClickHouseMapperTests.cs](https://raw.githubusercontent.com/Tirael/kafka2ch/cursor/decouple-tests-from-sandbox-contracts-1d58/tests/ClickHouseSchemaGen.UnitTests/ProtoToClickHouseMapperTests.cs)
+- [tests/ClickHouseSchemaGen.UnitTests/SchemaMigrationsTableTests.cs](https://raw.githubusercontent.com/Tirael/kafka2ch/cursor/decouple-tests-from-sandbox-contracts-1d58/tests/ClickHouseSchemaGen.UnitTests/SchemaMigrationsTableTests.cs)
+- [tests/ClickHouseSchemaGen.UnitTests/SqlChecksumTests.cs](https://raw.githubusercontent.com/Tirael/kafka2ch/cursor/decouple-tests-from-sandbox-contracts-1d58/tests/ClickHouseSchemaGen.UnitTests/SqlChecksumTests.cs)
+
+Deleted on this branch (present on `main`):
+
+- `tests/ClickHouseSchemaGen.Shared/RepoPaths.cs`
+- `tests/ClickHouseSchemaGen.Shared/Fixtures/keeper-test.xml` (moved to `tests/ClickHouseSchemaGen.TestContracts/Fixtures/keeper-test.xml`)
