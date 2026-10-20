@@ -1,0 +1,49 @@
+syntax = "proto3";
+
+package testcontracts.orders.v1;
+
+import "common/money.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "order_types.proto";
+
+option csharp_namespace = "ClickHouseSchemaGen.TestContracts";
+
+message OrderEvent {
+  string order_id = 1;
+  string category = 2;
+  testcontracts.common.v1.Money price = 3;
+  uint32 quantity = 4;
+  google.protobuf.Timestamp event_time = 5;
+  testcontracts.common.v1.OrderStatus status = 6;
+  repeated string tags = 7;
+  repeated LineItem items = 8;
+  map<string, string> metadata = 9;
+  optional string note = 10;
+
+  oneof payment {
+    CardPayment card = 11;
+    CashPayment cash = 12;
+    WalletPayment wallet = 13;
+  }
+
+  google.protobuf.StringValue promo_code = 14;
+  repeated testcontracts.common.v1.OrderStatus status_history = 15;
+  optional int32 loyalty_points = 16;
+  OrderAttachments attachments = 17;
+
+  map<int64, OrderLine2> order_lines2_by_line_id = 18;
+}
+
+message OrderLine2 {
+  int64 line2_id = 1;
+  PriceValue2 value2 = 2;
+  bool is_active2 = 3;
+}
+
+message PriceValue2 {
+  double price2 = 1;
+  int32 quantity2 = 2;
+  google.protobuf.Timestamp created_at2 = 3;
+  google.protobuf.Timestamp changed_at2 = 4;
+}

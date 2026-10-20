@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>false</IsTestProject>
+    <RootNamespace>ClickHouseSchemaGen.TestContracts</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Google.Protobuf" />
+    <PackageReference Include="Grpc.Tools">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Protobuf Include="protos/**/*.proto" ProtoRoot="protos" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Remove="protos/**;Fixtures/**" />
+    <None Include="protos/**/*.proto" Link="TestContracts/protos/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Fixtures/**/*" Link="TestContracts/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

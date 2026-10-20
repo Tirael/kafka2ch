@@ -74,7 +74,7 @@ public static class FormatSchemas
                 if (System.IO.Directory.Exists(dest))
                     System.IO.Directory.Delete(dest, recursive: true);
 
-                CopyTree(RepoPaths.ProtosDirectory, dest);
+                CopyTree(TestContractsPaths.ProtosDirectory, dest);
 
                 var google = Path.Combine(dest, "google", "protobuf");
                 System.IO.Directory.CreateDirectory(google);

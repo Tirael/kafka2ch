@@ -9,9 +9,9 @@ public sealed class ClusterConfigTests : IDisposable
     public void Dispose() => Directory.Delete(_directory, recursive: true);
 
     [Fact]
-    public void GivenRepoBaseConfig_WhenLoad_ThenClusterIsDisabled()
+    public void GivenFixtureBaseConfig_WhenLoad_ThenClusterIsDisabled()
     {
-        var config = CodegenConfigLoader.Load(RepoPaths.CodegenConfigPath);
+        var config = CodegenConfigLoader.Load(TestContractsPaths.CodegenConfigPath);
 
         config.Cluster.Enabled.Should().BeFalse();
         config.OutputDirectory.Should().BeNull();
@@ -62,9 +62,9 @@ public sealed class ClusterConfigTests : IDisposable
     }
 
     [Fact]
-    public void GivenRepoClusterConfig_WhenLoad_ThenExtendsBaseAndWritesToClusterDirectories()
+    public void GivenFixtureClusterConfig_WhenLoad_ThenExtendsBaseAndWritesToClusterDirectories()
     {
-        var config = CodegenConfigLoader.Load(RepoPaths.ClusterCodegenConfigPath);
+        var config = CodegenConfigLoader.Load(TestContractsPaths.ClusterCodegenConfigPath);
 
         config.Cluster.Name.Should().Be("kafka2ch");
         config.KafkaTables.Select(table => table.TableName).Should().Equal("orders_queue");
@@ -87,7 +87,7 @@ public sealed class ClusterConfigTests : IDisposable
         string? ddlMode,
         string expectedMessage)
     {
-        var config = CodegenConfigLoader.Load(RepoPaths.CodegenConfigPath);
+        var config = CodegenConfigLoader.Load(TestContractsPaths.CodegenConfigPath);
         config.Cluster = new ClusterConfig
         {
             Name = name,
@@ -103,9 +103,9 @@ public sealed class ClusterConfigTests : IDisposable
     }
 
     [Fact]
-    public void GivenRepoReplicatedDbConfig_WhenValidate_ThenSucceeds()
+    public void GivenFixtureReplicatedDbConfig_WhenValidate_ThenSucceeds()
     {
-        var config = CodegenConfigLoader.Load(RepoPaths.ClusterReplicatedDbCodegenConfigPath);
+        var config = CodegenConfigLoader.Load(TestContractsPaths.ClusterReplicatedDbCodegenConfigPath);
 
         new CodegenConfigValidator().Validate(config).IsValid.Should().BeTrue();
         config.Cluster.UsesReplicatedDatabase.Should().BeTrue();
@@ -115,7 +115,7 @@ public sealed class ClusterConfigTests : IDisposable
     [Fact]
     public void GivenLocalNameCollidingWithExistingTable_WhenValidate_ThenFails()
     {
-        var config = CodegenConfigLoader.Load(RepoPaths.CodegenConfigPath);
+        var config = CodegenConfigLoader.Load(TestContractsPaths.CodegenConfigPath);
         config.Cluster = new ClusterConfig { Name = "c", LocalTableSuffix = "_queue" };
 
         var result = new CodegenConfigValidator().Validate(config);

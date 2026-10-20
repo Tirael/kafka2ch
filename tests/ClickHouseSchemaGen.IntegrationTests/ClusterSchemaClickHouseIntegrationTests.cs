@@ -18,7 +18,7 @@ public sealed class ClusterSchemaClickHouseIntegrationTests : IAsyncLifetime
             .WithNetwork(_network)
             .WithNetworkAliases("clickhouse-keeper")
             .WithEntrypoint("clickhouse", "keeper", "--config-file=/etc/clickhouse-keeper/keeper.xml")
-            .WithResourceMapping(File.ReadAllBytes(RepoPaths.KeeperTestConfigPath), "/etc/clickhouse-keeper/keeper.xml")
+            .WithResourceMapping(File.ReadAllBytes(TestContractsPaths.KeeperTestConfigPath), "/etc/clickhouse-keeper/keeper.xml")
             .WithWaitStrategy(Wait.ForUnixContainer().UntilInternalTcpPortIsAvailable(9181))
             .Build();
         _shard1 = CreateNode("ch1", shard: "01");
@@ -45,7 +45,7 @@ public sealed class ClusterSchemaClickHouseIntegrationTests : IAsyncLifetime
     [Fact]
     public async Task GivenGeneratedClusterInitScripts_WhenBootstrappedAndMigrated_ThenSchemaAndHistoryExistOnEveryNode()
     {
-        foreach (var (fileName, sql) in InitScriptsFixture.Generate(RepoPaths.ClusterCodegenConfigPath))
+        foreach (var (fileName, sql) in InitScriptsFixture.Generate(TestContractsPaths.ClusterCodegenConfigPath))
         {
             var execResult = await _shard1.ExecScriptAsync(sql);
             execResult.ExitCode.Should().Be(0, $"{fileName}: {execResult.Stderr}");
@@ -53,7 +53,7 @@ public sealed class ClusterSchemaClickHouseIntegrationTests : IAsyncLifetime
 
         await File.WriteAllTextAsync(
             Path.Combine(_migrationsDirectory, PersistPartitionMigrationFixture.FileName),
-            PersistPartitionMigrationFixture.GenerateSql(RepoPaths.ClusterCodegenConfigPath));
+            PersistPartitionMigrationFixture.GenerateSql(TestContractsPaths.ClusterCodegenConfigPath));
 
         await using var connection = new ClickHouseConnection(_shard2.GetConnectionString());
         await connection.OpenAsync();

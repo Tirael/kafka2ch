@@ -25,11 +25,11 @@ public sealed class ClickHouseSchemaGeneratorTests
         var outputDirectory = Path.Combine(Path.GetTempPath(), $"clickhouse-schema-gen-{Guid.NewGuid():N}");
         var configPath = Path.Combine(outputDirectory, "clickhouse.codegen.json");
         Directory.CreateDirectory(outputDirectory);
-        File.Copy(RepoPaths.CodegenConfigPath, configPath);
+        File.Copy(TestContractsPaths.CodegenConfigPath, configPath);
 
         var configJson = File.ReadAllText(configPath)
-            .Replace("../../docker/clickhouse/init/01_orders_queue.sql", "generated_orders_queue.sql")
-            .Replace("../../docker/clickhouse/init/02_pipeline.sql", "generated_pipeline.sql");
+            .Replace("clickhouse/init/01_orders_queue.sql", "generated_orders_queue.sql")
+            .Replace("clickhouse/init/02_pipeline.sql", "generated_pipeline.sql");
         File.WriteAllText(configPath, configJson);
 
         var ordersQueuePath = Path.Combine(outputDirectory, "generated_orders_queue.sql");
@@ -66,7 +66,7 @@ public sealed class ClickHouseSchemaGeneratorTests
             [
                 new KafkaTableConfig
                 {
-                    MessageType = "Sandbox.Contracts.OrderEvent, Sandbox.Contracts",
+                    MessageType = "ClickHouseSchemaGen.TestContracts.OrderEvent, ClickHouseSchemaGen.TestContracts",
                     TableName = "orders_queue",
                     ProtoFile = "order_event",
                     MessageName = "OrderEvent",
@@ -146,7 +146,7 @@ public sealed class ClickHouseSchemaGeneratorTests
             KafkaTables =
             [
                 CreateKafkaTable(
-                    "Sandbox.Contracts.OrderEvent, Sandbox.Contracts",
+                    "ClickHouseSchemaGen.TestContracts.OrderEvent, ClickHouseSchemaGen.TestContracts",
                     "orders_queue",
                     "order_event",
                     "OrderEvent",
@@ -211,7 +211,7 @@ public sealed class ClickHouseSchemaGeneratorTests
             KafkaTables =
             [
                 CreateKafkaTable(
-                    "Sandbox.Contracts.OrderEvent, Sandbox.Contracts",
+                    "ClickHouseSchemaGen.TestContracts.OrderEvent, ClickHouseSchemaGen.TestContracts",
                     "orders_queue",
                     "order_event",
                     "OrderEvent",
@@ -264,7 +264,7 @@ public sealed class ClickHouseSchemaGeneratorTests
             [
                 new KafkaTableConfig
                 {
-                    MessageType = "Sandbox.Contracts.OrderEvent, Sandbox.Contracts",
+                    MessageType = "ClickHouseSchemaGen.TestContracts.OrderEvent, ClickHouseSchemaGen.TestContracts",
                     TableName = "orders_queue",
                     ProtoFile = "order_event",
                     MessageName = "OrderEvent",
@@ -321,7 +321,7 @@ public sealed class ClickHouseSchemaGeneratorTests
         config.Key = new KafkaKeyConfig
         {
             Format = KafkaKeyFormats.Protobuf,
-            MessageType = "Sandbox.Contracts.OrderKey, Sandbox.Contracts"
+            MessageType = "ClickHouseSchemaGen.TestContracts.OrderKey, ClickHouseSchemaGen.TestContracts"
         };
 
         var sql = _sut.GenerateKafkaTableSql(config, OrdersQueueTestConfig.Defaults);
@@ -564,7 +564,7 @@ public sealed class ClickHouseSchemaGeneratorTests
         MaterializedViewConfig? materializedView = null)
     {
         var table = CreateKafkaTable(
-            "Sandbox.Contracts.OrderEvent, Sandbox.Contracts",
+            "ClickHouseSchemaGen.TestContracts.OrderEvent, ClickHouseSchemaGen.TestContracts",
             "orders_queue",
             "order_event",
             "OrderEvent",

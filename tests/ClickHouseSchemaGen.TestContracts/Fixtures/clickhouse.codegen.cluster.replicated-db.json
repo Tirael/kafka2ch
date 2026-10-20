@@ -1,0 +1,38 @@
+{
+  "extends": "clickhouse.codegen.cluster.json",
+  "outputDirectory": "clickhouse-cluster/init-replicated-db",
+  "cluster": {
+    "name": "kafka2ch",
+    "ddlMode": "replicatedDatabase",
+    "replicatedDatabaseName": "kafka2ch",
+    "replicatedDatabasePath": "/clickhouse/databases/{uuid}",
+    "replicatedDatabaseReplicaName": "{replica}",
+    "materializedViewsWriteThroughDistributed": true
+  },
+  "pipeline": {
+    "mergeTreeTables": [
+      {
+        "tableName": "orders",
+        "orderBy": "(event_time, order_id)",
+        "includeKafkaMeta": true,
+        "shardingKey": "cityHash64(order_id)",
+        "materializedViewsWriteThroughDistributed": true,
+        "columns": [
+          { "name": "order_id", "type": "String" },
+          { "name": "category", "type": "LowCardinality(String)" },
+          { "name": "currency", "type": "LowCardinality(String)" },
+          { "name": "amount", "type": "Float64" },
+          { "name": "quantity", "type": "UInt32" },
+          { "name": "status", "type": "LowCardinality(String)" },
+          { "name": "payment", "type": "LowCardinality(String)" },
+          { "name": "event_time", "type": "DateTime64(3)" }
+        ]
+      }
+    ]
+  },
+  "migrations": {
+    "snapshotPath": "clickhouse-cluster/init-replicated-db/schema.snapshot.json",
+    "migrationsDirectory": "clickhouse-cluster/migrations-replicated-db",
+    "versionsOutputPath": "clickhouse-cluster/init-replicated-db/00_schema_migrations.sql"
+  }
+}

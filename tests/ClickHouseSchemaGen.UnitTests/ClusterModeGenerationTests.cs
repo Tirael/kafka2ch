@@ -128,9 +128,9 @@ public sealed class ClusterModeGenerationTests
     }
 
     [Fact]
-    public void GivenRepoClusterConfig_WhenRenderInitScripts_ThenEmitsOrderedClusterBootstrap()
+    public void GivenFixtureClusterConfig_WhenRenderInitScripts_ThenEmitsOrderedClusterBootstrap()
     {
-        var scripts = InitScriptsFixture.Generate(RepoPaths.ClusterCodegenConfigPath);
+        var scripts = InitScriptsFixture.Generate(TestContractsPaths.ClusterCodegenConfigPath);
 
         scripts.Select(script => script.FileName).Should().Equal(
             "00_schema_migrations.sql",
@@ -143,9 +143,9 @@ public sealed class ClusterModeGenerationTests
     }
 
     [Fact]
-    public void GivenRepoClusterConfig_WhenRenderPipeline_ThenEveryCreateRunsOnClusterAndAggregatesAreReplicated()
+    public void GivenFixtureClusterConfig_WhenRenderPipeline_ThenEveryCreateRunsOnClusterAndAggregatesAreReplicated()
     {
-        var config = CodegenConfigLoader.Load(RepoPaths.ClusterCodegenConfigPath);
+        var config = CodegenConfigLoader.Load(TestContractsPaths.ClusterCodegenConfigPath);
         var plan = SchemaGeneratorFactory.Create().BuildPlan(config);
 
         var statements = SqlStatementSplitter.Split(SchemaPlanRenderer.RenderPipelineSql(plan))
@@ -165,7 +165,7 @@ public sealed class ClusterModeGenerationTests
     [Fact]
     public void GivenClusterConfig_WhenGenerateMigration_ThenDetachesQueuesAndAltersLocalAndDistributedTablesOnCluster()
     {
-        var sql = PersistPartitionMigrationFixture.GenerateSql(RepoPaths.ClusterCodegenConfigPath);
+        var sql = PersistPartitionMigrationFixture.GenerateSql(TestContractsPaths.ClusterCodegenConfigPath);
 
         sql.Should().Contain(SqlText.Normalize(
             """
@@ -192,7 +192,7 @@ public sealed class ClusterModeGenerationTests
     [Fact]
     public void GivenKafkaSettingsChanged_WhenGenerateMigration_ThenReattachesBeforeDropAndRecreatesPipeline()
     {
-        var sql = KafkaRecreateMigrationFixture.GenerateSql(RepoPaths.CodegenConfigPath);
+        var sql = KafkaRecreateMigrationFixture.GenerateSql(TestContractsPaths.CodegenConfigPath);
 
         AssertAscending(sql,
             "DETACH TABLE IF EXISTS orders_queue;",
@@ -210,7 +210,7 @@ public sealed class ClusterModeGenerationTests
     [Fact]
     public void GivenKafkaSettingsChangedOnCluster_WhenGenerateMigration_ThenQueueLifecycleUsesOnCluster()
     {
-        var sql = KafkaRecreateMigrationFixture.GenerateSql(RepoPaths.ClusterCodegenConfigPath);
+        var sql = KafkaRecreateMigrationFixture.GenerateSql(TestContractsPaths.ClusterCodegenConfigPath);
 
         AssertAscending(sql,
             "DETACH TABLE IF EXISTS orders_queue ON CLUSTER kafka2ch;",
@@ -235,7 +235,7 @@ public sealed class ClusterModeGenerationTests
     [Fact]
     public void GivenSingleNodeConfig_WhenGenerateMigration_ThenHasNoClusterClauses()
     {
-        var sql = PersistPartitionMigrationFixture.GenerateSql(RepoPaths.CodegenConfigPath);
+        var sql = PersistPartitionMigrationFixture.GenerateSql(TestContractsPaths.CodegenConfigPath);
 
         sql.Should().Contain("DETACH TABLE IF EXISTS orders_queue;");
         sql.Should().Contain(SqlText.Normalize("-- await:kafka_consumers_empty orders_queue\n"));
@@ -269,7 +269,7 @@ public sealed class ClusterModeGenerationTests
     [Fact]
     public void GivenPerTableWriteThroughOverride_WhenRenderPipeline_ThenOnlyThatViewWritesThroughDistributed()
     {
-        var config = CodegenConfigLoader.Load(RepoPaths.ClusterCodegenConfigPath);
+        var config = CodegenConfigLoader.Load(TestContractsPaths.ClusterCodegenConfigPath);
         config.Cluster.MaterializedViewsWriteThroughDistributed = false;
         config.Pipeline!.MergeTreeTables.First(t => t.TableName == "orders")
             .MaterializedViewsWriteThroughDistributed = true;
@@ -340,13 +340,13 @@ public sealed class ClusterModeGenerationTests
     }
 
     [Fact]
-    public void GivenRepoReplicatedDbConfig_WhenRenderInitScripts_ThenUsesReplicatedDatabaseShape()
+    public void GivenFixtureReplicatedDbConfig_WhenRenderInitScripts_ThenUsesReplicatedDatabaseShape()
     {
-        var config = CodegenConfigLoader.Load(RepoPaths.ClusterReplicatedDbCodegenConfigPath);
+        var config = CodegenConfigLoader.Load(TestContractsPaths.ClusterReplicatedDbCodegenConfigPath);
         config.Cluster.UsesReplicatedDatabase.Should().BeTrue();
         config.Cluster.MaterializedViewsWriteThroughDistributed.Should().BeTrue();
 
-        var scripts = InitScriptsFixture.Generate(RepoPaths.ClusterReplicatedDbCodegenConfigPath);
+        var scripts = InitScriptsFixture.Generate(TestContractsPaths.ClusterReplicatedDbCodegenConfigPath);
         scripts.Select(script => script.FileName).Should().Equal(
             "00_schema_migrations.sql",
             "01_orders_queue.sql",
