@@ -10,7 +10,7 @@ public sealed class SchemaMigrationsHistoryIntegrationTests : IAsyncLifetime
     {
         TestContainersEnv.SetVariables();
         _clickHouse = new ClickHouseBuilder(TestContainersEnv.FullClickHouseImageName)
-            .WithBindMount(RepoPaths.FormatSchemasDirectory, "/var/lib/clickhouse/format_schemas")
+            .WithBindMount(FormatSchemas.Directory, "/var/lib/clickhouse/format_schemas")
             .Build();
     }
 
@@ -27,16 +27,12 @@ public sealed class SchemaMigrationsHistoryIntegrationTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task GivenCommittedInitScripts_WhenBootstrappedAndMigrated_ThenHistoryHasInitAndMigrationRows()
+    public async Task GivenGeneratedInitScripts_WhenBootstrappedAndMigrated_ThenHistoryHasInitAndMigrationRows()
     {
-        var initDirectory = Path.Combine(RepoPaths.RepositoryRoot, "docker", "clickhouse", "init");
-        var initScripts = Directory.GetFiles(initDirectory, "*.sql")
-            .OrderBy(path => Path.GetFileName(path), StringComparer.Ordinal)
-            .ToList();
-        foreach (var script in initScripts)
+        foreach (var (fileName, sql) in InitScriptsFixture.Generate(RepoPaths.CodegenConfigPath))
         {
-            var execResult = await _clickHouse.ExecScriptAsync(await File.ReadAllTextAsync(script));
-            execResult.ExitCode.Should().Be(0, $"{Path.GetFileName(script)}: {execResult.Stderr}");
+            var execResult = await _clickHouse.ExecScriptAsync(sql);
+            execResult.ExitCode.Should().Be(0, $"{fileName}: {execResult.Stderr}");
         }
 
         await File.WriteAllTextAsync(
@@ -46,18 +42,11 @@ public sealed class SchemaMigrationsHistoryIntegrationTests : IAsyncLifetime
         await CreateRunner().ApplyAsync(_clickHouse.GetConnectionString(), _migrationsDirectory, CancellationToken.None);
         await CreateRunner().ApplyAsync(_clickHouse.GetConnectionString(), _migrationsDirectory, CancellationToken.None);
 
-        var committedMigrations = SchemaMigrationsScriptGenerator
-            .ReadFromDirectory(Path.Combine(RepoPaths.RepositoryRoot, "docker", "clickhouse", "migrations"))
-            .Select(migration => (migration.Version, migration.Name, "migration"));
         var rows = await ReadHistoryAsync();
         rows.Should().Equal(
-            new[]
-            {
-                ("01", "01_orders_queue.sql", "init"),
-                ("02", "02_pipeline.sql", "init")
-            }
-            .Concat(committedMigrations)
-            .Append(("20990101000000", "20990101000000_add_note.sql", "migration")));
+            ("01", "01_orders_queue.sql", "init"),
+            ("02", "02_pipeline.sql", "init"),
+            ("20990101000000", "20990101000000_add_note.sql", "migration"));
     }
 
     [Fact]

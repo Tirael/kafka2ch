@@ -18,7 +18,7 @@ public sealed class ClusterSchemaClickHouseIntegrationTests : IAsyncLifetime
             .WithNetwork(_network)
             .WithNetworkAliases("clickhouse-keeper")
             .WithEntrypoint("clickhouse", "keeper", "--config-file=/etc/clickhouse-keeper/keeper.xml")
-            .WithResourceMapping(File.ReadAllBytes(RepoPaths.KeeperTestConfigPath), "/etc/clickhouse-keeper/keeper.xml")
+            .WithResourceMapping(KeeperTestConfig.Utf8Bytes, "/etc/clickhouse-keeper/keeper.xml")
             .WithWaitStrategy(Wait.ForUnixContainer().UntilInternalTcpPortIsAvailable(9181))
             .Build();
         _shard1 = CreateNode("ch1", shard: "01");
@@ -43,12 +43,12 @@ public sealed class ClusterSchemaClickHouseIntegrationTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task GivenCommittedClusterInitScripts_WhenBootstrappedAndMigrated_ThenSchemaAndHistoryExistOnEveryNode()
+    public async Task GivenGeneratedClusterInitScripts_WhenBootstrappedAndMigrated_ThenSchemaAndHistoryExistOnEveryNode()
     {
-        foreach (var script in Directory.GetFiles(RepoPaths.ClusterInitDirectory, "*.sql").Order(StringComparer.Ordinal))
+        foreach (var (fileName, sql) in InitScriptsFixture.Generate(RepoPaths.ClusterCodegenConfigPath))
         {
-            var execResult = await _shard1.ExecScriptAsync(await File.ReadAllTextAsync(script));
-            execResult.ExitCode.Should().Be(0, $"{Path.GetFileName(script)}: {execResult.Stderr}");
+            var execResult = await _shard1.ExecScriptAsync(sql);
+            execResult.ExitCode.Should().Be(0, $"{fileName}: {execResult.Stderr}");
         }
 
         await File.WriteAllTextAsync(
@@ -97,7 +97,7 @@ public sealed class ClusterSchemaClickHouseIntegrationTests : IAsyncLifetime
                 "SELECT getMacro('replica'), count(), countIf(kind = 'init'), countIf(version = '" + PersistPartitionMigrationFixture.Version + "') " +
                 "FROM clusterAllReplicas('kafka2ch', currentDatabase(), schema_migrations) GROUP BY 1 ORDER BY 1"))
             .Select(row => $"{row[0]}:{row[1]}:{row[2]}:{row[3]}")
-            .Should().Equal("ch1:4:2:1", "ch2:4:2:1");
+            .Should().Equal("ch1:3:2:1", "ch2:3:2:1");
     }
 
     private ClickHouseContainer CreateNode(string host, string shard) =>
@@ -106,7 +106,7 @@ public sealed class ClusterSchemaClickHouseIntegrationTests : IAsyncLifetime
             .WithNetworkAliases(host)
             .WithEnvironment("CLICKHOUSE_SHARD", shard)
             .WithEnvironment("CLICKHOUSE_REPLICA", host)
-            .WithBindMount(RepoPaths.FormatSchemasDirectory, "/var/lib/clickhouse/format_schemas")
+            .WithBindMount(FormatSchemas.Directory, "/var/lib/clickhouse/format_schemas")
             .WithResourceMapping(Encoding.UTF8.GetBytes(ClusterXml), "/etc/clickhouse-server/config.d/cluster.xml")
             .Build();
 

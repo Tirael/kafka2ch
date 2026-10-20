@@ -12,7 +12,7 @@ public sealed class ProtobufKeyDecodingClickHouseIntegrationTests : IAsyncLifeti
     {
         TestContainersEnv.SetVariables();
         _clickHouse = new ClickHouseBuilder(TestContainersEnv.FullClickHouseImageName)
-            .WithBindMount(RepoPaths.FormatSchemasDirectory, "/var/lib/clickhouse/format_schemas")
+            .WithBindMount(FormatSchemas.Directory, "/var/lib/clickhouse/format_schemas")
             .Build();
     }
 

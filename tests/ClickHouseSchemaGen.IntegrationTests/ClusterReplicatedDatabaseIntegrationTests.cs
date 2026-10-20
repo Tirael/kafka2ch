@@ -19,7 +19,7 @@ public sealed class ClusterReplicatedDatabaseIntegrationTests : IAsyncLifetime
             .WithNetwork(_network)
             .WithNetworkAliases("clickhouse-keeper")
             .WithEntrypoint("clickhouse", "keeper", "--config-file=/etc/clickhouse-keeper/keeper.xml")
-            .WithResourceMapping(File.ReadAllBytes(RepoPaths.KeeperTestConfigPath), "/etc/clickhouse-keeper/keeper.xml")
+            .WithResourceMapping(KeeperTestConfig.Utf8Bytes, "/etc/clickhouse-keeper/keeper.xml")
             .WithWaitStrategy(Wait.ForUnixContainer().UntilInternalTcpPortIsAvailable(9181))
             .Build();
         _shard1 = CreateNode("ch1", shard: "01");
@@ -46,11 +46,10 @@ public sealed class ClusterReplicatedDatabaseIntegrationTests : IAsyncLifetime
     [Fact]
     public async Task GivenReplicatedDatabaseInit_WhenBootstrappedAndMigrated_ThenDdlReplicatesWithoutOnCluster()
     {
-        foreach (var script in Directory.GetFiles(RepoPaths.ClusterReplicatedDbInitDirectory, "*.sql")
-                     .Order(StringComparer.Ordinal))
+        foreach (var (fileName, sql) in InitScriptsFixture.Generate(RepoPaths.ClusterReplicatedDbCodegenConfigPath))
         {
-            var execResult = await _shard1.ExecScriptAsync(await File.ReadAllTextAsync(script));
-            execResult.ExitCode.Should().Be(0, $"{Path.GetFileName(script)}: {execResult.Stderr}");
+            var execResult = await _shard1.ExecScriptAsync(sql);
+            execResult.ExitCode.Should().Be(0, $"{fileName}: {execResult.Stderr}");
         }
 
         var migrationSql = PersistPartitionMigrationFixture.GenerateSql(RepoPaths.ClusterReplicatedDbCodegenConfigPath);
@@ -102,7 +101,7 @@ public sealed class ClusterReplicatedDatabaseIntegrationTests : IAsyncLifetime
             .WithNetworkAliases(host)
             .WithEnvironment("CLICKHOUSE_SHARD", shard)
             .WithEnvironment("CLICKHOUSE_REPLICA", host)
-            .WithBindMount(RepoPaths.FormatSchemasDirectory, "/var/lib/clickhouse/format_schemas")
+            .WithBindMount(FormatSchemas.Directory, "/var/lib/clickhouse/format_schemas")
             .WithResourceMapping(Encoding.UTF8.GetBytes(ClusterXml), "/etc/clickhouse-server/config.d/cluster.xml")
             .Build();
 

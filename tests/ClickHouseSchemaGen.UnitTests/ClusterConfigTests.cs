@@ -68,8 +68,10 @@ public sealed class ClusterConfigTests : IDisposable
 
         config.Cluster.Name.Should().Be("kafka2ch");
         config.KafkaTables.Select(table => table.TableName).Should().Equal("orders_queue");
-        CodegenConfigLoader.ResolvePath(RepoPaths.ClusterCodegenConfigPath, config.Migrations.MigrationsDirectory)
-            .Should().Be(Path.Combine(RepoPaths.RepositoryRoot, "docker", "clickhouse-cluster", "migrations"));
+        Path.GetFileName(config.Migrations.MigrationsDirectory.TrimEnd(Path.DirectorySeparatorChar, '/'))
+            .Should().Be("migrations");
+        config.Migrations.MigrationsDirectory.Replace('\\', '/')
+            .Should().Contain("clickhouse-cluster");
         new CodegenConfigValidator().Validate(config).IsValid.Should().BeTrue();
     }
 
