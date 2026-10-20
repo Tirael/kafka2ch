@@ -75,36 +75,34 @@ public sealed class SqlChecksumTests
 
     [Theory]
     [MemberData(nameof(CodegenConfigs))]
-    public void GivenRepoConfig_WhenGenerateVersionsScript_ThenMatchesCommittedBaseline(string configPath)
+    public void GivenRepoConfig_WhenGenerateVersionsScript_ThenIsIdempotent(string configPath)
     {
         var config = CodegenConfigLoader.Load(configPath);
-        var migrations = SchemaMigrationsScriptGenerator.ReadFromDirectory(
-            CodegenConfigLoader.ResolvePath(configPath, config.Migrations.MigrationsDirectory));
-        var committed = CodegenConfigLoader.ResolvePath(configPath, config.Migrations.VersionsOutputPath);
+        var migrations = new[]
+        {
+            new MigrationFileInfo("20990101000000", "fixture", SqlChecksum.Compute("SELECT 1;\n"), "unused")
+        };
 
-        var generated = SchemaMigrationsScriptGenerator.Generate(migrations, ClusterDdl.For(config));
+        var first = SchemaMigrationsScriptGenerator.Generate(migrations, ClusterDdl.For(config));
+        var second = SchemaMigrationsScriptGenerator.Generate(migrations, ClusterDdl.For(config));
 
-        SqlText.Normalize(File.ReadAllText(committed)).Should().Be(SqlText.Normalize(generated), committed);
+        SqlText.Normalize(first).Should().Be(SqlText.Normalize(second));
+        first.Should().Contain("CREATE TABLE IF NOT EXISTS");
+        first.Should().Contain("VALUES ('20990101000000', 'fixture'");
     }
 
     [Theory]
     [MemberData(nameof(CodegenConfigs))]
-    public void GivenCommittedInitScripts_WhenRecomputeChecksum_ThenMatchesSelfRecord(string configPath)
+    public void GivenGeneratedInitScripts_WhenRecomputeChecksum_ThenMatchesSelfRecord(string configPath)
     {
-        var config = CodegenConfigLoader.Load(configPath);
-        var outputPaths = config.KafkaTables.Select(table => table.OutputPath)
-            .Append(config.Pipeline!.OutputPath)
-            .Select(path => CodegenConfigLoader.ResolvePath(configPath, path));
-
-        foreach (var path in outputPaths)
+        foreach (var (fileName, text) in InitScriptsFixture.Generate(configPath).Skip(1))
         {
-            var text = File.ReadAllText(path);
             var record = InitRecord.Match(text);
-            record.Success.Should().BeTrue(path);
+            record.Success.Should().BeTrue(fileName);
 
             var body = text[..record.Index];
-            SqlChecksum.Compute(body).Should().Be(record.Groups["checksum"].Value, path);
-            SqlChecksum.Compute(body.ReplaceLineEndings("\r\n")).Should().Be(record.Groups["checksum"].Value, path);
+            SqlChecksum.Compute(body).Should().Be(record.Groups["checksum"].Value, fileName);
+            SqlChecksum.Compute(body.ReplaceLineEndings("\r\n")).Should().Be(record.Groups["checksum"].Value, fileName);
         }
     }
 }

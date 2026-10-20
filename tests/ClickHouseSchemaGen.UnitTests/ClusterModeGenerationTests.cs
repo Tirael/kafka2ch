@@ -128,18 +128,18 @@ public sealed class ClusterModeGenerationTests
     }
 
     [Fact]
-    public void GivenRepoClusterConfig_WhenRenderInitScripts_ThenMatchesCommittedClusterInitDirectory()
+    public void GivenRepoClusterConfig_WhenRenderInitScripts_ThenEmitsOrderedClusterBootstrap()
     {
-        var config = CodegenConfigLoader.Load(RepoPaths.ClusterCodegenConfigPath);
-        var plan = SchemaGeneratorFactory.Create().BuildPlan(config);
+        var scripts = InitScriptsFixture.Generate(RepoPaths.ClusterCodegenConfigPath);
 
-        var scripts = SchemaPlanRenderer.RenderInitScripts(plan);
-
-        foreach (var (outputPath, sql) in scripts)
-        {
-            var committed = Path.Combine(RepoPaths.ClusterInitDirectory, Path.GetFileName(outputPath));
-            SqlText.Normalize(File.ReadAllText(committed)).Should().Be(SqlText.Normalize(sql), committed);
-        }
+        scripts.Select(script => script.FileName).Should().Equal(
+            "00_schema_migrations.sql",
+            "01_orders_queue.sql",
+            "02_pipeline.sql");
+        scripts[0].Sql.Should().Contain("CREATE TABLE IF NOT EXISTS schema_migrations ON CLUSTER kafka2ch");
+        scripts[1].Sql.Should().Contain("CREATE TABLE orders_queue ON CLUSTER kafka2ch");
+        scripts[2].Sql.Should().Contain("CREATE TABLE orders_local ON CLUSTER kafka2ch");
+        scripts.Skip(1).Should().OnlyContain(script => script.Sql.TrimEnd().EndsWith("'init');"));
     }
 
     [Fact]
@@ -340,30 +340,23 @@ public sealed class ClusterModeGenerationTests
     }
 
     [Fact]
-    public void GivenRepoReplicatedDbConfig_WhenRenderInitScripts_ThenMatchesCommittedDirectory()
+    public void GivenRepoReplicatedDbConfig_WhenRenderInitScripts_ThenUsesReplicatedDatabaseShape()
     {
         var config = CodegenConfigLoader.Load(RepoPaths.ClusterReplicatedDbCodegenConfigPath);
-        var plan = SchemaGeneratorFactory.Create().BuildPlan(config);
-        var scripts = SchemaPlanRenderer.RenderInitScripts(plan);
-
         config.Cluster.UsesReplicatedDatabase.Should().BeTrue();
         config.Cluster.MaterializedViewsWriteThroughDistributed.Should().BeTrue();
-        var committedMigrations = Path.Combine(RepoPaths.ClusterReplicatedDbInitDirectory, "00_schema_migrations.sql");
-        var generatedMigrations = SchemaMigrationsScriptGenerator.Generate(
-            SchemaMigrationsScriptGenerator.ReadFromDirectory(
-                CodegenConfigLoader.ResolvePath(
-                    RepoPaths.ClusterReplicatedDbCodegenConfigPath,
-                    config.Migrations.MigrationsDirectory)),
-            ClusterDdl.For(config));
-        SqlText.Normalize(File.ReadAllText(committedMigrations)).Should().Be(SqlText.Normalize(generatedMigrations));
 
-        foreach (var (outputPath, sql) in scripts)
-        {
-            var committed = Path.Combine(RepoPaths.ClusterReplicatedDbInitDirectory, Path.GetFileName(outputPath));
-            SqlText.Normalize(File.ReadAllText(committed)).Should().Be(SqlText.Normalize(sql), committed);
-        }
+        var scripts = InitScriptsFixture.Generate(RepoPaths.ClusterReplicatedDbCodegenConfigPath);
+        scripts.Select(script => script.FileName).Should().Equal(
+            "00_schema_migrations.sql",
+            "01_orders_queue.sql",
+            "02_pipeline.sql");
 
-        var pipeline = scripts[config.Pipeline!.OutputPath];
+        scripts[0].Sql.Should().Contain("CREATE DATABASE IF NOT EXISTS kafka2ch ON CLUSTER kafka2ch");
+        scripts[0].Sql.Should().Contain("USE kafka2ch;");
+        scripts[0].Sql.Should().Contain("CREATE TABLE IF NOT EXISTS default.schema_migrations ON CLUSTER kafka2ch");
+
+        var pipeline = scripts.Single(script => script.FileName == "02_pipeline.sql").Sql;
         pipeline.Should().Contain("CREATE MATERIALIZED VIEW orders_mv TO orders AS");
         pipeline.Should().Contain("CREATE MATERIALIZED VIEW orders_agg_mv TO orders_agg_1m AS");
         pipeline.Should().Contain("FROM orders_local");

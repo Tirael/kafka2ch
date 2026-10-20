@@ -7,7 +7,7 @@ public sealed class SchemaMigrationsTableTests
     {
         const string body = "CREATE TABLE t (id String) ENGINE = Memory;\n";
 
-        var sql = SchemaMigrationsTable.AppendInitRecord("../../docker/clickhouse/init/02_pipeline.sql", body);
+        var sql = SchemaMigrationsTable.AppendInitRecord("02_pipeline.sql", body);
 
         sql.Should().StartWith(body.TrimEnd());
         sql.TrimEnd().Should().EndWith(
@@ -47,19 +47,14 @@ public sealed class SchemaMigrationsTableTests
     }
 
     [Fact]
-    public void GivenCommittedInitDirectory_ThenVersionsScriptRunsFirstAndInitScriptsRecordThemselves()
+    public void GivenGeneratedInitScripts_ThenVersionsScriptRunsFirstAndInitScriptsRecordThemselves()
     {
-        var initDirectory = Path.Combine(RepoPaths.RepositoryRoot, "docker", "clickhouse", "init");
-        var scripts = Directory.GetFiles(initDirectory, "*.sql")
-            .Select(Path.GetFileName)
-            .OrderBy(name => name, StringComparer.Ordinal)
-            .ToList();
+        var scripts = InitScriptsFixture.Generate(RepoPaths.CodegenConfigPath);
 
-        scripts[0].Should().Be(SchemaMigrationsTable.DefaultScriptFileName);
-        foreach (var script in scripts.Skip(1))
+        scripts[0].FileName.Should().Be(SchemaMigrationsTable.DefaultScriptFileName);
+        foreach (var (fileName, sql) in scripts.Skip(1))
         {
-            File.ReadAllText(Path.Combine(initDirectory, script!)).Should()
-                .Contain($"('{SchemaMigrationsTable.ParseInitVersion(script!)}', '{script}', ");
+            sql.Should().Contain($"('{SchemaMigrationsTable.ParseInitVersion(fileName)}', '{fileName}', ");
         }
     }
 }

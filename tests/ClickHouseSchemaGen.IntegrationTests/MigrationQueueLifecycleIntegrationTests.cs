@@ -10,7 +10,7 @@ public sealed class MigrationQueueLifecycleIntegrationTests : IAsyncLifetime
     {
         TestContainersEnv.SetVariables();
         _clickHouse = new ClickHouseBuilder(TestContainersEnv.FullClickHouseImageName)
-            .WithBindMount(RepoPaths.FormatSchemasDirectory, "/var/lib/clickhouse/format_schemas")
+            .WithResourceMapping(FormatSchemas.Directory, "/var/lib/clickhouse/format_schemas")
             .Build();
     }
 
@@ -114,11 +114,10 @@ public sealed class MigrationQueueLifecycleIntegrationTests : IAsyncLifetime
 
     private async Task ApplyInitScriptsAsync()
     {
-        var initDirectory = Path.Combine(RepoPaths.RepositoryRoot, "docker", "clickhouse", "init");
-        foreach (var script in Directory.GetFiles(initDirectory, "*.sql").Order(StringComparer.Ordinal))
+        foreach (var (fileName, sql) in InitScriptsFixture.Generate(RepoPaths.CodegenConfigPath))
         {
-            var execResult = await _clickHouse.ExecScriptAsync(await File.ReadAllTextAsync(script));
-            execResult.ExitCode.Should().Be(0, $"{Path.GetFileName(script)}: {execResult.Stderr}");
+            var execResult = await _clickHouse.ExecScriptAsync(sql);
+            execResult.ExitCode.Should().Be(0, $"{fileName}: {execResult.Stderr}");
         }
     }
 
