@@ -52,6 +52,9 @@ public sealed class MigrationRunner(
 
     private static readonly TimeSpan MutationWaitTimeout = TimeSpan.FromMinutes(10);
 
+    private static readonly IReadOnlyDictionary<string, object> RestoreDdlSettings =
+        new Dictionary<string, object> { ["flatten_nested"] = 0 };
+
     public async Task ApplyAsync(
         string connectionString,
         string migrationsDirectory,
@@ -488,7 +491,7 @@ public sealed class MigrationRunner(
                         objectName);
                 }
 
-                await ExecuteAsync(connection, restoreSql, timeout.Token);
+                await ExecuteAsync(connection, restoreSql, timeout.Token, RestoreDdlSettings);
                 report.AddRestored(objectName);
             }
             catch (Exception restoreException)
@@ -639,10 +642,14 @@ public sealed class MigrationRunner(
     private static async Task ExecuteAsync(
         ClickHouseConnection connection,
         string statement,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IReadOnlyDictionary<string, object>? settings = null)
     {
         await using var command = connection.CreateCommand();
         command.CommandText = statement;
+        foreach (var (name, value) in settings ?? new Dictionary<string, object>())
+            command.CustomSettings[name] = value;
+
         if (!DistributedDdlResult.IsDistributedDdl(statement))
         {
             await command.ExecuteNonQueryAsync(cancellationToken);
