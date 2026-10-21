@@ -93,7 +93,9 @@ public sealed class KafkaKeyConfig
 
 public sealed class KafkaSettingsConfig
 {
-    public string BrokerList { get; set; } = "kafka:9092";
+    public string? BrokerList { get; set; } = "kafka:9092";
+
+    public string? NamedCollection { get; set; }
 
     public string Topic { get; set; } = "orders";
 

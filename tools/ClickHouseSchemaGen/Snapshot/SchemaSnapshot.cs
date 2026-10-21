@@ -51,7 +51,9 @@ public sealed record KafkaTableSnapshot
 
 public sealed record KafkaSettingsSnapshot
 {
-    public string BrokerList { get; init; } = "kafka:9092";
+    public string? BrokerList { get; init; } = "kafka:9092";
+
+    public string? NamedCollection { get; init; }
 
     public string Topic { get; init; } = "";
 
