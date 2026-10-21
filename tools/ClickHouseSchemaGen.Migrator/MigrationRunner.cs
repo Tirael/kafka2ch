@@ -57,14 +57,6 @@ public sealed class MigrationRunner(
         await using var connection = new ClickHouseConnection(connectionString);
         await OpenWithRetryAsync(connection, cancellationToken);
         await EnsureMigrationsTableAsync(connection, cancellationToken);
-        await using var migrationLock = await MigrationLock.AcquireAsync(
-            connection,
-            _cluster,
-            _lockOptions,
-            logger,
-            timeProvider,
-            cancellationToken);
-
         var applied = await LoadAppliedAsync(connection, cancellationToken);
         foreach (var interrupted in FindInterruptedMigrations(await LoadJournalAsync(connection, cancellationToken)))
         {
