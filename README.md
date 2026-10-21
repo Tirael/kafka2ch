@@ -12,7 +12,7 @@ PublishOrders  →  Kafka + Schema Registry
               ReadAggregates (лог агрегатов)
 ```
 
-Подробности архитектуры и решений — в [PLAN.md](PLAN.md). ATAM-разбор trade-off'ов и рисков — в [docs/architecture-tradeoff-analysis.md](docs/architecture-tradeoff-analysis.md).
+Подробности архитектуры и решений — в [PLAN.md](PLAN.md). ATAM-разбор trade-off'ов и рисков — в [docs/architecture-tradeoff-analysis.md](docs/architecture-tradeoff-analysis.md). Архитектурные решения (ADR) — в [docs/adr/](docs/adr/), выбор пути ingestion — [ADR-0001](docs/adr/0001-ingestion-path.md).
 
 ## Требования
 
@@ -423,7 +423,7 @@ tests/ClickHouseSchemaGen.TestContracts # test-only protobuf + codegen/Keeper fi
 docker/clickhouse/        # init SQL + format schemas
 docker/clickhouse-cluster/ # init SQL, migrations и конфиги кластерного варианта
 docker/prometheus/        # scrape-конфиги, правила алертов и promtool-тесты
-docs/                     # ATAM, TLA+/TLC-отчёт, Kafka2/ClickPipes assessments, observability
+docs/                     # ATAM, ADR, TLA+/TLC-отчёт, Kafka2/ClickPipes assessments, observability
 scripts/verify-pipeline.sh
 scripts/verify-cluster.sh
 scripts/pack-verify.sh    # dotnet pack + NuGet smoke + unit tests
