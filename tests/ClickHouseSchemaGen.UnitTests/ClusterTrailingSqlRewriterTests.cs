@@ -128,6 +128,95 @@ public sealed class ClusterTrailingSqlRewriterTests
         rewritten.Should().NotContain("TO orders_agg_1m_local");
     }
 
+    private const string RefreshableAggregateSql = """
+        CREATE TABLE orders_agg_1m (minute DateTime, orders_count UInt64)
+        ENGINE = MergeTree ORDER BY minute;
+
+        CREATE MATERIALIZED VIEW orders_agg_mv
+        REFRESH EVERY 1 MINUTE
+        TO orders_agg_1m AS
+        SELECT toStartOfMinute(event_time) AS minute, count() AS orders_count
+        FROM orders FINAL
+        GROUP BY minute;
+        """;
+
+    [Fact]
+    public void GivenRefreshableViewOnCluster_WhenRewrite_ThenTargetStaysNodeLocalAndUnreplicated()
+    {
+        var rewritten = ClusterTrailingSqlRewriter.Rewrite(RefreshableAggregateSql, Cluster, ["orders"]);
+
+        SqlText.Normalize(rewritten).Should().Be(SqlText.Normalize(
+            """
+            CREATE TABLE orders_agg_1m_local ON CLUSTER kafka2ch (minute DateTime, orders_count UInt64)
+            ENGINE = MergeTree ORDER BY minute;
+
+            CREATE TABLE orders_agg_1m ON CLUSTER kafka2ch AS orders_agg_1m_local
+            ENGINE = Distributed('kafka2ch', currentDatabase(), orders_agg_1m_local, rand());
+
+            CREATE MATERIALIZED VIEW orders_agg_mv ON CLUSTER kafka2ch
+            REFRESH EVERY 1 MINUTE
+            TO orders_agg_1m_local AS
+            SELECT toStartOfMinute(event_time) AS minute, count() AS orders_count
+            FROM orders_local FINAL
+            GROUP BY minute;
+
+
+            """));
+    }
+
+    [Fact]
+    public void GivenRefreshableViewWithWriteThroughDistributed_WhenRewrite_ThenTargetIsStillLocal()
+    {
+        var cluster = new ClusterDdl(new ClusterConfig
+        {
+            Name = "kafka2ch",
+            MaterializedViewsWriteThroughDistributed = true
+        });
+
+        var rewritten = ClusterTrailingSqlRewriter.Rewrite(RefreshableAggregateSql, cluster, ["orders"]);
+
+        rewritten.Should().Contain("TO orders_agg_1m_local AS");
+        rewritten.Should().Contain("ENGINE = MergeTree ORDER BY minute;");
+    }
+
+    [Fact]
+    public void GivenRefreshableViewInReplicatedDatabase_WhenRewrite_ThenTargetIsReplicatedForCoordinatedRefresh()
+    {
+        var cluster = new ClusterDdl(new ClusterConfig
+        {
+            Name = "kafka2ch",
+            DdlMode = ClusterDdlModes.ReplicatedDatabase,
+            ReplicatedDatabaseName = "kafka2ch"
+        });
+
+        var rewritten = ClusterTrailingSqlRewriter.Rewrite(RefreshableAggregateSql, cluster, ["orders"]);
+
+        rewritten.Should().Contain("CREATE TABLE orders_agg_1m_local (minute DateTime, orders_count UInt64)");
+        rewritten.Should().Contain("ENGINE = ReplicatedMergeTree ORDER BY minute;");
+        rewritten.Should().Contain("TO orders_agg_1m_local AS");
+        rewritten.Should().Contain("FROM orders_local FINAL");
+        rewritten.Should().NotContain("ON CLUSTER");
+    }
+
+    [Fact]
+    public void GivenRefreshableViewWithSettingsAndAppend_WhenRewrite_ThenRewritesTargetAfterRefreshClause()
+    {
+        const string sql = """
+            CREATE TABLE snapshots (minute DateTime) ENGINE = MergeTree ORDER BY minute;
+
+            CREATE MATERIALIZED VIEW snapshots_mv REFRESH AFTER 30 SECOND SETTINGS refresh_retries = 3 APPEND TO snapshots AS
+            SELECT now() AS minute FROM orders;
+            """;
+
+        var rewritten = ClusterTrailingSqlRewriter.Rewrite(sql, Cluster, ["orders"]);
+
+        rewritten.Should().Contain(
+            "CREATE MATERIALIZED VIEW snapshots_mv ON CLUSTER kafka2ch REFRESH AFTER 30 SECOND SETTINGS refresh_retries = 3 " +
+            "APPEND TO snapshots_local AS");
+        rewritten.Should().Contain("CREATE TABLE snapshots_local ON CLUSTER kafka2ch (minute DateTime) ENGINE = MergeTree ORDER BY minute;");
+        rewritten.Should().Contain("FROM orders_local;");
+    }
+
     [Theory]
     [InlineData("ALTER TABLE orders ADD COLUMN x UInt8")]
     [InlineData("DROP TABLE orders")]
