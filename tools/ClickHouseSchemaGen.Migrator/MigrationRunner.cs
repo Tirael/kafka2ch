@@ -467,13 +467,24 @@ public sealed class MigrationRunner(
                 try
                 {
                     await ExecuteAsync(connection, $"ATTACH TABLE IF NOT EXISTS {objectName}{onCluster}", timeout.Token);
+                }
+                catch (Exception attachException) when (attachException is not OperationCanceledException)
+                {
+                    logger.LogDebug(
+                        "{Object} is not detached, nothing to re-attach before restoring it: {Error}",
+                        objectName,
+                        attachException.Message.Trim());
+                }
+
+                try
+                {
                     await ExecuteAsync(connection, $"DROP TABLE IF EXISTS {objectName}{onCluster}", timeout.Token);
                 }
                 catch (Exception cleanupException) when (cleanupException is not OperationCanceledException)
                 {
                     logger.LogWarning(
                         cleanupException,
-                        "Could not clear leftovers of {Object} before restoring it; trying to recreate anyway",
+                        "Could not drop leftovers of {Object} before restoring it; trying to recreate anyway",
                         objectName);
                 }
 
@@ -486,7 +497,7 @@ public sealed class MigrationRunner(
                     restoreException,
                     "Failed to restore {Object} after migration failure",
                     objectName);
-                report.AddNotRestored(objectName, restoreException.Message);
+                report.AddNotRestored(objectName, restoreException.Message.Trim());
             }
         }
     }
@@ -545,7 +556,7 @@ public sealed class MigrationRunner(
                     "Failed to re-attach {Table} after migration failure; "
                         + "Kafka consumption may stay stopped until ATTACH or server restart",
                     tableName);
-                report.AddNotRestored(tableName, attachException.Message);
+                report.AddNotRestored(tableName, attachException.Message.Trim());
             }
         }
     }

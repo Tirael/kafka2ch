@@ -24,7 +24,7 @@ public sealed class RestoreReport
 
 public sealed class MigrationFailedException(string migrationName, RestoreReport report, Exception innerException)
     : InvalidOperationException(
-        $"Migration '{migrationName}' failed: {innerException.Message} Recovery report: {report.Summary}.",
+        $"Migration '{migrationName}' failed: {innerException.Message.Trim()} Recovery report: {report.Summary}.",
         innerException)
 {
     public string MigrationName { get; } = migrationName;

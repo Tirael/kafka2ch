@@ -15,7 +15,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="ClickHouseSchemaGen.Tasks" Version="0.1.0" PrivateAssets="all" />
+    <PackageReference Include="ClickHouseSchemaGen.Tasks" Version="0.2.0" PrivateAssets="all" />
     <PackageReference Include="Google.Protobuf" Version="3.36.1" />
   </ItemGroup>
 

@@ -92,6 +92,7 @@ ORDER BY (event_time, order_id, kafka_partition, kafka_offset)
 - `snapshotPath` → `schema.snapshot.json`
 - `migrationsDirectory` → `docker/clickhouse/migrations`
 - `versionsOutputPath` → `00_schema_migrations.sql`
+- `autoRewrite` (по умолчанию `false`) — разрешить автоматический `MODIFY COLUMN` для смен типа класса `Rewrite` (`DateTime -> DateTime64`, `Enum8 -> Enum16`); без него такие смены попадают в manual-блок и требуют `--allow-manual`
 
 `00_schema_migrations.sql` создаёт таблицу `schema_migrations` и записывает baseline-миграции (`kind = 'migration'`). Префикс `00` зарезервирован: файл обязан идти раньше любого init-скрипта (валидатор конфига падает иначе), потому что каждый сгенерированный init-скрипт (`01_*`, `02_*`, …) в конце записывает себя строкой `kind = 'init'` (version — префикс файла, checksum — SHA-256 тела скрипта без этой строки). Сама таблица версий не числится миграцией: её создаёт и обновляет (`ALTER … ADD COLUMN IF NOT EXISTS kind`) Migrator до применения миграций, по аналогии с `VersionInfo` в FluentMigrator. Migrator учитывает только `kind = 'migration'`.
 
