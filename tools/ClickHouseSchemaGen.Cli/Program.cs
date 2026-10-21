@@ -32,9 +32,9 @@ catch (Exception exception)
 
 static int RunGenerate(string[] args)
 {
-    LoadMessageAssemblies(args);
+    var generator = CreateGenerator(args);
     var configPath = RequireConfig(args);
-    new ClickHouseSchemaGenerator(new DenormalizationPlanner()).GenerateFromConfigFile(configPath);
+    generator.GenerateFromConfigFile(configPath);
     Console.WriteLine($"Generated ClickHouse DDL from '{configPath}'.");
     return 0;
 }
@@ -47,10 +47,9 @@ static int RunMigrate(string[] args)
         return 1;
     }
 
-    var orchestrator = new MigrationOrchestrator();
+    var orchestrator = new MigrationOrchestrator(CreateGenerator(args));
     if (args[0] == "init")
     {
-        LoadMessageAssemblies(args.AsSpan(1).ToArray());
         var configPath = RequireConfig(args.AsSpan(1).ToArray());
         orchestrator.Init(configPath);
         Console.WriteLine($"Initialized schema snapshot for '{configPath}'.");
@@ -93,7 +92,6 @@ static int RunMigrate(string[] args)
 
     if (args[0] == "status")
     {
-        LoadMessageAssemblies(args.AsSpan(1).ToArray());
         var configPath = RequireConfig(args.AsSpan(1).ToArray());
         var status = orchestrator.Status(configPath);
         if (!status.HasSnapshot)
@@ -135,7 +133,6 @@ static int RunMigrate(string[] args)
     }
 
     var migrateArgs = args;
-    LoadMessageAssemblies(migrateArgs);
     var nameIndex = Array.IndexOf(migrateArgs, "--name");
     if (nameIndex < 0 || nameIndex + 1 >= migrateArgs.Length)
     {
@@ -153,6 +150,7 @@ static int RunMigrate(string[] args)
     return result.ExitCode;
 }
 
+<<<<<<< HEAD
 static (IReadOnlyList<string> ConfigPaths, string? Baseline) RequireTopologies(string[] args)
 {
     var rootIndex = Array.IndexOf(args, "--all-topologies");
@@ -172,15 +170,33 @@ static (IReadOnlyList<string> ConfigPaths, string? Baseline) RequireTopologies(s
     if (configPaths.Count == 0)
         throw new InvalidOperationException("Missing required --config or --all-topologies argument.");
     return (configPaths, null);
+=======
+static ClickHouseSchemaGenerator CreateGenerator(string[] args)
+{
+    var descriptorSetPath = OptionValue(args, "--descriptor-set");
+    if (descriptorSetPath is not null && OptionValue(args, "--assemblies") is not null)
+        throw new InvalidOperationException("Use either --assemblies or --descriptor-set, not both.");
+
+    LoadMessageAssemblies(args);
+    return new ClickHouseSchemaGenerator(
+        new DenormalizationPlanner(),
+        descriptorSource: descriptorSetPath is null ? null : DescriptorSetMessageDescriptorSource.Load(descriptorSetPath));
+}
+
+static string? OptionValue(string[] args, string option)
+{
+    var index = Array.IndexOf(args, option);
+    return index < 0 || index + 1 >= args.Length ? null : args[index + 1];
+>>>>>>> fad7c7f (Accept FileDescriptorSet as generator input via descriptorSetPath and --descriptor-set)
 }
 
 static void LoadMessageAssemblies(string[] args)
 {
-    var assembliesIndex = Array.IndexOf(args, "--assemblies");
-    if (assembliesIndex < 0 || assembliesIndex + 1 >= args.Length)
+    var assemblies = OptionValue(args, "--assemblies");
+    if (assemblies is null)
         return;
 
-    foreach (var path in args[assembliesIndex + 1].Split(
+    foreach (var path in assemblies.Split(
                  ';',
                  StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
     {
@@ -210,10 +226,11 @@ static int UnknownCommand(string command)
 static void PrintUsage()
     => Console.WriteLine("""
         Usage:
-          clickhouse-schema-gen generate --config <path> [--assemblies <dll[;dll…]>]
-          clickhouse-schema-gen migrate init --config <path> [--assemblies <dll[;dll…]>]
-          clickhouse-schema-gen migrate status --config <path> [--assemblies <dll[;dll…]>]
+          clickhouse-schema-gen generate --config <path> [--assemblies <dll[;dll…]> | --descriptor-set <file>]
+          clickhouse-schema-gen migrate init --config <path> [--assemblies <dll[;dll…]> | --descriptor-set <file>]
+          clickhouse-schema-gen migrate status --config <path> [--assemblies <dll[;dll…]> | --descriptor-set <file>]
           clickhouse-schema-gen migrate versions --config <path>   (rewrite versionsOutputPath from migrations)
+<<<<<<< HEAD
           clickhouse-schema-gen migrate snapshot-upgrade --config <path> [--assemblies <dll[;dll…]>]
                                                                    (rewrite schema.snapshot.json in the current format)
           clickhouse-schema-gen migrate rebase --config <path> --name <file> [--version <yyyyMMddHHmmss>] [--parent-snapshot <path>]
@@ -231,4 +248,15 @@ static void PrintUsage()
                           package does not already reference those contracts).
         --all-topologies  Root config listing codegen configs ("topologies") and the history
                           baseline ("migrationsBaseline") accepted as divergent.
+=======
+          clickhouse-schema-gen migrate --config <path> --name <name> [--assemblies <dll[;dll…]> | --descriptor-set <file>] [--allow-manual]
+          clickhouse-schema-gen --config <path> [--assemblies <dll[;dll…]> | --descriptor-set <file>]   (alias for generate)
+
+        --assemblies  Semicolon-separated paths to assemblies that define protobuf message types
+                      referenced by messageType in the codegen config (required when the tool
+                      package does not already reference those contracts).
+        --descriptor-set  FileDescriptorSet produced by `protoc --include_imports --descriptor_set_out=<file>`
+                      or `buf build -o <file>`, used instead of assemblies (overrides descriptorSetPath
+                      in the codegen config). messageType may be the protobuf full name or the C# type name.
+>>>>>>> fad7c7f (Accept FileDescriptorSet as generator input via descriptorSetPath and --descriptor-set)
         """);

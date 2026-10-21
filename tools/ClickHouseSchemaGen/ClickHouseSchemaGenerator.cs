@@ -7,6 +7,11 @@ public sealed class ClickHouseSchemaGenerator(
 {
     private readonly CodegenConfigValidator _configValidator = configValidator ?? new();
 
+    public ClickHouseSchemaGenerator(DenormalizationPlanner planner, CodegenConfigValidator? configValidator)
+        : this(planner, configValidator, descriptorSource: null)
+    {
+    }
+
     public string GenerateKafkaTableSql(
         KafkaTableConfig config,
         CodegenDefaults defaults,
