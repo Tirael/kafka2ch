@@ -320,7 +320,7 @@ public sealed class ClusterModeGenerationTests
         cluster.CreateReplicatedDatabaseSql().Should().Be(SqlText.Normalize(
             """
             CREATE DATABASE IF NOT EXISTS kafka2ch ON CLUSTER kafka2ch
-            ENGINE = Replicated('/clickhouse/databases/{uuid}', '{replica}');
+            ENGINE = Replicated('/clickhouse/databases/{uuid}', '{shard}', '{replica}');
 
             """));
 
@@ -353,6 +353,7 @@ public sealed class ClusterModeGenerationTests
             "02_pipeline.sql");
 
         scripts[0].Sql.Should().Contain("CREATE DATABASE IF NOT EXISTS kafka2ch ON CLUSTER kafka2ch");
+        scripts[0].Sql.Should().Contain("ENGINE = Replicated('/clickhouse/databases/{uuid}', '{shard}', '{replica}');");
         scripts[0].Sql.Should().Contain("USE kafka2ch;");
         scripts[0].Sql.Should().Contain("CREATE TABLE IF NOT EXISTS default.schema_migrations ON CLUSTER kafka2ch");
 

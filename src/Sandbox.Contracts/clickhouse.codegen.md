@@ -99,14 +99,15 @@ Workflow: правка proto → build падает на drift → `Cli migrate 
 | `shardingKey` | `rand()` | ключ `Distributed` (переопределяется `mergeTreeTables[].shardingKey`) |
 | `materializedViewsWriteThroughDistributed` | `false` | MV пишут в `Distributed` `t` (шардирование по `shardingKey`); по умолчанию пишут в `t_local`. Override: `mergeTreeTables[].materializedViewsWriteThroughDistributed` |
 | `replicatedDatabaseName` | `kafka2ch` | только `ddlMode=replicatedDatabase` |
-| `replicatedDatabasePath` | `/clickhouse/databases/{uuid}` | Keeper-путь Replicated database |
-| `replicatedDatabaseReplicaName` | `{replica}` | replica name Replicated database |
+| `replicatedDatabasePath` | `/clickhouse/databases/{uuid}` | Keeper-путь Replicated database; `{uuid}` одинаков на всех нодах, т.к. БД создаётся одним `CREATE DATABASE … ON CLUSTER` |
+| `replicatedDatabaseShardName` | `{shard}` | shard name Replicated database (2-й аргумент `Replicated`); реплики одного шарда должны иметь одинаковое значение |
+| `replicatedDatabaseReplicaName` | `{replica}` | replica name Replicated database (3-й аргумент); уникален в пределах шарда |
 
 Макросы `{shard}` / `{replica}` — в `<macros>` каждой ноды. Для production Keeper — ансамбль из **не менее 3** узлов (в compose-демо так и сделано).
 
 **Цель MV (default = `_local`):** Kafka→raw MV на каждой ноде пишет в свой шард (`TO t_local`). Опция `materializedViewsWriteThroughDistributed` переключает `TO t`, чтобы строки перешардировались по `shardingKey` (дороже; нужно, если ключ шардирования важнее привязки к партиции Kafka). Agg-MV из `trailingSql` всегда читают `FROM *_local`, даже при write-through.
 
-**`ddlMode=replicatedDatabase`:** `CREATE DATABASE … ON CLUSTER … ENGINE = Replicated`, затем `schema_migrations` в `default` с `ON CLUSTER` и общим Keeper-путём (история на всех шардах), `USE <replicatedDatabaseName>`; таблицы/MV — `Replicated*MergeTree` без аргументов (путь задаёт Replicated DB), без `ON CLUSTER`. `DETACH` очередей — `PERMANENTLY`. Migrator: `--ddl-mode replicatedDatabase` / `ClickHouse__DdlMode`, `ClickHouse__Database=<replicatedDatabaseName>`. Пример: [`clickhouse.codegen.cluster.replicated-db.json`](clickhouse.codegen.cluster.replicated-db.json); compose: `-f docker-compose.cluster.yml -f docker-compose.cluster.replicated-db.yml`.
+**`ddlMode=replicatedDatabase`:** `CREATE DATABASE … ON CLUSTER … ENGINE = Replicated('<replicatedDatabasePath>', '{shard}', '{replica}')` (топология БД совпадает с `remote_servers`: 2 шарда × 2 реплики в compose), затем `schema_migrations` в `default` с `ON CLUSTER` и общим Keeper-путём (история на всех шардах), `USE <replicatedDatabaseName>`; таблицы/MV — `Replicated*MergeTree` без аргументов (путь задаёт Replicated DB), без `ON CLUSTER`. `DETACH` очередей — `PERMANENTLY`. Migrator: `--ddl-mode replicatedDatabase` / `ClickHouse__DdlMode`, `ClickHouse__Database=<replicatedDatabaseName>`. Пример: [`clickhouse.codegen.cluster.replicated-db.json`](clickhouse.codegen.cluster.replicated-db.json); compose: `-f docker-compose.cluster.yml -f docker-compose.cluster.replicated-db.yml`.
 
 Снапшот/drift кластер не учитывают. Один проект на single-node и cluster → **отдельные** `migrations` / snapshot / `00_*.sql` на конфиг; `Cli migrate --config …` и apply — **отдельно для каждого** конфига (это ожидаемо).
 

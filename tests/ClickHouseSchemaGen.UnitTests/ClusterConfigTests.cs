@@ -113,6 +113,34 @@ public sealed class ClusterConfigTests : IDisposable
     }
 
     [Fact]
+    public void GivenReplicatedDatabaseWithoutShardName_WhenValidate_ThenFails()
+    {
+        var config = CodegenConfigLoader.Load(TestContractsPaths.ClusterReplicatedDbCodegenConfigPath);
+        config.Cluster.ReplicatedDatabaseShardName = " ";
+
+        var result = new CodegenConfigValidator().Validate(config);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(error => error.PropertyName.EndsWith(nameof(ClusterConfig.ReplicatedDatabaseShardName)));
+    }
+
+    [Fact]
+    public void GivenCustomReplicatedDatabaseShardName_WhenCreateDatabase_ThenPassesShardBeforeReplica()
+    {
+        var cluster = new ClusterDdl(new ClusterConfig
+        {
+            Name = "kafka2ch",
+            DdlMode = ClusterDdlModes.ReplicatedDatabase,
+            ReplicatedDatabasePath = "/ch/db/kafka2ch",
+            ReplicatedDatabaseShardName = "s_{shard}",
+            ReplicatedDatabaseReplicaName = "r_{replica}"
+        });
+
+        cluster.CreateReplicatedDatabaseSql().Should()
+            .Contain("ENGINE = Replicated('/ch/db/kafka2ch', 's_{shard}', 'r_{replica}');");
+    }
+
+    [Fact]
     public void GivenLocalNameCollidingWithExistingTable_WhenValidate_ThenFails()
     {
         var config = CodegenConfigLoader.Load(TestContractsPaths.CodegenConfigPath);

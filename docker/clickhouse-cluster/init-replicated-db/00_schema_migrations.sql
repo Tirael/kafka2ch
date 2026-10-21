@@ -1,5 +1,5 @@
 CREATE DATABASE IF NOT EXISTS kafka2ch ON CLUSTER kafka2ch
-ENGINE = Replicated('/clickhouse/databases/{uuid}', '{replica}');
+ENGINE = Replicated('/clickhouse/databases/{uuid}', '{shard}', '{replica}');
 
 CREATE TABLE IF NOT EXISTS default.schema_migrations ON CLUSTER kafka2ch
 (
