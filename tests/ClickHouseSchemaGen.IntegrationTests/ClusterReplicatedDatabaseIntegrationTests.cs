@@ -147,6 +147,44 @@ public sealed class ClusterReplicatedDatabaseIntegrationTests : IAsyncLifetime
         }
     }
 
+
+    [Fact(Skip = "R5: protobufWire* UDFs are not replicated to other replicas in replicatedDatabase mode; un-skip in W1-4 (user_defined_zookeeper_path)")]
+    public async Task GivenReplicatedDatabaseInitOnFirstReplica_WhenQueryingSecondReplica_ThenProtobufWireFunctionsAreAvailable()
+    {
+        var scripts = InitScriptsFixture.Generate(TestContractsPaths.ClusterReplicatedDbCodegenConfigPath);
+        var expectedFunctions = scripts
+            .SelectMany(script => Regex.Matches(script.Sql, @"CREATE OR REPLACE FUNCTION (protobufWire\w+)"))
+            .Select(match => match.Groups[1].Value)
+            .Distinct(StringComparer.Ordinal)
+            .Count();
+        expectedFunctions.Should().BePositive();
+
+        foreach (var (fileName, sql) in scripts)
+        {
+            var execResult = await _shard1.ExecScriptAsync(sql);
+            execResult.ExitCode.Should().Be(0, $"{fileName}: {execResult.Stderr}");
+        }
+
+        await using var connection = new ClickHouseConnection(ConnectionString(_shard2));
+        await connection.OpenAsync();
+
+        const string countSql = "SELECT count() FROM system.functions WHERE name LIKE 'protobufWire%'";
+        var deadline = DateTime.UtcNow.AddSeconds(30);
+        var actualFunctions = await ScalarAsync(connection, countSql);
+        while (actualFunctions != expectedFunctions && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(500));
+            actualFunctions = await ScalarAsync(connection, countSql);
+        }
+
+        actualFunctions.Should().Be(expectedFunctions);
+
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            $"SELECT {ProtobufWireSqlFunctions.Bytes}(unhex('0A036162631208746573742D6B6579'), 2)";
+        Convert.ToString(await command.ExecuteScalarAsync()).Should().Be("test-key");
+    }
+
     private ClickHouseContainer CreateNode(string host, string shard) =>
         new ClickHouseBuilder(TestContainersEnv.FullClickHouseImageName)
             .WithNetwork(_network)
