@@ -123,6 +123,8 @@ ClickHouse отдаёт метрики в формате Prometheus через [
 curl -s http://localhost:9363/metrics | grep -E '^ClickHouse(Metrics|ProfileEvents)_Kafka'
 ```
 
+ClickHouse 26.6 отвечает `500 Not found: User-Agent` на запрос без заголовка `User-Agent` (Prometheus и `curl` его шлют; свой scraper / `HttpClient` должен задать его явно).
+
 Метрики Kafka engine:
 
 | Метрика | Тип | Смысл |

@@ -97,6 +97,7 @@ public sealed class ConsumerHealthE2ETests : IAsyncLifetime
     private async Task<string> ScrapeMetricsAsync()
     {
         using var http = new HttpClient();
+        http.DefaultRequestHeaders.UserAgent.ParseAdd("kafka2ch-tests/1.0");
         var deadline = DateTimeOffset.UtcNow + TimeSpan.FromSeconds(30);
         while (true)
         {
