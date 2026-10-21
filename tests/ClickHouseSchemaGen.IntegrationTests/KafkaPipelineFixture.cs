@@ -19,6 +19,7 @@ public sealed class KafkaPipelineFixture : IAsyncLifetime
     private const string BrokerListEnvironmentVariable = "KAFKA_BROKER_LIST";
     private const string SchemaRegistryAlias = "schema-registry";
     private const ushort SchemaRegistryPort = 8081;
+    private const ushort PrometheusPort = 9363;
 
     private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(500);
 
@@ -54,12 +55,23 @@ public sealed class KafkaPipelineFixture : IAsyncLifetime
             .WithEnvironment(BrokerListEnvironmentVariable, KafkaListener)
             .WithResourceMapping(Encoding.UTF8.GetBytes(NamedCollectionXml), "/etc/clickhouse-server/config.d/kafka.xml")
             .WithResourceMapping(Encoding.UTF8.GetBytes(NamedCollectionUsageXml), "/etc/clickhouse-server/users.d/named-collections.xml")
+            .WithResourceMapping(
+                File.ReadAllBytes(TestContractsPaths.PrometheusConfigPath),
+                "/etc/clickhouse-server/config.d/prometheus.xml")
+            .WithPortBinding(PrometheusPort, true)
             .Build();
     }
 
     public string ConfigPath => Path.Combine(_workDirectory, "clickhouse.codegen.json");
 
     public string MigrationsDirectory => Path.Combine(_workDirectory, "migrations");
+
+    public string ClickHouseConnectionString => _clickHouse.GetConnectionString();
+
+    public string KafkaBootstrapAddress => _kafka.GetBootstrapAddress();
+
+    public Uri PrometheusMetricsUri =>
+        new($"http://{_clickHouse.Hostname}:{_clickHouse.GetMappedPublicPort(PrometheusPort)}/metrics");
 
     public async Task InitializeAsync()
     {
