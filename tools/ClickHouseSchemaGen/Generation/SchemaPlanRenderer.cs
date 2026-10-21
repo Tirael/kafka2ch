@@ -57,12 +57,15 @@ public static class SchemaPlanRenderer
                 writeThroughDistributed: writeThrough));
         }
 
+        pipelineBuilder.Append(AggregateGenerator.Generate(plan.Aggregates, cluster));
+
         if (!string.IsNullOrWhiteSpace(plan.TrailingSql))
         {
             var trailingSql = ClusterTrailingSqlRewriter.Rewrite(
                 plan.TrailingSql,
                 cluster,
-                plan.MergeTreeTables.Select(table => table.Config.TableName));
+                plan.MergeTreeTables.Select(table => table.Config.TableName)
+                    .Concat(plan.Aggregates.Select(aggregate => aggregate.Name)));
             pipelineBuilder.AppendLine(trailingSql.Trim());
         }
 

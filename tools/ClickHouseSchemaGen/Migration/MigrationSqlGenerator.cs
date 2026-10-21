@@ -43,6 +43,7 @@ public static partial class MigrationSqlGenerator
         AppendNewMergeTreeTables(builder, plan, newPlan, cluster);
         AppendNewKafkaTables(builder, plan, newPlan, cluster);
         AppendPipelineRecreates(builder, plan, newPlan, kafkaRecreates, metaOnlyQueues, cluster);
+        AppendAggregateChanges(builder, plan, newPlan, cluster);
 
         AppendManualBlock(builder, plan, newPlan, cluster);
 
@@ -191,6 +192,62 @@ public static partial class MigrationSqlGenerator
         }
     }
 
+    private static void AppendAggregateChanges(
+        StringBuilder builder,
+        MigrationPlan plan,
+        ResolvedSchemaPlan newPlan,
+        ClusterDdl cluster)
+    {
+        foreach (var change in plan.AutomaticChanges)
+        {
+            switch (change)
+            {
+                case AggregateAdded added:
+                    builder.Append(AggregateGenerator.Generate(FindAggregate(newPlan, added.Name), cluster, ifNotExists: true));
+                    break;
+                case AggregateChanged changed:
+                    builder.AppendLine($"DROP VIEW IF EXISTS {changed.OldViewName}{cluster.OnCluster};");
+                    builder.Append(AggregateGenerator.GenerateView(FindAggregate(newPlan, changed.Name), cluster));
+                    break;
+                case AggregatesAdoptedFromTrailingSql adopted:
+                    builder.AppendLine(
+                        $"-- trailingSql (hash {adopted.TrailingSqlHash}) is now declared as aggregates "
+                            + $"{string.Join(", ", adopted.Names)}; the generated DDL is unchanged.");
+                    builder.AppendLine();
+                    break;
+            }
+        }
+    }
+
+    private static AggregatePlan FindAggregate(ResolvedSchemaPlan plan, string name) =>
+        plan.Aggregates.First(aggregate => string.Equals(aggregate.Name, name, StringComparison.OrdinalIgnoreCase));
+
+    private static void AppendAggregateRecreateTemplate(
+        StringBuilder builder,
+        AggregateChanged changed,
+        ResolvedSchemaPlan newPlan,
+        ClusterDdl cluster)
+    {
+        builder.AppendLine($"-- Manual aggregate change for {changed.Name}: {changed.Reason}.");
+        builder.AppendLine(
+            "-- The target table is recreated; the next refresh repopulates it from the source table.");
+        builder.AppendLine($"-- DROP VIEW IF EXISTS {changed.OldViewName}{cluster.OnCluster};");
+        AppendDropAggregateTables(builder, changed.Name, cluster);
+        foreach (var line in AggregateGenerator.Generate(FindAggregate(newPlan, changed.Name), cluster)
+                     .Split(SqlText.NewLine)
+                     .Where(line => line.Length > 0))
+        {
+            builder.AppendLine($"-- {line}");
+        }
+    }
+
+    private static void AppendDropAggregateTables(StringBuilder builder, string name, ClusterDdl cluster)
+    {
+        builder.AppendLine($"-- DROP TABLE IF EXISTS {name}{cluster.OnCluster};");
+        if (cluster.Enabled)
+            builder.AppendLine($"-- DROP TABLE IF EXISTS {cluster.StorageTable(name)}{cluster.OnCluster} SYNC;");
+    }
+
     private static void AppendManualBlock(
         StringBuilder builder,
         MigrationPlan plan,
@@ -243,6 +300,13 @@ public static partial class MigrationSqlGenerator
                         "-- Requires a data/topology migration: create the objects for the new topology "
                             + "(local/Distributed tables or Replicated database), copy the data, switch Kafka queues "
                             + "and materialized views, then drop the old objects. It cannot be generated automatically.");
+                    break;
+                case AggregateChanged changed:
+                    AppendAggregateRecreateTemplate(builder, changed, newPlan, cluster);
+                    break;
+                case AggregateRemoved removed:
+                    builder.AppendLine($"-- DROP VIEW IF EXISTS {removed.ViewName}{cluster.OnCluster};");
+                    AppendDropAggregateTables(builder, removed.Name, cluster);
                     break;
                 case TrailingSqlChanged trailing:
                     builder.AppendLine(

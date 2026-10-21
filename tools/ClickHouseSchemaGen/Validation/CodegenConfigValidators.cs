@@ -261,6 +261,7 @@ internal sealed class PipelineConfigValidator : AbstractValidator<PipelineConfig
         RuleFor(pipeline => pipeline.OutputPath).NotEmpty();
         RuleForEach(pipeline => pipeline.MergeTreeTables).SetValidator(new MergeTreeTableConfigValidator());
         RuleForEach(pipeline => pipeline.MaterializedViews).SetValidator(new MaterializedViewConfigValidator());
+        RuleForEach(pipeline => pipeline.Aggregates).SetValidator(new AggregateConfigValidator());
 
         RuleFor(pipeline => pipeline.MergeTreeTables)
             .Must(tables => tables.Select(table => table.TableName).Distinct(StringComparer.OrdinalIgnoreCase).Count()
@@ -273,5 +274,138 @@ internal sealed class PipelineConfigValidator : AbstractValidator<PipelineConfig
                 == views.Count)
             .WithMessage("Materialized view names must be unique.")
             .When(pipeline => pipeline.MaterializedViews.Count > 0);
+
+        RuleFor(pipeline => pipeline.Aggregates)
+            .Must(aggregates => aggregates
+                .SelectMany(aggregate => new[] { aggregate.Name, aggregate.ResolvedViewName })
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Count() == aggregates.Count * 2)
+            .WithMessage("Aggregate names and view names must be unique.")
+            .When(pipeline => pipeline.Aggregates.Count > 0);
     }
+}
+
+internal sealed partial class AggregateConfigValidator : AbstractValidator<AggregateConfig>
+{
+    public AggregateConfigValidator() =>
+        RuleFor(aggregate => aggregate).Custom((aggregate, context) =>
+        {
+            foreach (var error in FindErrors(aggregate))
+                context.AddFailure(error);
+        });
+
+    private static IEnumerable<string> FindErrors(AggregateConfig aggregate)
+    {
+        var scope = $"Aggregate '{aggregate.Name}'";
+        if (string.IsNullOrWhiteSpace(aggregate.Name) || !ValidationRules.IsSqlIdentifier(aggregate.Name.Trim()))
+            yield return $"{scope}: name must be a valid ClickHouse identifier.";
+
+        if (aggregate.ViewName is not null && !ValidationRules.IsSqlIdentifier(aggregate.ViewName.Trim()))
+            yield return $"{scope}: viewName must be a valid ClickHouse identifier.";
+
+        if (string.IsNullOrWhiteSpace(aggregate.SourceTable) || !ValidationRules.IsSqlIdentifier(aggregate.SourceTable.Trim()))
+            yield return $"{scope}: sourceTable must be a valid ClickHouse identifier.";
+
+        if (MergeTreeEngines.Validate(aggregate.Engine) is { } engineError)
+            yield return $"{scope}: {engineError}";
+
+        if (aggregate.OrderBy is not null && string.IsNullOrWhiteSpace(aggregate.OrderBy))
+            yield return $"{scope}: orderBy must not be blank when provided.";
+
+        foreach (var error in FindRefreshErrors(scope, aggregate.Refresh))
+            yield return error;
+
+        if (aggregate.TimeBucket is { } bucket)
+        {
+            if (!IsColumn(bucket.Column))
+                yield return $"{scope}: timeBucket.column must be a column of the source table.";
+
+            if (!AggregateFunctions.TimeBuckets.ContainsKey(bucket.Function?.Trim() ?? string.Empty))
+            {
+                yield return $"{scope}: timeBucket.function '{bucket.Function}' is not supported. " +
+                    $"Must be one of: {string.Join(", ", AggregateFunctions.TimeBuckets.Keys)}.";
+            }
+
+            if (!IsColumn(bucket.Alias))
+                yield return $"{scope}: timeBucket.alias must be a valid ClickHouse identifier.";
+        }
+
+        foreach (var column in aggregate.GroupBy.Where(column => !IsColumn(column)))
+            yield return $"{scope}: groupBy entry '{column}' must be a column of the source table.";
+
+        if (aggregate.Measures.Count == 0)
+            yield return $"{scope}: must declare at least one measure.";
+
+        foreach (var measure in aggregate.Measures)
+        {
+            foreach (var error in FindMeasureErrors(scope, measure))
+                yield return error;
+        }
+
+        var duplicates = OutputColumns(aggregate)
+            .GroupBy(name => name, StringComparer.OrdinalIgnoreCase)
+            .Where(group => group.Count() > 1)
+            .Select(group => group.Key);
+        foreach (var duplicate in duplicates)
+            yield return $"{scope}: duplicate column '{duplicate}' in the target table.";
+    }
+
+    private static IEnumerable<string> FindRefreshErrors(string scope, AggregateRefreshConfig? refresh)
+    {
+        if (refresh is null)
+        {
+            yield return $"{scope}: refresh is required.";
+            yield break;
+        }
+
+        if (!AggregateRefreshModes.All.Contains(refresh.Mode?.Trim(), StringComparer.OrdinalIgnoreCase))
+        {
+            yield return $"{scope}: refresh.mode '{refresh.Mode}' is not supported. " +
+                $"Must be one of: {string.Join(", ", AggregateRefreshModes.All)} " +
+                "(an insert-triggered view would count redelivered Kafka rows before the source deduplicates them).";
+        }
+
+        if (refresh.Every is null || !RefreshIntervalRegex().IsMatch(refresh.Every.Trim()))
+        {
+            yield return $"{scope}: refresh.every '{refresh.Every}' must look like " +
+                "'<n> SECOND|MINUTE|HOUR|DAY|WEEK|MONTH|YEAR', e.g. '1 MINUTE'.";
+        }
+    }
+
+    private static IEnumerable<string> FindMeasureErrors(string scope, AggregateMeasureConfig measure)
+    {
+        var function = AggregateFunctions.Canonical(measure.Function);
+        if (function is null)
+        {
+            yield return $"{scope}: measure function '{measure.Function}' is not supported. " +
+                $"Must be one of: {string.Join(", ", AggregateFunctions.Measures)}.";
+        }
+        else if (function == AggregateFunctions.Count && measure.Column is not null)
+        {
+            yield return $"{scope}: measure '{measure.Alias}': count() takes no column.";
+        }
+        else if (function != AggregateFunctions.Count && !IsColumn(measure.Column))
+        {
+            yield return $"{scope}: measure '{measure.Alias}': '{function}' requires a column of the source table.";
+        }
+
+        if (!IsColumn(measure.Alias))
+            yield return $"{scope}: measure alias '{measure.Alias}' must be a valid ClickHouse identifier.";
+
+        if (measure.Type is not null && string.IsNullOrWhiteSpace(measure.Type))
+            yield return $"{scope}: measure '{measure.Alias}' type must not be blank when provided.";
+    }
+
+    private static IEnumerable<string> OutputColumns(AggregateConfig aggregate) =>
+        (aggregate.TimeBucket is null ? [] : new[] { aggregate.TimeBucket.Alias })
+            .Concat(aggregate.GroupBy)
+            .Concat(aggregate.Measures.Select(measure => measure.Alias))
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Select(name => name.Trim());
+
+    private static bool IsColumn(string? name) =>
+        !string.IsNullOrWhiteSpace(name) && ValidationRules.IsSqlIdentifier(name.Trim());
+
+    [GeneratedRegex(@"^[1-9][0-9]*\s+(SECOND|MINUTE|HOUR|DAY|WEEK|MONTH|YEAR)S?$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex RefreshIntervalRegex();
 }

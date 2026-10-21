@@ -168,6 +168,17 @@ public sealed class MigrationOrchestrator(ClickHouseSchemaGenerator generator, T
         var parentChecksum = SchemaSnapshotSerializer.ComputeChecksum(
             SchemaSnapshotSerializer.SerializeToString(oldSnapshot));
         var newSnapshot = SchemaSnapshotMapper.FromPlan(newPlan, parentChecksum);
+        if (diff.Changes.All(change => change is AggregatesAdoptedFromTrailingSql))
+        {
+            SchemaSnapshotSerializer.Save(paths.SnapshotPath, newSnapshot);
+            var names = diff.Changes.OfType<AggregatesAdoptedFromTrailingSql>().SelectMany(change => change.Names);
+            return new MigrationRunResult(
+                ExitCode: 0,
+                MigrationPath: null,
+                Message: $"trailingSql adopted as aggregates {string.Join(", ", names)} with identical DDL; "
+                    + "snapshot updated, no migration needed.");
+        }
+
         var targetChecksum = SchemaSnapshotSerializer.ComputeChecksum(
             SchemaSnapshotSerializer.SerializeToString(newSnapshot));
 

@@ -43,6 +43,11 @@ public sealed class CodegenConfigValidator : AbstractValidator<CodegenConfig>
             .When(config => config.Pipeline is not null);
 
         RuleFor(config => config)
+            .Must(config => FindAggregateReferenceError(config) is null)
+            .WithMessage(config => FindAggregateReferenceError(config) ?? "Aggregates reference unknown tables.")
+            .When(config => config.Pipeline?.Aggregates.Count > 0);
+
+        RuleFor(config => config)
             .Must(HasValidMaterializedViewReferences)
             .WithMessage(config => BuildMaterializedViewReferenceError(config))
             .When(config => config.Pipeline?.MaterializedViews.Count > 0);
@@ -117,6 +122,39 @@ public sealed class CodegenConfigValidator : AbstractValidator<CodegenConfig>
             }
         }
 
+        foreach (var aggregate in config.Pipeline.Aggregates)
+        {
+            foreach (var name in new[] { aggregate.Name, aggregate.ResolvedViewName })
+            {
+                if (!usedNames.Add(name))
+                    return $"Aggregate '{aggregate.Name}' conflicts with an existing object named '{name}'.";
+            }
+        }
+
+        return null;
+    }
+
+    private static string? FindAggregateReferenceError(CodegenConfig config)
+    {
+        var tables = config.Pipeline!.MergeTreeTables.ToDictionary(
+            table => table.TableName,
+            StringComparer.OrdinalIgnoreCase);
+
+        foreach (var aggregate in config.Pipeline.Aggregates)
+        {
+            if (!tables.TryGetValue(aggregate.SourceTable?.Trim() ?? string.Empty, out var source))
+            {
+                return $"Aggregate '{aggregate.Name}' references unknown source table '{aggregate.SourceTable}'. " +
+                    "It must be one of pipeline.mergeTreeTables.";
+            }
+
+            if (aggregate.Final == true && !AggregatePlanner.SupportsFinal(source.Engine))
+            {
+                return $"Aggregate '{aggregate.Name}' sets final: true, but source table '{source.TableName}' uses " +
+                    $"{MergeTreeEngines.Default}, which does not support FINAL.";
+            }
+        }
+
         return null;
     }
 
@@ -147,11 +185,13 @@ public sealed class CodegenConfigValidator : AbstractValidator<CodegenConfig>
             .Concat(config.Pipeline.MaterializedViews.Select(view => view.Name))
             .Concat(AutoViewNames(config.Pipeline))
             .Concat(errorStreamNames)
+            .Concat(config.Pipeline.Aggregates.SelectMany(aggregate => new[] { aggregate.Name, aggregate.ResolvedViewName }))
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         var storedTables = config.Pipeline.MergeTreeTables
             .Select(table => table.TableName)
-            .Concat(KafkaErrorStream.StreamingQueues(config).Select(queue => KafkaErrorStream.TableName(queue.TableName)));
+            .Concat(KafkaErrorStream.StreamingQueues(config).Select(queue => KafkaErrorStream.TableName(queue.TableName)))
+            .Concat(config.Pipeline.Aggregates.Select(aggregate => aggregate.Name));
 
         foreach (var tableName in storedTables)
         {

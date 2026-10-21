@@ -71,7 +71,10 @@ public static class SchemaSnapshotSerializer
             MaterializedViews = snapshot.MaterializedViews
                 .OrderBy(v => v.Name, StringComparer.Ordinal)
                 .Select(NormalizeMaterializedView)
-                .ToList()
+                .ToList(),
+            Aggregates = snapshot.Aggregates is { Count: > 0 } aggregates
+                ? aggregates.OrderBy(a => a.Name, StringComparer.Ordinal).ToList()
+                : null
         };
 
     private static KafkaTableSnapshot NormalizeKafkaTable(KafkaTableSnapshot table) =>

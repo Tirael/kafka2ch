@@ -57,7 +57,7 @@ public static partial class ClusterTrailingSqlRewriter
 
         var view = CreateMaterializedViewRegex().Match(statement);
         if (view.Success)
-            return RewriteCreateMaterializedView(view, cluster, localTables, refreshTargets);
+            return RewriteCreateMaterializedView(view, cluster, localTables);
 
         var other = CreateOtherRegex().Match(statement);
         if (other.Success)
@@ -82,14 +82,9 @@ public static partial class ClusterTrailingSqlRewriter
         var rest = match.Groups["rest"].Value;
         var create = ifNotExists ? "CREATE TABLE IF NOT EXISTS" : "CREATE TABLE";
 
-        if (cluster.UsesReplicatedDatabase && refreshTargets.Contains(name))
-            return $"{create} {NodeLocal(name)}{cluster.HistoryOnCluster}{rest};" + SqlText.NewLine;
-
-        if (!TryReplaceMergeTreeEngine(rest, cluster, out var replicatedRest))
+        Func<string, string> storageEngine = refreshTargets.Contains(name) ? cluster.RefreshTargetEngine : cluster.StorageEngine;
+        if (!TryReplaceMergeTreeEngine(rest, storageEngine, out var replicatedRest))
             return $"{create} {name}{cluster.OnCluster}{rest};" + SqlText.NewLine;
-
-        if (cluster.UsesOnCluster && refreshTargets.Contains(name))
-            replicatedRest = rest;
 
         localTables.Add(name);
         return $"{create} {cluster.StorageTable(name)}{cluster.OnCluster}{replicatedRest};" + SqlText.NewLine +
@@ -97,23 +92,12 @@ public static partial class ClusterTrailingSqlRewriter
                cluster.DistributedTableStatement(name, shardingKey: null, ifNotExists);
     }
 
-    private static string RewriteCreateMaterializedView(
-        Match match,
-        ClusterDdl cluster,
-        HashSet<string> localTables,
-        HashSet<string> refreshTargets)
+    private static string RewriteCreateMaterializedView(Match match, ClusterDdl cluster, HashSet<string> localTables)
     {
         var head = match.Groups["head"].Value;
-        var name = match.Groups["name"].Value;
         var rest = match.Groups["rest"].Value;
 
         var refreshable = RefreshToClauseRegex().IsMatch(rest);
-        if (refreshable && cluster.UsesReplicatedDatabase)
-            return RewriteNodeLocalRefreshableView(head, name, rest, cluster, localTables, refreshTargets);
-
-        if (cluster.UsesReplicatedDatabase)
-            rest = QualifyRefreshTargetSources(rest, refreshTargets);
-
         rest = refreshable
             ? RefreshToClauseRegex().Replace(rest, to =>
                     localTables.Contains(to.Groups["table"].Value)
@@ -126,46 +110,19 @@ public static partial class ClusterTrailingSqlRewriter
                         : to.Value,
                 count: 1);
 
+        Func<string, string> sourceTable = refreshable ? cluster.RefreshSourceTable : cluster.StorageTable;
         rest = SourceTableRegex().Replace(rest, source =>
             localTables.Contains(source.Groups["table"].Value)
-                ? $"{source.Groups["keyword"].Value}{cluster.StorageTable(source.Groups["table"].Value)}"
+                ? $"{source.Groups["keyword"].Value}{sourceTable(source.Groups["table"].Value)}"
                 : source.Value);
 
-        if (TryReplaceMergeTreeEngine(rest, cluster, out var replicatedRest))
+        if (TryReplaceMergeTreeEngine(rest, cluster.StorageEngine, out var replicatedRest))
             rest = replicatedRest;
 
-        return $"{head}{name}{cluster.OnCluster}{rest};" + SqlText.NewLine;
+        return $"{head}{cluster.OnCluster}{rest};" + SqlText.NewLine;
     }
 
-    private static string RewriteNodeLocalRefreshableView(
-        string head,
-        string name,
-        string rest,
-        ClusterDdl cluster,
-        HashSet<string> localTables,
-        HashSet<string> refreshTargets)
-    {
-        rest = RefreshToClauseRegex().Replace(rest, to => $"{to.Groups["prefix"].Value}{NodeLocal(to.Groups["table"].Value)}", count: 1);
-        rest = QualifyRefreshTargetSources(rest, refreshTargets);
-        rest = SourceTableRegex().Replace(rest, source =>
-            localTables.Contains(source.Groups["table"].Value)
-                ? $"{source.Groups["keyword"].Value}{cluster.ReplicatedDatabaseName}.{source.Groups["table"].Value}"
-                : source.Value);
-
-        return $"{head}{NodeLocal(name)}{cluster.HistoryOnCluster}{rest};" + SqlText.NewLine;
-    }
-
-    private static string QualifyRefreshTargetSources(string sql, HashSet<string> refreshTargets) =>
-        SourceTableRegex().Replace(sql, source =>
-            refreshTargets.Contains(source.Groups["table"].Value)
-                ? $"{source.Groups["keyword"].Value}{NodeLocal(source.Groups["table"].Value)}"
-                : source.Value);
-
-    private static string NodeLocal(string name) => $"{NodeLocalDatabase}.{name}";
-
-    private const string NodeLocalDatabase = "default";
-
-    private static bool TryReplaceMergeTreeEngine(string sql, ClusterDdl cluster, out string rewritten)
+    private static bool TryReplaceMergeTreeEngine(string sql, Func<string, string> storageEngine, out string rewritten)
     {
         rewritten = sql;
         var engine = MergeTreeEngineRegex().Match(sql);
@@ -181,7 +138,7 @@ public static partial class ClusterTrailingSqlRewriter
         if (argumentsStart < sql.Length && sql[argumentsStart] == '(')
             engineEnd = FindClosingParenthesis(sql, argumentsStart) + 1;
 
-        rewritten = sql[..engineStart] + cluster.StorageEngine(sql[engineStart..engineEnd]) + sql[engineEnd..];
+        rewritten = sql[..engineStart] + storageEngine(sql[engineStart..engineEnd]) + sql[engineEnd..];
         return true;
     }
 
@@ -218,7 +175,7 @@ public static partial class ClusterTrailingSqlRewriter
     private static partial Regex CreateTableRegex();
 
     [GeneratedRegex(
-        $@"^(?<head>CREATE\s+MATERIALIZED\s+VIEW\s+(?:IF\s+NOT\s+EXISTS\s+)?)(?<name>{Identifier})(?<rest>[\s\S]*)$",
+        $@"^(?<head>CREATE\s+MATERIALIZED\s+VIEW\s+(?:IF\s+NOT\s+EXISTS\s+)?{Identifier})(?<rest>[\s\S]*)$",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex CreateMaterializedViewRegex();
 

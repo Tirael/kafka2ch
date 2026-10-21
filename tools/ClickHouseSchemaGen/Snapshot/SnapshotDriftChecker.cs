@@ -23,6 +23,7 @@ public static class SnapshotDriftChecker
         CompareKafkaTables(expected.KafkaTables, actual.KafkaTables, differences);
         CompareMergeTreeTables(expected.MergeTreeTables, actual.MergeTreeTables, differences);
         CompareMaterializedViews(expected.MaterializedViews, actual.MaterializedViews, differences);
+        CompareAggregates(expected.Aggregates ?? [], actual.Aggregates ?? [], differences);
 
         return differences;
     }
@@ -166,6 +167,56 @@ public static class SnapshotDriftChecker
             CompareViewMappings(name, expectedView.Columns, actualView.Columns, differences);
         }
     }
+
+    private static void CompareAggregates(
+        IReadOnlyList<AggregateSnapshot> expected,
+        IReadOnlyList<AggregateSnapshot> actual,
+        List<string> differences)
+    {
+        var expectedByName = expected.ToDictionary(a => a.Name, StringComparer.OrdinalIgnoreCase);
+        var actualByName = actual.ToDictionary(a => a.Name, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var name in expectedByName.Keys.Except(actualByName.Keys, StringComparer.OrdinalIgnoreCase))
+            differences.Add($"Aggregate '{name}' is missing from snapshot.");
+
+        foreach (var name in actualByName.Keys.Except(expectedByName.Keys, StringComparer.OrdinalIgnoreCase))
+            differences.Add($"Aggregate '{name}' exists in snapshot but not in current plan.");
+
+        foreach (var (name, expectedAggregate) in expectedByName)
+        {
+            if (!actualByName.TryGetValue(name, out var actualAggregate))
+                continue;
+
+            void Compare(string field, object? expectedValue, object? actualValue)
+            {
+                if (!Equals(expectedValue, actualValue))
+                    differences.Add($"Aggregate '{name}' {field} changed ('{expectedValue}' -> '{actualValue}').");
+            }
+
+            Compare("viewName", expectedAggregate.ViewName, actualAggregate.ViewName);
+            Compare("sourceTable", expectedAggregate.SourceTable, actualAggregate.SourceTable);
+            Compare(
+                "engine",
+                MergeTreeEngines.Normalize(expectedAggregate.Engine),
+                MergeTreeEngines.Normalize(actualAggregate.Engine));
+            Compare("ORDER BY", expectedAggregate.OrderBy, actualAggregate.OrderBy);
+            Compare("final", expectedAggregate.Final, actualAggregate.Final);
+            Compare("refresh.mode", expectedAggregate.RefreshMode, actualAggregate.RefreshMode);
+            Compare("refresh.every", expectedAggregate.RefreshEvery, actualAggregate.RefreshEvery);
+            Compare("timeBucket", expectedAggregate.TimeBucket, actualAggregate.TimeBucket);
+            Compare(
+                "groupBy",
+                string.Join(", ", expectedAggregate.GroupBy.Select(c => $"{c.Name} {c.Type}")),
+                string.Join(", ", actualAggregate.GroupBy.Select(c => $"{c.Name} {c.Type}")));
+            Compare(
+                "measures",
+                string.Join(", ", expectedAggregate.Measures.Select(FormatMeasure)),
+                string.Join(", ", actualAggregate.Measures.Select(FormatMeasure)));
+        }
+    }
+
+    private static string FormatMeasure(AggregateMeasureSnapshot measure) =>
+        $"{measure.Function}({measure.Column}) AS {measure.Alias} {measure.Type}";
 
     private static void CompareKafkaSettings(
         string tableName,

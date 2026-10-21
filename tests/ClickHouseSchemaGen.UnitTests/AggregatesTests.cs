@@ -53,7 +53,7 @@ public sealed class AggregatesTests
     {
         var sql = RenderAggregates(TestContractsPaths.DedupCodegenConfigPath);
 
-        sql.Should().Be(LegacyTrailingSql);
+        sql.TrimEnd().Should().Be(LegacyTrailingSql.TrimEnd());
     }
 
     [Fact]
@@ -61,7 +61,7 @@ public sealed class AggregatesTests
     {
         var sql = RenderAggregates(TestContractsPaths.ClusterDedupCodegenConfigPath, aggregate => aggregate.Engine = "SummingMergeTree");
 
-        sql.Should().Be("""
+        sql.TrimEnd().Should().Be("""
             CREATE TABLE orders_agg_1m_local ON CLUSTER kafka2ch
             (
                 minute        DateTime,
@@ -87,7 +87,6 @@ public sealed class AggregatesTests
                 sum(quantity)               AS total_qty
             FROM orders_local FINAL
             GROUP BY minute, category;
-
             """.ReplaceLineEndings("\n"));
     }
 
@@ -135,7 +134,7 @@ public sealed class AggregatesTests
             SchemaGeneratorFactory.Create().BuildPlan(config).Aggregates,
             ClusterDdl.SingleNode);
 
-        sql.Should().Be("""
+        sql.TrimEnd().Should().Be("""
             CREATE TABLE orders_by_category
             (
                 category    LowCardinality(String),
@@ -160,7 +159,6 @@ public sealed class AggregatesTests
                 sum(amount)         AS total
             FROM orders
             GROUP BY category, currency;
-
             """.ReplaceLineEndings("\n"));
     }
 

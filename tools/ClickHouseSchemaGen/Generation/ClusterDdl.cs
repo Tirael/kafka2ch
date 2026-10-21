@@ -51,6 +51,12 @@ public sealed partial class ClusterDdl
                 ? BareReplicated(engine)
                 : Replicated(engine, _config!.ReplicatedPath, _config.ReplicaName);
 
+    public string RefreshTargetEngine(string engine) =>
+        UsesOnCluster ? engine : StorageEngine(engine);
+
+    public string RefreshSourceTable(string tableName) =>
+        UsesReplicatedDatabase ? tableName : StorageTable(tableName);
+
     public string HistoryEngine(string engine) =>
         !Enabled
             ? engine
