@@ -24,9 +24,8 @@ CREATE TABLE orders_queue
     attachments          Tuple(invoices Array(Tuple(name String, note Nullable(String))), receipts Array(Tuple(name String, note Nullable(String)))),
     order_lines2_by_line_id Map(Int64, Tuple(line2_id Int64, value2_price2 Float64, value2_quantity2 Int32, value2_created_at2_seconds Int64, value2_created_at2_nanos Int32, value2_changed_at2_seconds Int64, value2_changed_at2_nanos Int32, is_active2 UInt8))
 )
-ENGINE = Kafka
+ENGINE = Kafka(kafka_orders)
 SETTINGS
-    kafka_broker_list = 'kafka:9092',
     kafka_topic_list = 'orders',
     kafka_group_name = 'clickhouse-orders',
     kafka_format = 'ProtobufSingle',
@@ -38,4 +37,4 @@ SETTINGS
     input_format_protobuf_oneof_presence = 1,
     input_format_protobuf_flatten_google_wrappers = 1;
 
-INSERT INTO schema_migrations (version, name, checksum, applied_at, kind) VALUES ('01', '01_orders_queue.sql', 'd38a8d0c2775cc42d9487d8fac2f9a40e9e102128322254dbd4be816d69b852a', now(), 'init');
+INSERT INTO schema_migrations (version, name, checksum, applied_at, kind) VALUES ('01', '01_orders_queue.sql', '981f5a43aa59e3aa7a21ff1aebb64a6ef6ad8a605658e7493ba803b0d3603dcf', now(), 'init');

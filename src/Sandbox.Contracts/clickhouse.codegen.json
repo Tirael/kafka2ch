@@ -27,7 +27,7 @@
       "messageName": "OrderEvent",
       "outputPath": "../../docker/clickhouse/init/01_orders_queue.sql",
       "kafka": {
-        "brokerList": "kafka:9092",
+        "namedCollection": "kafka_orders",
         "topic": "orders",
         "groupName": "clickhouse-orders",
         "skipBytes": 6,

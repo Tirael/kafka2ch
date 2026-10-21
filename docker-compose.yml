@@ -52,10 +52,12 @@ services:
     environment:
       CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
       CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+      KAFKA_BROKER_LIST: ${KAFKA_BROKER_LIST:-kafka:9092}
     volumes:
       - ./docker/clickhouse/init:/docker-entrypoint-initdb.d
       - ./docker/clickhouse/format_schemas:/var/lib/clickhouse/format_schemas
       - ./docker/clickhouse/config/kafka.xml:/etc/clickhouse-server/config.d/kafka.xml:ro
+      - ./docker/clickhouse/config/named-collections-users.xml:/etc/clickhouse-server/users.d/named-collections.xml:ro
     healthcheck:
       test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
       interval: 10s
