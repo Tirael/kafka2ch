@@ -199,7 +199,7 @@ public sealed class MigrationPreflightDryRunTests
     [Fact]
     public void GivenKafkaCreateOnCluster_WhenRewriteForDryRun_ThenTargetsPreflightTableWithoutClusterAndWithIsolatedGroup()
     {
-        var statement = """
+        var statement = SqlText.Normalize("""
             CREATE TABLE IF NOT EXISTS orders_queue ON CLUSTER kafka2ch
             (
                 order_id String
@@ -209,7 +209,7 @@ public sealed class MigrationPreflightDryRunTests
                 kafka_broker_list = 'kafka:9092',
                 kafka_group_name = 'clickhouse-orders',
                 kafka_format = 'ProtobufSingle';
-            """;
+            """);
 
         var rewritten = MigrationPreflight.RewriteKafkaCreateForDryRun(statement, Database);
 
@@ -232,13 +232,13 @@ public sealed class MigrationPreflightDryRunTests
     [Fact]
     public void GivenMaterializedViewOverPreflightQueue_WhenRewriteForDryRun_ThenExplainsSelectAgainstPreflightTable()
     {
-        var statement = """
+        var statement = SqlText.Normalize("""
             CREATE MATERIALIZED VIEW orders_mv ON CLUSTER kafka2ch TO orders AS
             SELECT
                 order_id AS order_id,
                 _key     AS kafka_key
             FROM orders_queue;
-            """;
+            """);
 
         var rewritten = MigrationPreflight.RewriteViewForDryRun(
             statement,
