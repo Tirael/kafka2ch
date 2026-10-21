@@ -112,6 +112,62 @@ public sealed class ClusterReplicatedDatabaseShardsIntegrationTests : IAsyncLife
             .Should().Equal("01|ch1", "01|ch2", "02|ch3", "02|ch4");
     }
 
+    [Fact]
+    public async Task GivenDedupPipelineOnTwoShards_WhenMessagesStoredTwice_ThenEveryNodeAggregatesEachMessageOnce()
+    {
+        foreach (var (fileName, sql) in InitScriptsFixture.Generate(TestContractsPaths.ClusterReplicatedDbDedupCodegenConfigPath))
+        {
+            var execResult = await _shard1Replica1.ExecScriptAsync(sql);
+            execResult.ExitCode.Should().Be(0, $"{fileName}: {execResult.Stderr}");
+        }
+
+        await using var shard1Replica1 = await OpenAsync(_shard1Replica1);
+        await using var shard1Replica2 = await OpenAsync(_shard1Replica2);
+        await using var shard2Replica1 = await OpenAsync(_shard2Replica1);
+        await using var shard2Replica2 = await OpenAsync(_shard2Replica2);
+        ClickHouseConnection[] connections = [shard1Replica1, shard1Replica2, shard2Replica1, shard2Replica2];
+
+        foreach (var connection in connections)
+        {
+            await ExecuteAsync(connection, $"SYSTEM SYNC DATABASE REPLICA {DatabaseName}");
+            await ExecuteAsync(connection, "SYSTEM STOP MERGES orders_local");
+        }
+
+        await InsertKafkaMessagesAsync(shard1Replica1, rows: 100, offset: 0);
+        await InsertKafkaMessagesAsync(shard2Replica1, rows: 50, offset: 1000);
+        foreach (var connection in new[] { shard1Replica1, shard2Replica1 })
+            await ExecuteAsync(connection, "INSERT INTO orders_local SELECT * FROM orders_local SETTINGS insert_deduplicate = 0");
+
+        foreach (var connection in connections)
+            await ExecuteAsync(connection, "SYSTEM SYNC REPLICA orders_local");
+
+        foreach (var connection in connections)
+        {
+            (await ScalarAsync(connection, "SELECT count() FROM orders")).Should().Be(300);
+            (await ScalarAsync(connection, "SELECT count() FROM orders FINAL")).Should().Be(150);
+        }
+
+        foreach (var connection in connections)
+        {
+            await ExecuteAsync(connection, "SYSTEM REFRESH VIEW default.orders_agg_mv");
+            await ExecuteAsync(connection, "SYSTEM WAIT VIEW default.orders_agg_mv");
+        }
+
+        (await QueryRowsAsync(shard1Replica1,
+                "SELECT getMacro('replica'), sum(orders_count) " +
+                "FROM clusterAllReplicas('kafka2ch', default.orders_agg_1m) GROUP BY 1 ORDER BY 1"))
+            .Select(row => $"{row[0]}:{row[1]}")
+            .Should().Equal("ch1:150", "ch2:150", "ch3:150", "ch4:150");
+        foreach (var connection in connections)
+            (await ScalarAsync(connection, "SELECT sum(orders_count) FROM default.orders_agg_1m")).Should().Be(150);
+    }
+
+    private static Task InsertKafkaMessagesAsync(ClickHouseConnection connection, int rows, int offset) =>
+        ExecuteAsync(connection,
+            "INSERT INTO orders_local (order_id, category, amount, quantity, event_time, kafka_partition, kafka_offset) " +
+            $"SELECT toString(number + {offset}), 'books', 1.5, 2, now64(3), number % 2, intDiv(number, 2) + {offset} " +
+            $"FROM numbers({rows})");
+
     private ClickHouseContainer CreateNode(string host, string shard) =>
         new ClickHouseBuilder(TestContainersEnv.FullClickHouseImageName)
             .WithNetwork(_network)

@@ -15,3 +15,4 @@ services:
   sandbox-app:
     environment:
       ClickHouse__Database: kafka2ch
+      ReadAggregates__Database: default

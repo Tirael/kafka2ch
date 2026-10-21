@@ -38,19 +38,22 @@ public sealed class DedupPipelineGenerationTests
     }
 
     [Fact]
-    public void GivenReplicatedDbDedupConfig_WhenRenderPipeline_ThenViewsWriteLocalAndRefreshTargetIsReplicated()
+    public void GivenReplicatedDbDedupConfig_WhenRenderPipeline_ThenRefreshableAggregateIsPerNodeInDefaultDatabase()
     {
         var statements = RenderPipeline(TestContractsPaths.ClusterReplicatedDbDedupCodegenConfigPath);
 
         Single(statements, "CREATE TABLE orders_local\n").Should()
             .Contain("ENGINE = ReplicatedReplacingMergeTree\nORDER BY (event_time, order_id, kafka_partition, kafka_offset)");
         Single(statements, "CREATE MATERIALIZED VIEW orders_mv TO orders_local AS");
-        Single(statements, "CREATE TABLE orders_agg_1m_local\n").Should()
-            .Contain("ENGINE = ReplicatedMergeTree\nORDER BY (minute, category)");
-        Single(statements, "CREATE MATERIALIZED VIEW orders_agg_mv\n").Should()
-            .Contain("REFRESH EVERY 1 MINUTE\nTO orders_agg_1m_local AS")
-            .And.Contain("FROM orders FINAL");
-        statements.Should().NotContain(statement => statement.Contains("ON CLUSTER"));
+        Single(statements, "CREATE TABLE default.orders_agg_1m ON CLUSTER kafka2ch\n").Should()
+            .Contain("ENGINE = MergeTree\nORDER BY (minute, category)");
+        Single(statements, "CREATE MATERIALIZED VIEW default.orders_agg_mv ON CLUSTER kafka2ch\n").Should()
+            .Contain("REFRESH EVERY 1 MINUTE\nTO default.orders_agg_1m AS")
+            .And.Contain("FROM kafka2ch.orders FINAL");
+        statements.Should().NotContain(statement => statement.Contains("orders_agg_1m_local"));
+        statements.Should().NotContain(statement => statement.Contains("ReplicatedMergeTree"));
+        statements.Should().OnlyContain(statement =>
+            !statement.Contains("ON CLUSTER") || statement.Contains("default.orders_agg_"));
     }
 
     private static List<string> RenderPipeline(string configPath)

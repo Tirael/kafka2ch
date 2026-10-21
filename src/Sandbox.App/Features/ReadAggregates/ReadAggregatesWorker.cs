@@ -56,11 +56,13 @@ public sealed class ReadAggregatesWorker(
         await connection.OpenAsync(cancellationToken);
 
         await using var refreshCommand = connection.CreateCommand();
+        var database = _options.Database is null ? "currentDatabase()" : $"'{_options.Database}'";
+        var table = _options.Database is null ? "orders_agg_1m" : $"{_options.Database}.orders_agg_1m";
         refreshCommand.CommandText =
-            """
+            $"""
             SELECT max(last_success_time)
             FROM system.view_refreshes
-            WHERE database = currentDatabase() AND view = 'orders_agg_mv'
+            WHERE database = {database} AND view = 'orders_agg_mv'
             """;
         var refreshedAt = await refreshCommand.ExecuteScalarAsync(cancellationToken) as DateTime?;
 
@@ -71,7 +73,7 @@ public sealed class ReadAggregatesWorker(
                    sum(orders_count) AS orders_count,
                    sum(total_amount) AS total_amount,
                    sum(total_qty) AS total_qty
-            FROM orders_agg_1m
+            FROM {table}
             WHERE minute >= now() - INTERVAL {_options.WindowMinutes} MINUTE
             GROUP BY minute, category
             ORDER BY minute DESC, category

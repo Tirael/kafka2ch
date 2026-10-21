@@ -44,7 +44,7 @@ ENGINE = Distributed('kafka2ch', currentDatabase(), orders_local, cityHash64(ord
 DROP TABLE IF EXISTS orders_agg_1m SYNC;
 DROP TABLE IF EXISTS orders_agg_1m_local SYNC;
 
-CREATE TABLE orders_agg_1m_local
+CREATE TABLE default.orders_agg_1m ON CLUSTER kafka2ch
 (
     minute        DateTime,
     category      LowCardinality(String),
@@ -52,22 +52,19 @@ CREATE TABLE orders_agg_1m_local
     total_amount  Float64,
     total_qty     UInt64
 )
-ENGINE = ReplicatedMergeTree
+ENGINE = MergeTree
 ORDER BY (minute, category);
 
-CREATE TABLE orders_agg_1m AS orders_agg_1m_local
-ENGINE = Distributed('kafka2ch', currentDatabase(), orders_agg_1m_local, rand());
-
-CREATE MATERIALIZED VIEW orders_agg_mv
+CREATE MATERIALIZED VIEW default.orders_agg_mv ON CLUSTER kafka2ch
 REFRESH EVERY 1 MINUTE
-TO orders_agg_1m_local AS
+TO default.orders_agg_1m AS
 SELECT
     toStartOfMinute(event_time) AS minute,
     category,
     count()                     AS orders_count,
     sum(amount)                 AS total_amount,
     sum(quantity)               AS total_qty
-FROM orders FINAL
+FROM kafka2ch.orders FINAL
 GROUP BY minute, category;
 
 ATTACH TABLE IF NOT EXISTS orders_queue;

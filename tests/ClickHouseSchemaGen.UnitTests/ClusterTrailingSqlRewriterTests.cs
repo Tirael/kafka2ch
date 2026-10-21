@@ -180,24 +180,72 @@ public sealed class ClusterTrailingSqlRewriterTests
     }
 
     [Fact]
-    public void GivenRefreshableViewInReplicatedDatabase_WhenRewrite_ThenTargetIsReplicatedForCoordinatedRefresh()
+    public void GivenRefreshableViewInReplicatedDatabase_WhenRewrite_ThenViewAndTargetArePerNodeInDefaultDatabase()
     {
-        var cluster = new ClusterDdl(new ClusterConfig
-        {
-            Name = "kafka2ch",
-            DdlMode = ClusterDdlModes.ReplicatedDatabase,
-            ReplicatedDatabaseName = "kafka2ch"
-        });
+        var rewritten = ClusterTrailingSqlRewriter.Rewrite(RefreshableAggregateSql, ReplicatedDatabaseCluster, ["orders"]);
 
-        var rewritten = ClusterTrailingSqlRewriter.Rewrite(RefreshableAggregateSql, cluster, ["orders"]);
+        SqlText.Normalize(rewritten).Should().Be(SqlText.Normalize(
+            """
+            CREATE TABLE default.orders_agg_1m ON CLUSTER kafka2ch (minute DateTime, orders_count UInt64)
+            ENGINE = MergeTree ORDER BY minute;
 
-        rewritten.Should().Contain("CREATE TABLE orders_agg_1m_local (minute DateTime, orders_count UInt64)");
-        rewritten.Should().Contain("ENGINE = ReplicatedMergeTree ORDER BY minute;");
-        rewritten.Should().Contain("TO orders_agg_1m_local AS");
-        rewritten.Should().Contain("FROM orders FINAL");
-        rewritten.Should().NotContain("orders_local");
+            CREATE MATERIALIZED VIEW default.orders_agg_mv ON CLUSTER kafka2ch
+            REFRESH EVERY 1 MINUTE
+            TO default.orders_agg_1m AS
+            SELECT toStartOfMinute(event_time) AS minute, count() AS orders_count
+            FROM kafka2ch.orders FINAL
+            GROUP BY minute;
+
+
+            """));
+    }
+
+    [Fact]
+    public void GivenRefreshableAppendViewInReplicatedDatabase_WhenRewrite_ThenQualifiesOnlyStorageSources()
+    {
+        const string sql = """
+            CREATE TABLE IF NOT EXISTS snapshots (minute DateTime) ENGINE = MergeTree ORDER BY minute;
+
+            CREATE MATERIALIZED VIEW IF NOT EXISTS snapshots_mv REFRESH AFTER 30 SECOND APPEND TO snapshots AS
+            SELECT now() AS minute FROM orders AS o JOIN system.one AS s ON 1 = 1 JOIN numbers(1) AS n ON 1 = 1;
+            """;
+
+        var rewritten = ClusterTrailingSqlRewriter.Rewrite(sql, ReplicatedDatabaseCluster, ["orders"]);
+
+        rewritten.Should().Contain(
+            "CREATE TABLE IF NOT EXISTS default.snapshots ON CLUSTER kafka2ch (minute DateTime) ENGINE = MergeTree ORDER BY minute;");
+        rewritten.Should().Contain(
+            "CREATE MATERIALIZED VIEW IF NOT EXISTS default.snapshots_mv ON CLUSTER kafka2ch REFRESH AFTER 30 SECOND " +
+            "APPEND TO default.snapshots AS");
+        rewritten.Should().Contain("FROM kafka2ch.orders AS o JOIN system.one AS s ON 1 = 1 JOIN numbers(1) AS n");
+        rewritten.Should().NotContain("snapshots_local");
+    }
+
+    [Fact]
+    public void GivenIncrementalViewInReplicatedDatabase_WhenRewrite_ThenStaysInReplicatedDatabaseWithoutOnCluster()
+    {
+        const string sql = """
+            CREATE TABLE totals (minute DateTime, n UInt64) ENGINE = SummingMergeTree ORDER BY minute;
+
+            CREATE MATERIALIZED VIEW totals_mv TO totals AS
+            SELECT toStartOfMinute(event_time) AS minute, count() AS n FROM orders GROUP BY minute;
+            """;
+
+        var rewritten = ClusterTrailingSqlRewriter.Rewrite(sql, ReplicatedDatabaseCluster, ["orders"]);
+
+        rewritten.Should().Contain("CREATE TABLE totals_local (minute DateTime, n UInt64) ENGINE = ReplicatedSummingMergeTree");
+        rewritten.Should().Contain("CREATE MATERIALIZED VIEW totals_mv TO totals_local AS");
+        rewritten.Should().Contain("FROM orders_local GROUP BY minute;");
+        rewritten.Should().NotContain("default.");
         rewritten.Should().NotContain("ON CLUSTER");
     }
+
+    private static readonly ClusterDdl ReplicatedDatabaseCluster = new(new ClusterConfig
+    {
+        Name = "kafka2ch",
+        DdlMode = ClusterDdlModes.ReplicatedDatabase,
+        ReplicatedDatabaseName = "kafka2ch"
+    });
 
     [Fact]
     public void GivenRefreshableViewWithSettingsAndAppend_WhenRewrite_ThenRewritesTargetAfterRefreshClause()

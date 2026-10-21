@@ -248,7 +248,7 @@ curl -s http://localhost:8081/subjects/orders-value/versions/latest | jq .
 
 ### Задержка появления данных
 
-Kafka engine в ClickHouse флашит блоками (размер блока / таймаут). В демо задержка в несколько секунд до появления строк в `orders` — нормальное поведение. `orders_agg_1m` пересчитывается refreshable MV раз в минуту (`REFRESH EVERY 1 MINUTE`), поэтому агрегаты отстают до минуты; принудительно: `SYSTEM REFRESH VIEW orders_agg_mv`. Дедуп и модель агрегатов — [clickhouse.codegen.md](src/Sandbox.Contracts/clickhouse.codegen.md#дедуп-orders-at-least-once-kafka-engine).
+Kafka engine в ClickHouse флашит блоками (размер блока / таймаут). В демо задержка в несколько секунд до появления строк в `orders` — нормальное поведение. `orders_agg_1m` пересчитывается refreshable MV раз в минуту (`REFRESH EVERY 1 MINUTE`), поэтому агрегаты отстают до минуты; принудительно: `SYSTEM REFRESH VIEW orders_agg_mv` (в `replicatedDatabase` агрегат живёт в `default` на каждой ноде: `SYSTEM REFRESH VIEW default.orders_agg_mv`, читать `default.orders_agg_1m`). Дедуп и модель агрегатов — [clickhouse.codegen.md](src/Sandbox.Contracts/clickhouse.codegen.md#дедуп-orders-at-least-once-kafka-engine).
 
 ## Сборка, codegen и тесты
 

@@ -96,7 +96,7 @@ public sealed class ClusterReplicatedDatabaseIntegrationTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task GivenDedupPipelineInReplicatedDatabase_WhenMessagesStoredTwice_ThenCoordinatedRefreshCountsEachOnce()
+    public async Task GivenDedupPipelineInReplicatedDatabase_WhenMessagesStoredTwice_ThenEveryNodeRefreshCountsEachOnce()
     {
         foreach (var (fileName, sql) in InitScriptsFixture.Generate(TestContractsPaths.ClusterReplicatedDbDedupCodegenConfigPath))
         {
@@ -109,14 +109,17 @@ public sealed class ClusterReplicatedDatabaseIntegrationTests : IAsyncLifetime
         await Task.WhenAll(node1.OpenAsync(), node2.OpenAsync());
 
         (await QueryRowsAsync(node2,
-                "SELECT getMacro('replica'), name, engine FROM clusterAllReplicas('kafka2ch', system.tables) " +
-                $"WHERE database = '{DatabaseName}' AND name IN ('orders_local', 'orders_agg_1m_local') ORDER BY 1, 2"))
-            .Select(row => $"{row[0]}:{row[1]}:{row[2]}")
+                "SELECT getMacro('replica'), database, name, engine FROM clusterAllReplicas('kafka2ch', system.tables) " +
+                $"WHERE database IN ('{DatabaseName}', 'default') " +
+                "AND (name = 'orders_local' OR name LIKE 'orders_agg%') ORDER BY 1, 2, 3"))
+            .Select(row => $"{row[0]}:{row[1]}.{row[2]}:{row[3]}")
             .Should().Equal(
-                "ch1:orders_agg_1m_local:ReplicatedMergeTree",
-                "ch1:orders_local:ReplicatedReplacingMergeTree",
-                "ch2:orders_agg_1m_local:ReplicatedMergeTree",
-                "ch2:orders_local:ReplicatedReplacingMergeTree");
+                "ch1:default.orders_agg_1m:MergeTree",
+                "ch1:default.orders_agg_mv:MaterializedView",
+                "ch1:kafka2ch.orders_local:ReplicatedReplacingMergeTree",
+                "ch2:default.orders_agg_1m:MergeTree",
+                "ch2:default.orders_agg_mv:MaterializedView",
+                "ch2:kafka2ch.orders_local:ReplicatedReplacingMergeTree");
 
         foreach (var node in new[] { node1, node2 })
             await ExecuteAsync(node, "SYSTEM STOP MERGES orders_local");
@@ -133,12 +136,15 @@ public sealed class ClusterReplicatedDatabaseIntegrationTests : IAsyncLifetime
 
         foreach (var node in new[] { node1, node2 })
         {
-            await ExecuteAsync(node, "SYSTEM REFRESH VIEW orders_agg_mv");
-            await ExecuteAsync(node, "SYSTEM WAIT VIEW orders_agg_mv");
+            await ExecuteAsync(node, "SYSTEM REFRESH VIEW default.orders_agg_mv");
+            await ExecuteAsync(node, "SYSTEM WAIT VIEW default.orders_agg_mv");
         }
 
-        (await ScalarAsync(node2, "SELECT sum(orders_count) FROM orders_agg_1m")).Should().Be(200);
-        (await ScalarAsync(node2, "SELECT sum(total_qty) FROM orders_agg_1m")).Should().Be(400);
+        foreach (var node in new[] { node1, node2 })
+        {
+            (await ScalarAsync(node, "SELECT sum(orders_count) FROM default.orders_agg_1m")).Should().Be(200);
+            (await ScalarAsync(node, "SELECT sum(total_qty) FROM default.orders_agg_1m")).Should().Be(400);
+        }
     }
 
     private ClickHouseContainer CreateNode(string host, string shard) =>
