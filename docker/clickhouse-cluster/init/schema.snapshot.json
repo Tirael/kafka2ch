@@ -1,7 +1,6 @@
 {
   "version": 2,
   "parentChecksum": "786d253fb264345b03390cd1caeebaeff718ad508689b31b530106477965458c",
-  "trailingSqlHash": "0cb8bde0a48a4fd3d746a12db0ed2f8e94dde1e04a9705963f96436df3be3a8a",
   "cluster": {
     "name": "kafka2ch",
     "ddlMode": "onCluster",
@@ -81,7 +80,7 @@
         },
         {
           "name": "status_history",
-          "type": "Array(Enum8(\u0027ORDER_STATUS_UNSPECIFIED\u0027 = 0, \u0027ORDER_STATUS_CREATED\u0027 = 1, \u0027ORDER_STATUS_PAID\u0027 = 2))",
+          "type": "Array(Enum8('ORDER_STATUS_UNSPECIFIED' = 0, 'ORDER_STATUS_CREATED' = 1, 'ORDER_STATUS_PAID' = 2))",
           "fieldNumberPath": "15"
         },
         {
@@ -131,7 +130,7 @@
         },
         {
           "name": "status",
-          "type": "Enum8(\u0027ORDER_STATUS_UNSPECIFIED\u0027 = 0, \u0027ORDER_STATUS_CREATED\u0027 = 1, \u0027ORDER_STATUS_PAID\u0027 = 2)",
+          "type": "Enum8('ORDER_STATUS_UNSPECIFIED' = 0, 'ORDER_STATUS_CREATED' = 1, 'ORDER_STATUS_PAID' = 2)",
           "fieldNumberPath": "6"
         },
         {
@@ -141,7 +140,7 @@
         },
         {
           "name": "items",
-          "type": "Nested(sku String, qty UInt32, unit_price Float64, line_status Enum8(\u0027ORDER_STATUS_UNSPECIFIED\u0027 = 0, \u0027ORDER_STATUS_CREATED\u0027 = 1, \u0027ORDER_STATUS_PAID\u0027 = 2), parts Array(Tuple(sku String, qty UInt32, weight Nullable(Float64))))",
+          "type": "Nested(sku String, qty UInt32, unit_price Float64, line_status Enum8('ORDER_STATUS_UNSPECIFIED' = 0, 'ORDER_STATUS_CREATED' = 1, 'ORDER_STATUS_PAID' = 2), parts Array(Tuple(sku String, qty UInt32, weight Nullable(Float64))))",
           "fieldNumberPath": "8"
         },
         {
@@ -151,7 +150,7 @@
         },
         {
           "name": "payment",
-          "type": "Enum8(\u0027absent\u0027 = 0, \u0027card\u0027 = 11, \u0027cash\u0027 = 12, \u0027wallet\u0027 = 13)",
+          "type": "Enum8('absent' = 0, 'card' = 11, 'cash' = 12, 'wallet' = 13)",
           "fieldNumberPath": "oneof:payment"
         }
       ]
@@ -294,12 +293,12 @@
         {
           "source": "event_time.seconds",
           "target": "event_time",
-          "expression": "toDateTime64(event_time.seconds \u002B event_time.nanos / 1000000000.0, 3)"
+          "expression": "toDateTime64(event_time.seconds + event_time.nanos / 1000000000.0, 3)"
         },
         {
           "source": "_headers.name",
           "target": "kafka_headers",
-          "expression": "mapFromArrays(\u0060_headers.name\u0060, \u0060_headers.value\u0060)"
+          "expression": "mapFromArrays(`_headers.name`, `_headers.value`)"
         },
         {
           "source": "_key",
@@ -343,7 +342,7 @@
       "origin": "auto",
       "sourceTable": "orders_queue",
       "targetTable": "orders_queue_errors",
-      "where": "length(_error) \u003E 0",
+      "where": "length(_error) > 0",
       "columns": [
         {
           "source": "_error",
@@ -369,6 +368,48 @@
           "source": "received_at",
           "target": "received_at",
           "expression": "now()"
+        }
+      ]
+    }
+  ],
+  "aggregates": [
+    {
+      "name": "orders_agg_1m",
+      "viewName": "orders_agg_mv",
+      "sourceTable": "orders",
+      "orderBy": "(minute, category)",
+      "final": true,
+      "refreshMode": "refreshable",
+      "refreshEvery": "1 MINUTE",
+      "timeBucket": {
+        "column": "event_time",
+        "function": "toStartOfMinute",
+        "alias": "minute",
+        "type": "DateTime"
+      },
+      "groupBy": [
+        {
+          "name": "category",
+          "type": "LowCardinality(String)"
+        }
+      ],
+      "measures": [
+        {
+          "function": "count",
+          "alias": "orders_count",
+          "type": "UInt64"
+        },
+        {
+          "function": "sum",
+          "column": "amount",
+          "alias": "total_amount",
+          "type": "Float64"
+        },
+        {
+          "function": "sum",
+          "column": "quantity",
+          "alias": "total_qty",
+          "type": "UInt64"
         }
       ]
     }

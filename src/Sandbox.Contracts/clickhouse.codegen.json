@@ -91,6 +91,20 @@
         ]
       }
     ],
-    "trailingSql": "CREATE TABLE orders_agg_1m\n(\n    minute        DateTime,\n    category      LowCardinality(String),\n    orders_count  UInt64,\n    total_amount  Float64,\n    total_qty     UInt64\n)\nENGINE = MergeTree\nORDER BY (minute, category);\n\nCREATE MATERIALIZED VIEW orders_agg_mv\nREFRESH EVERY 1 MINUTE\nTO orders_agg_1m AS\nSELECT\n    toStartOfMinute(event_time) AS minute,\n    category,\n    count()                     AS orders_count,\n    sum(amount)                 AS total_amount,\n    sum(quantity)               AS total_qty\nFROM orders FINAL\nGROUP BY minute, category;\n"
+    "aggregates": [
+      {
+        "name": "orders_agg_1m",
+        "viewName": "orders_agg_mv",
+        "sourceTable": "orders",
+        "timeBucket": { "column": "event_time", "function": "toStartOfMinute", "alias": "minute" },
+        "groupBy": [ "category" ],
+        "measures": [
+          { "function": "count", "alias": "orders_count" },
+          { "function": "sum", "column": "amount", "alias": "total_amount" },
+          { "function": "sum", "column": "quantity", "alias": "total_qty" }
+        ],
+        "refresh": { "every": "1 MINUTE" }
+      }
+    ]
   }
 }
