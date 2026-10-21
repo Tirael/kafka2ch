@@ -128,7 +128,7 @@ SELECT
     count()                     AS orders_count,
     sum(amount)                 AS total_amount,
     sum(quantity)               AS total_qty
-FROM orders_local FINAL
+FROM orders FINAL
 GROUP BY minute, category;
 
-INSERT INTO default.schema_migrations (version, name, checksum, applied_at, kind) VALUES ('02', '02_pipeline.sql', '8f142d74a165906a9ffa2f5e61cf5acce807787ad1665b9b2cc257e58349784d', now(), 'init');
+INSERT INTO default.schema_migrations (version, name, checksum, applied_at, kind) VALUES ('02', '02_pipeline.sql', '333f07aece06f2a03bd000d209eda86179d4e3ce757425fd392888210420fb21', now(), 'init');

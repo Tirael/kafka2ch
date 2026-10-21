@@ -517,9 +517,9 @@ TTL event_time + INTERVAL 90 DAY;
 | --- | --- | --- | --- |
 | single-node | `t` | как в SQL | нода |
 | `onCluster` (Atomic) | всегда `t_local` (даже при write-through) | **как в SQL, без `Replicated`** | каждая нода независимо (uncoordinated); реплики шарда считают одно и то же из реплицированного источника |
-| `replicatedDatabase` | всегда `t_local` | `Replicated*` (без аргументов) | одна реплика на шард (coordinated, Keeper-путь `default_replica_path` = `/clickhouse/tables/{uuid}/{shard}`), результат реплицируется на остальные |
+| `replicatedDatabase` | всегда `t_local` | `Replicated*` (без аргументов) | coordinated (Keeper-путь `default_replica_path` = `/clickhouse/tables/{uuid}/{shard}`); подмена цели идёт DDL всей Replicated database, поэтому после refresh данные есть только на шарде refresh-реплики, остальные шарды пустые |
 
-`FROM t FINAL` для известных storage-таблиц переписывается в `FROM t_local FINAL`: каждый шард агрегирует свои строки, `Distributed` `t` над `t_local` даёт сумму по кластеру (читать через `sum(...) GROUP BY`).
+Источник: в `onCluster` `FROM t FINAL` для известных storage-таблиц переписывается в `FROM t_local FINAL` (каждая нода агрегирует свой шард); в `replicatedDatabase` refreshable MV читает `Distributed` `t` как есть (`FROM t FINAL`, `FINAL` применяется на каждом шарде), т.е. каждый refresh считает глобальный результат. В обоих случаях `Distributed` над `t_local` даёт итог по кластеру ровно один раз — читать через `sum(...) GROUP BY`.
 
 ---
 

@@ -99,7 +99,8 @@ public static partial class ClusterTrailingSqlRewriter
         var head = match.Groups["head"].Value;
         var rest = match.Groups["rest"].Value;
 
-        rest = RefreshToClauseRegex().IsMatch(rest)
+        var refreshable = RefreshToClauseRegex().IsMatch(rest);
+        rest = refreshable
             ? RefreshToClauseRegex().Replace(rest, to =>
                     localTables.Contains(to.Groups["table"].Value)
                         ? $"{to.Groups["prefix"].Value}{cluster.StorageTable(to.Groups["table"].Value)}"
@@ -111,8 +112,9 @@ public static partial class ClusterTrailingSqlRewriter
                         : to.Value,
                 count: 1);
 
+        var readsDistributed = refreshable && cluster.UsesReplicatedDatabase;
         rest = SourceTableRegex().Replace(rest, source =>
-            localTables.Contains(source.Groups["table"].Value)
+            !readsDistributed && localTables.Contains(source.Groups["table"].Value)
                 ? $"{source.Groups["keyword"].Value}{cluster.StorageTable(source.Groups["table"].Value)}"
                 : source.Value);
 

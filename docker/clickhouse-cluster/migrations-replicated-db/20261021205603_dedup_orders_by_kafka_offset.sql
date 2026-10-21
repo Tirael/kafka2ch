@@ -67,7 +67,7 @@ SELECT
     count()                     AS orders_count,
     sum(amount)                 AS total_amount,
     sum(quantity)               AS total_qty
-FROM orders_local FINAL
+FROM orders FINAL
 GROUP BY minute, category;
 
 ATTACH TABLE IF NOT EXISTS orders_queue;

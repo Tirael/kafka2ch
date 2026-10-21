@@ -49,7 +49,7 @@ public sealed class DedupPipelineGenerationTests
             .Contain("ENGINE = ReplicatedMergeTree\nORDER BY (minute, category)");
         Single(statements, "CREATE MATERIALIZED VIEW orders_agg_mv\n").Should()
             .Contain("REFRESH EVERY 1 MINUTE\nTO orders_agg_1m_local AS")
-            .And.Contain("FROM orders_local FINAL");
+            .And.Contain("FROM orders FINAL");
         statements.Should().NotContain(statement => statement.Contains("ON CLUSTER"));
     }
 

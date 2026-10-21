@@ -194,7 +194,8 @@ public sealed class ClusterTrailingSqlRewriterTests
         rewritten.Should().Contain("CREATE TABLE orders_agg_1m_local (minute DateTime, orders_count UInt64)");
         rewritten.Should().Contain("ENGINE = ReplicatedMergeTree ORDER BY minute;");
         rewritten.Should().Contain("TO orders_agg_1m_local AS");
-        rewritten.Should().Contain("FROM orders_local FINAL");
+        rewritten.Should().Contain("FROM orders FINAL");
+        rewritten.Should().NotContain("orders_local");
         rewritten.Should().NotContain("ON CLUSTER");
     }
 
