@@ -142,6 +142,32 @@ dotnet exec tools/ClickHouseSchemaGen.Migrator/bin/Debug/net8.0/ClickHouseSchema
 
 В сырой таблице `orders` сохраняются `kafka_key` (сырые байты protobuf-ключа) и `kafka_headers` (`Map(String, String)`). Подробности — [clickhouse.codegen.md](src/Sandbox.Contracts/clickhouse.codegen.md) и [MIGRATIONS_PLAN.md](MIGRATIONS_PLAN.md).
 
+### Миграции в параллельных ветках
+
+Migrator отклоняет миграцию, версия которой меньше последней применённой (`Out-of-order migration`). Поэтому в PR CI запускает [`scripts/check-migration-versions.sh`](scripts/check-migration-versions.sh) (локально: `scripts/check-migration-versions.sh origin/main`):
+
+- каждая миграция, добавленная в PR, должна иметь версию **больше** максимальной версии в `main` (по всем каталогам `migrations*`);
+- каждый изменённый `schema.snapshot.json` должен происходить от snapshot'а `main`: цепочка `parentChecksum` (SHA-256 родительского snapshot'а) через коммиты ветки должна дойти до текущего snapshot'а `main`.
+
+**Устаревшая версия, snapshot не конфликтует** (например, после `git merge origin/main` миграция ветки оказалась старше миграции из `main`). Переименуйте непримененную миграцию в новый timestamp — для каждой топологии, где она есть, с одной версией:
+
+```bash
+CLI=tools/ClickHouseSchemaGen.Cli/bin/Debug/net8.0/ClickHouseSchemaGen.Cli.dll
+V=$(date -u +%Y%m%d%H%M%S)
+for c in clickhouse.codegen.json clickhouse.codegen.cluster.json clickhouse.codegen.cluster.replicated-db.json; do
+  dotnet exec $CLI migrate rebase --config src/Sandbox.Contracts/$c --name <change_name> --version $V
+done
+```
+
+`migrate rebase` переименовывает файл (и строку `-- Migration:` в заголовке, если она есть), пересобирает `00_schema_migrations.sql` и проверяет цепочку snapshot'а: `parentChecksum` должен быть задан, заголовочные `Parent/Target checksum` (если есть) должны совпадать со snapshot'ом; с `--parent-snapshot <файл>` — что snapshot сгенерирован поверх указанного (например, `git show origin/main:docker/clickhouse/init/schema.snapshot.json > /tmp/main.snapshot.json`). Применять только к миграциям, ещё не применённым ни в одном общем окружении.
+
+**Конфликт `schema.snapshot.json` при merge/rebase** — сигнал, что обе ветки сгенерировали миграцию от одного родителя; руками snapshot не сливайте. Перегенерируйте миграцию поверх `main`:
+
+1. `git merge origin/main` (или `git rebase origin/main`); при конфликте возьмите версию `main`: `git checkout --theirs` / `--ours` (в зависимости от merge/rebase) для `schema.snapshot.json` и `00_schema_migrations.sql` всех топологий.
+2. Удалите миграции своей ветки из `docker/*/migrations*/`.
+3. Сгенерируйте миграцию заново (шаг 3 выше) для каждой топологии — версия получится новее `main`, `parentChecksum` укажет на snapshot `main`.
+4. Закоммитьте; `scripts/check-migration-versions.sh origin/main` должен пройти.
+
 ## Кластерный ClickHouse
 
 Стенд **2 шарда × 2 реплики + ансамбль из 3 ClickHouse Keeper** (Docker Compose ≥ 2.24.4; в production Keeper тоже держите не меньше чем из 3 узлов):
