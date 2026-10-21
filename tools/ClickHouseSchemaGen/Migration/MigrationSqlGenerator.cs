@@ -44,7 +44,7 @@ public static partial class MigrationSqlGenerator
         AppendNewKafkaTables(builder, plan, newPlan, cluster);
         AppendPipelineRecreates(builder, plan, newPlan, kafkaRecreates, metaOnlyQueues, cluster);
 
-        AppendManualBlock(builder, plan, cluster);
+        AppendManualBlock(builder, plan, newPlan, cluster);
 
         return SqlText.Normalize(builder.ToString());
     }
@@ -191,7 +191,11 @@ public static partial class MigrationSqlGenerator
         }
     }
 
-    private static void AppendManualBlock(StringBuilder builder, MigrationPlan plan, ClusterDdl cluster)
+    private static void AppendManualBlock(
+        StringBuilder builder,
+        MigrationPlan plan,
+        ResolvedSchemaPlan newPlan,
+        ClusterDdl cluster)
     {
         if (plan.ManualChanges.Count == 0)
             return;
@@ -224,6 +228,9 @@ public static partial class MigrationSqlGenerator
                             + $"'{order.OldOrderBy}' -> '{order.NewOrderBy}', "
                             + $"TTL '{order.OldTtl}' -> '{order.NewTtl}'.");
                     break;
+                case EngineChanged engine:
+                    AppendEngineChangeTemplate(builder, engine, newPlan, cluster);
+                    break;
                 case OriginChanged origin:
                     builder.AppendLine(
                         $"-- Manual origin change for {origin.TableName}: "
@@ -250,6 +257,33 @@ public static partial class MigrationSqlGenerator
         }
 
         builder.AppendLine();
+    }
+
+    private static void AppendEngineChangeTemplate(
+        StringBuilder builder,
+        EngineChanged engine,
+        ResolvedSchemaPlan newPlan,
+        ClusterDdl cluster)
+    {
+        var table = newPlan.MergeTreeTables.First(t =>
+            string.Equals(t.Config.TableName, engine.TableName, StringComparison.OrdinalIgnoreCase)).Config;
+        var storage = cluster.StorageTable(table.TableName);
+        var copy = storage + "__engine_new";
+        var ttl = string.IsNullOrWhiteSpace(table.Ttl) ? null : table.Ttl.Trim();
+
+        builder.AppendLine(
+            $"-- Manual engine change for {engine.TableName}: '{engine.OldEngine}' -> '{engine.NewEngine}'.");
+        builder.AppendLine(
+            $"-- Stop writers to {engine.TableName} (DETACH the Kafka queues feeding it) before copying.");
+        builder.AppendLine($"-- CREATE TABLE {copy}{cluster.OnCluster} AS {storage}");
+        builder.AppendLine($"-- ENGINE = {cluster.StorageEngine(engine.NewEngine)}");
+        builder.AppendLine($"-- ORDER BY {table.OrderBy}{(ttl is null ? ";" : string.Empty)}");
+        if (ttl is not null)
+            builder.AppendLine($"-- TTL {ttl};");
+        builder.AppendLine(
+            $"-- INSERT INTO {copy} SELECT * FROM {storage};{(cluster.Enabled ? " -- once per shard" : string.Empty)}");
+        builder.AppendLine($"-- EXCHANGE TABLES {storage} AND {copy}{cluster.OnCluster};");
+        builder.AppendLine($"-- DROP TABLE {copy}{cluster.OnCluster} SYNC;");
     }
 
     private static string BuildAddColumnClause(ColumnAdded added)

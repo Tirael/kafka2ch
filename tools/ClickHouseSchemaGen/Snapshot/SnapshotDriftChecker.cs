@@ -103,6 +103,11 @@ public static class SnapshotDriftChecker
             if (!string.Equals(expectedTable.OrderBy, actualTable.OrderBy, StringComparison.Ordinal))
                 differences.Add($"MergeTree table '{name}' ORDER BY changed.");
 
+            var expectedEngine = MergeTreeEngines.Normalize(expectedTable.Engine);
+            var actualEngine = MergeTreeEngines.Normalize(actualTable.Engine);
+            if (!string.Equals(expectedEngine, actualEngine, StringComparison.Ordinal))
+                differences.Add($"MergeTree table '{name}' engine changed ('{expectedEngine}' -> '{actualEngine}').");
+
             if (!string.Equals(expectedTable.Ttl?.Trim(), actualTable.Ttl?.Trim(), StringComparison.Ordinal))
                 differences.Add($"MergeTree table '{name}' TTL changed.");
 

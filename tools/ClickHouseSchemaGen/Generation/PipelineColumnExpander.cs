@@ -55,6 +55,7 @@ public static class PipelineColumnExpander
         {
             TableName = table.TableName,
             OrderBy = table.OrderBy,
+            Engine = table.Engine,
             Ttl = table.Ttl,
             ShardingKey = table.ShardingKey,
             MaterializedViewsWriteThroughDistributed = table.MaterializedViewsWriteThroughDistributed,

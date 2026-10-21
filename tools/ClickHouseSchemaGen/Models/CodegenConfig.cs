@@ -140,6 +140,8 @@ public sealed class MergeTreeTableConfig
 
     public required string OrderBy { get; set; }
 
+    public string Engine { get; set; } = MergeTreeEngines.Default;
+
     public string? Ttl { get; set; }
 
     public string? ShardingKey { get; set; }

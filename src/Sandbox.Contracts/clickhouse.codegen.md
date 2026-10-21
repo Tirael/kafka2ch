@@ -352,6 +352,7 @@ Overrides на корне конфига и в таблице **мержатся
 | ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `tableName`   | Имя MergeTree-таблицы                                                                                                                                                              |
 | `orderBy`     | Выражение `ORDER BY`, например `"(event_time, order_id)"`                                                                                                                          |
+| `engine`      | Опционально, по умолчанию `MergeTree`. Движок семейства MergeTree: `MergeTree`, `ReplacingMergeTree[(ver[, is_deleted])]`, `SummingMergeTree[((col, ...))]`, `AggregatingMergeTree`, `CollapsingMergeTree(sign)`. Без `Replicated`-префикса — см. ниже |
 | `ttl`         | Опционально. Выражение table-level `TTL`, например `"event_time + INTERVAL 90 DAY"`. Должно ссылаться только на колонки этой таблицы (не на поля, которых нет в `columns`) |
 | `shardingKey` | Опционально, только кластер. Ключ шардирования `Distributed`-таблицы (по умолчанию `cluster.shardingKey`)                                                                           |
 | `sourceTable` | Опционально. Имя Kafka-таблицы (`kafkaTables[].tableName`) для автозаполнения колонок                                                                                              |
@@ -379,6 +380,26 @@ ENGINE = MergeTree
 ORDER BY (event_time, order_id)
 TTL event_time + INTERVAL 90 DAY;
 ```
+
+#### `engine`
+
+```json
+{
+  "tableName": "orders",
+  "engine": "ReplacingMergeTree(version)",
+  "orderBy": "(order_id)"
+}
+```
+
+Репликацию добавляет генератор по секции `cluster`, поэтому в `engine` указывается только базовый движок (`Replicated*` отклоняется валидатором):
+
+| Топология | `ENGINE` для `"ReplacingMergeTree(version)"` |
+| --- | --- |
+| single-node | `ReplacingMergeTree(version)` |
+| `cluster`, `ddlMode: onCluster` | `ReplicatedReplacingMergeTree('<replicatedPath>', '<replicaName>', version)` в `orders_local` + `Distributed` `orders` |
+| `cluster`, `ddlMode: replicatedDatabase` | `ReplicatedReplacingMergeTree(version)` в `orders_local` + `Distributed` `orders` |
+
+В `schema.snapshot.json` поле `engine` пишется только для не-дефолтного движка; снапшот без поля читается как `MergeTree` (drift не возникает). Смена `engine` — **manual**-изменение: `migrate` кладёт в миграцию закомментированный шаблон `CREATE TABLE <t>__engine_new AS <t> ENGINE = …` → `INSERT INTO … SELECT * FROM <t>` (в кластере — на каждом шарде) → `EXCHANGE TABLES` → `DROP TABLE <t>__engine_new`, остальные изменения той же таблицы тоже уходят в manual. Перед копированием остановите запись (DETACH Kafka-очередей, питающих таблицу).
 
 
 
@@ -502,6 +523,7 @@ TTL event_time + INTERVAL 90 DAY;
 - MergeTree `sourceTable` не совпадает с `kafkaTables[].tableName`
 - Автогенерируемое имя view `{tableName}_mv` уже занято другим materialized view
 - TTL ссылается на колонку, которой нет в `columns` (например `created_at`, когда в `columns` есть только `event_time`)
+- `engine` не из семейства MergeTree (`MergeTree`, `ReplacingMergeTree`, `SummingMergeTree`, `AggregatingMergeTree`, `CollapsingMergeTree`), с `Replicated`-префиксом, с неверным числом аргументов (`CollapsingMergeTree` без `sign`, `MergeTree(x)`) или с несбалансированными скобками
 - `key.format` не `string` / `protobuf`; `key.format: protobuf` без `key.messageType`; `key.messageType` / `skipBytes` / `fieldOverrides` при строковом ключе
 - MV ссылается на `_key.<поле>`, которого нет в protobuf-ключе (или ключ строковый)
 - `repeatedMessageStrategy` не из списка `nested`  `arraytuple`  `flatten`

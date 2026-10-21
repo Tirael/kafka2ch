@@ -46,6 +46,9 @@ public static class MigrationPolicy
                 case OrderByOrTtlChanged order:
                     manualTables.Add(order.TableName);
                     break;
+                case EngineChanged engine:
+                    manualTables.Add(engine.TableName);
+                    break;
                 case ColumnTypeChanged { Kind: TypeChangeKind.Manual or TypeChangeKind.Destructive } typeChanged:
                     manualTables.Add(typeChanged.TableName);
                     break;
@@ -72,6 +75,7 @@ public static class MigrationPolicy
             ColumnRemoved => true,
             ColumnTypeChanged { Kind: TypeChangeKind.Destructive or TypeChangeKind.Manual } => true,
             OrderByOrTtlChanged => true,
+            EngineChanged => true,
             OriginChanged => true,
             TrailingSqlChanged => true,
             TableRemoved => true,

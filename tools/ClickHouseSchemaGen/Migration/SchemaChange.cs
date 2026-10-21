@@ -45,6 +45,8 @@ public sealed record OrderByOrTtlChanged(
     string? OldTtl,
     string? NewTtl) : SchemaChange;
 
+public sealed record EngineChanged(string TableName, string OldEngine, string NewEngine) : SchemaChange;
+
 public sealed record OriginChanged(string TableName, PlanOrigin OldOrigin, PlanOrigin NewOrigin) : SchemaChange;
 
 public sealed record SourceTableChanged(string TableName, string? OldSourceTable, string? NewSourceTable) : SchemaChange;
@@ -74,6 +76,7 @@ public sealed record MigrationPlan
             ColumnAdded => true,
             ColumnTypeChanged { Kind: TypeChangeKind.Destructive or TypeChangeKind.Manual } => true,
             OrderByOrTtlChanged => true,
+            EngineChanged => true,
             OriginChanged => true,
             TrailingSqlChanged => true,
             TableRemoved => true,

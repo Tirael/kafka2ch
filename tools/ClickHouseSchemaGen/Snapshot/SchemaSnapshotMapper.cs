@@ -129,6 +129,7 @@ public static class SchemaSnapshotMapper
             Origin = plan.Origin,
             SourceTable = plan.Config.SourceTable,
             OrderBy = plan.Config.OrderBy,
+            Engine = MergeTreeEngines.ToSnapshot(plan.Config.Engine),
             Ttl = plan.Config.Ttl,
             Columns = plan.Config.Columns
                 .Select(c => new SnapshotColumn
@@ -165,6 +166,7 @@ public static class SchemaSnapshotMapper
             {
                 TableName = snapshot.TableName,
                 OrderBy = snapshot.OrderBy,
+                Engine = MergeTreeEngines.Normalize(snapshot.Engine),
                 Ttl = snapshot.Ttl,
                 SourceTable = snapshot.SourceTable,
                 Columns = snapshot.Columns
