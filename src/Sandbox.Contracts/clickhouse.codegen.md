@@ -48,7 +48,7 @@ dotnet build src/Sandbox.Contracts
 | `defaults`       | нет                | Глобальные правила маппинга proto -> ClickHouse     |
 | `kafkaTables`    | **да** (не пустой) | Kafka Engine таблицы (по одной на message)         |
 | `fieldOverrides` | нет                | Глобальные overrides полей (мержатся с табличными) |
-| `pipeline`       | нет                | MergeTree + materialized views + произвольный SQL  |
+| `pipeline`       | нет                | MergeTree + materialized views + агрегаты + произвольный SQL |
 | `migrations`     | нет                | пути снапшота и каталога SQL-миграций              |
 | `cluster`        | нет                | кластерный ClickHouse (выключен, пока нет `name`)  |
 | `extends`        | нет                | базовый конфиг, поверх которого применяется этот   |
@@ -81,7 +81,7 @@ ORDER BY (event_time, order_id, kafka_partition, kafka_offset)
 - Схлопывание происходит при слияниях, поэтому точные чтения — `SELECT … FROM orders FINAL`; `count() FROM orders FINAL = uniqExact(kafka_partition, kafka_offset)`.
 - Строки, перенесённые миграцией из старой `MergeTree`, получают `kafka_partition = kafka_offset = 0` и схлопываются по `(event_time, order_id)`.
 
-**Агрегаты `orders_agg_1m`** — refreshable MV `REFRESH EVERY 1 MINUTE` с **полным пересчётом** `FROM orders FINAL` в обычную `MergeTree` (каждый refresh атомарно подменяет содержимое). Insert-триггерный `SummingMergeTree` суммировал бы каждую повторную вставку, а дедуп `orders` случается позже, при слиянии. Скользящее окно не выбрано: refresh без `APPEND` заменяет всю таблицу, поэтому окно стёрло бы старые минуты, а `APPEND` + окно снова требует дедупа цели. Цена: агрегаты отстают до минуты, каждый refresh читает весь `orders` (для демо приемлемо; для больших объёмов — партиционирование и пересчёт только свежих партиций). `ReadAggregates` читает `sum(...) GROUP BY minute, category` (в кластере строки шардов складываются) и логирует `system.view_refreshes.last_success_time`. Принудительно: `SYSTEM REFRESH VIEW orders_agg_mv; SYSTEM WAIT VIEW orders_agg_mv`.
+**Агрегаты `orders_agg_1m`** (объявлены в [`pipeline.aggregates[]`](#aggregates)) — refreshable MV `REFRESH EVERY 1 MINUTE` с **полным пересчётом** `FROM orders FINAL` в обычную `MergeTree` (каждый refresh атомарно подменяет содержимое). Insert-триггерный `SummingMergeTree` суммировал бы каждую повторную вставку, а дедуп `orders` случается позже, при слиянии. Скользящее окно не выбрано: refresh без `APPEND` заменяет всю таблицу, поэтому окно стёрло бы старые минуты, а `APPEND` + окно снова требует дедупа цели. Цена: агрегаты отстают до минуты, каждый refresh читает весь `orders` (для демо приемлемо; для больших объёмов — партиционирование и пересчёт только свежих партиций). `ReadAggregates` читает `sum(...) GROUP BY minute, category` (в кластере строки шардов складываются) и логирует `system.view_refreshes.last_success_time`. Принудительно: `SYSTEM REFRESH VIEW orders_agg_mv; SYSTEM WAIT VIEW orders_agg_mv`.
 
 Смена движка/ключа — manual-миграция `*_dedup_orders_by_kafka_offset.sql` (по одной на топологию): DETACH очереди → копия `orders` в новую `ReplacingMergeTree`-таблицу (в кластере через временную `Distributed`) → `EXCHANGE TABLES` → пересоздание `orders_agg_1m` / `orders_agg_mv` → ATTACH очереди и новый `orders_mv` с `_partition` / `_offset`.
 
@@ -97,7 +97,7 @@ ORDER BY (event_time, order_id, kafka_partition, kafka_offset)
 
 Workflow: правка proto → build падает на drift → `Cli migrate --name …` → review/commit → apply через `clickhouse-migrate` / Migrator. Только BACKWARD-compatible эволюция proto; `SkipClickHouseSnapshotCheck=true` — escape hatch.
 
-Формат снапшота — `version: 2`: кроме v1-полей хранит `cluster`, `kafkaTables[].key` (`format`, `messageType`, `skipBytes`) и per-table `shardingKey` / `materializedViewsWriteThroughDistributed`. Снапшот `version: 1` читается с апгрейдом в памяти: недостающие поля берутся из текущего конфига (считается, что топология и ключи с момента v1 не менялись). `Cli migrate snapshot-upgrade --config … --assemblies …` переписывает файл в v2 без изменения схемы и без новой миграции — сделайте это **до** смены топологии или ключа, иначе изменение не будет замечено. Смена `key` (формат, тип, `skipBytes`) — пересоздание Kafka-таблицы и её MV (автоматически).
+Формат снапшота — `version: 2`: кроме v1-полей хранит `cluster`, `kafkaTables[].key` (`format`, `messageType`, `skipBytes`), per-table `shardingKey` / `materializedViewsWriteThroughDistributed` и `aggregates` (разрешённые типы колонок; поле опускается, если агрегатов нет). Снапшот `version: 1` читается с апгрейдом в памяти: недостающие поля берутся из текущего конфига (считается, что топология и ключи с момента v1 не менялись). `Cli migrate snapshot-upgrade --config … --assemblies …` переписывает файл в v2 без изменения схемы и без новой миграции — сделайте это **до** смены топологии или ключа, иначе изменение не будет замечено. Смена `key` (формат, тип, `skipBytes`) — пересоздание Kafka-таблицы и её MV (автоматически).
 
 ---
 
@@ -123,7 +123,7 @@ Workflow: правка proto → build падает на drift → `Cli migrate 
 
 Макросы `{shard}` / `{replica}` — в `<macros>` каждой ноды. Для production Keeper — ансамбль из **не менее 3** узлов (в compose-демо так и сделано).
 
-**Цель MV (default = `_local`):** Kafka→raw MV на каждой ноде пишет в свой шард (`TO t_local`). Опция `materializedViewsWriteThroughDistributed` переключает `TO t`, чтобы строки перешардировались по `shardingKey` (дороже; нужно, если ключ шардирования важнее привязки к партиции Kafka). Agg-MV из `trailingSql` всегда читают `FROM *_local`, даже при write-through.
+**Цель MV (default = `_local`):** Kafka→raw MV на каждой ноде пишет в свой шард (`TO t_local`). Опция `materializedViewsWriteThroughDistributed` переключает `TO t`, чтобы строки перешардировались по `shardingKey` (дороже; нужно, если ключ шардирования важнее привязки к партиции Kafka). Refreshable MV агрегатов (`aggregates[]` и refreshable MV в `trailingSql`) всегда пишут в `*_local`, даже при write-through; источник — см. [`aggregates[]`](#aggregates).
 
 **Trade-off размещения (R15 / TP-8).** Write-through пишет в `Distributed` асинхронно: Kafka engine коммитит offset, когда блок принят в очередь `Distributed`, а не доставлен на шард, — сбой ноды между этими моментами теряет строки. Поэтому демо-конфиги (включая `replicatedDatabase`) пишут в `*_local`: offset коммитится только после записи в локальную реплицированную таблицу. Цена — шард строки определяется тем, какая нода получила партицию Kafka, а не `shardingKey`: `Distributed` `orders` с `cityHash64(order_id)` в этом режиме только читает. Следствие для дедупа: повторная доставка после ребаланса consumer group может попасть на другой шард, а `ReplacingMergeTree`/`FINAL` схлопывает дубли только внутри шарда — такие дубли ловит `scripts/verify-cluster.sh` (`count() FROM orders FINAL` ≠ `uniqExact(order_id)` → fail). Если важнее перешардирование по ключу, включите write-through **и** `distributed_foreground_insert = 1` в профиле пользователя Kafka-MV (синхронная доставка, медленнее consume).
 
@@ -415,6 +415,7 @@ Overrides на корне конфига и в таблице **мержатся
   "outputPath": "../../docker/clickhouse/init/02_pipeline.sql",
   "mergeTreeTables": [ ... ],
   "materializedViews": [ ... ],
+  "aggregates": [ ... ],
   "trailingSql": "CREATE TABLE ..."
 }
 ```
@@ -564,19 +565,70 @@ TTL event_time + INTERVAL 90 DAY;
 
 
 
+### `aggregates[]`
+
+Агрегат — first-class сущность: генератор сам строит целевую таблицу (типы колонок выводятся из `sourceTable`) и refreshable MV с полным пересчётом `FROM <sourceTable> FINAL`, в снапшот попадают поля агрегата, а `migrate` сравнивает их по отдельности. Демо `orders_agg_1m`:
+
+```json
+"aggregates": [
+  {
+    "name": "orders_agg_1m",
+    "viewName": "orders_agg_mv",
+    "sourceTable": "orders",
+    "timeBucket": { "column": "event_time", "function": "toStartOfMinute", "alias": "minute" },
+    "groupBy": [ "category" ],
+    "measures": [
+      { "function": "count", "alias": "orders_count" },
+      { "function": "sum", "column": "amount", "alias": "total_amount" },
+      { "function": "sum", "column": "quantity", "alias": "total_qty" }
+    ],
+    "refresh": { "every": "1 MINUTE" }
+  }
+]
+```
+
+| Поле | По умолчанию | Описание |
+| --- | --- | --- |
+| `name` | — | целевая таблица (в кластере `name_local` + `Distributed` `name`) |
+| `viewName` | `{name}_mv` | имя refreshable MV |
+| `sourceTable` | — | одна из `pipeline.mergeTreeTables` |
+| `engine` | `MergeTree` | движок цели (семейство MergeTree, без `Replicated`) |
+| `orderBy` | `(alias корзины, groupBy…)`; `tuple()` без ключей | `ORDER BY` цели |
+| `final` | `true`, если движок источника не `MergeTree` | `FROM source FINAL`; `final: true` над `MergeTree` — ошибка валидации |
+| `timeBucket` | — | `column`, `function` (`toStartOfMinute` (default), `toStartOfFiveMinutes`, `toStartOfFifteenMinutes`, `toStartOfHour`, `toStartOfDay` → `DateTime`; `toDate`, `toMonday`, `toStartOfMonth` → `Date`), `alias`, опц. `type` |
+| `groupBy` | `[]` | колонки источника; тип копируется из источника |
+| `measures[]` | — (≥ 1) | `function`: `count` (без `column`), `sum`, `avg`, `min`, `max`, `any`, `uniq`, `uniqExact`; `column`, `alias`, опц. `type` |
+| `refresh.mode` | `refreshable` | единственный режим: insert-триггерный MV посчитал бы повторные доставки Kafka до дедупа источника |
+| `refresh.every` | — | `<n> SECOND\|MINUTE\|HOUR\|DAY\|WEEK\|MONTH\|YEAR` |
+
+Вывод типов: `count`/`uniq`/`uniqExact` → `UInt64`; `sum` целых → `Int64`/`UInt64`, `Float*` → `Float64`; `avg` → `Float64`; `min`/`max`/`any` — тип колонки; `Nullable(T)` сохраняется. Что не выводится (например `sum` по `Decimal`/`String`) — ошибка генерации с просьбой задать `measures[].type`.
+
+Колонки цели: корзина, `groupBy`, меры — в этом порядке; `SELECT` — те же выражения с `AS alias`, `GROUP BY` — ключи. Агрегаты рендерятся после MV пайплайна и до `trailingSql`.
+
+**Топологии** (refresh без `APPEND` атомарно подменяет цель через `EXCHANGE`, что невозможно для `Distributed`, а `Replicated*`-цель refresh ClickHouse поддерживает только в Replicated database):
+
+| Топология | `TO` | Движок цели | Источник | Кто выполняет refresh |
+| --- | --- | --- | --- | --- |
+| single-node | `name` | `engine` | `source FINAL` | нода |
+| `onCluster` (Atomic) | `name_local` (даже при write-through) | **`engine` без `Replicated`** | `source_local FINAL` — каждая нода агрегирует свой шард | каждая нода независимо (uncoordinated); реплики шарда считают одно и то же из реплицированного источника |
+| `replicatedDatabase` | `name_local` | `Replicated<engine>` (без аргументов) | `Distributed` `source FINAL` (`FINAL` на каждом шарде) — глобальный результат | coordinated (Keeper-путь `default_replica_path` = `/clickhouse/tables/{uuid}/{shard}`); после refresh данные есть только на шарде refresh-реплики |
+
+В обоих кластерных режимах `Distributed` `name` над `name_local` даёт итог по кластеру ровно один раз — читать через `sum(...) GROUP BY`.
+
+**Миграции.** Снапшот хранит агрегат целиком (`viewName`, `sourceTable`, `engine`, `orderBy`, `final`, `refreshMode`/`refreshEvery`, `timeBucket`, `groupBy`/`measures` с разрешёнными типами); drift-check сравнивает каждое поле, `migrate` — по полям:
+
+| Изменение | Тип | SQL |
+| --- | --- | --- |
+| новый агрегат | автоматически | `CREATE TABLE IF NOT EXISTS` (+ `Distributed`) и MV |
+| `refresh`, `viewName`, `sourceTable`, `final`, функция/колонка меры или корзины при тех же колонках цели | автоматически | `DROP VIEW IF EXISTS <старое имя>` + `CREATE MATERIALIZED VIEW` |
+| колонки цели (добавить/удалить/переименовать меру, `groupBy`, alias, тип), `engine`, `orderBy` | **manual** | закомментированный шаблон: `DROP VIEW`, `DROP TABLE` (в кластере ещё `name_local … SYNC`), полный DDL цели и MV; следующий refresh заполнит таблицу заново |
+| удалить агрегат | **manual** | закомментированные `DROP VIEW` / `DROP TABLE` |
+
+**Перенос из `trailingSql`.** Если `trailingSql` удалён, а новые `aggregates[]` в single-node рендерятся ровно в прежний текст `trailingSql` (тот же SHA-256), `migrate` распознаёт перенос: снапшот обновляется (`trailingSqlHash` → `aggregates`), SQL-миграция не создаётся. Init-скрипты при этом байт-в-байт прежние во всех топологиях — так демо `orders_agg_1m` переехал из `trailingSql`. Если текст отличается, остаётся manual `TrailingSqlChanged` + автоматический `AggregateAdded`.
+
 ### `trailingSql`
 
-Произвольный SQL, дописывается в конец файла (агрегаты, дополнительные MV и т.п.). Может быть многострочной строкой JSON с `\n`. В кластерном режиме переписывается (см. [`cluster`](#cluster-кластерный-clickhouse)).
-
-**Refreshable MV** (`CREATE MATERIALIZED VIEW v REFRESH … [APPEND] TO t AS …`) в кластере переписываются особо — refresh без `APPEND` атомарно подменяет содержимое цели через `EXCHANGE`, что невозможно для `Distributed`:
-
-| Топология | Объекты | Движок цели | Кто выполняет refresh |
-| --- | --- | --- | --- |
-| single-node | `t` | как в SQL | нода |
-| `onCluster` (Atomic) | всегда `t_local` (даже при write-through) | **как в SQL, без `Replicated`** | каждая нода независимо (uncoordinated); реплики шарда считают одно и то же из реплицированного источника |
-| `replicatedDatabase` | `default.t` и `default.v` с `ON CLUSTER` (Atomic `default`, не Replicated database; без `t_local` / `Distributed`) | **как в SQL, без `Replicated`** | каждая нода независимо (uncoordinated), каждая хранит полный агрегат кластера |
-
-Источник: в `onCluster` `FROM t FINAL` для известных storage-таблиц переписывается в `FROM t_local FINAL` (каждая нода агрегирует свой шард); в `onCluster` `Distributed` над `t_local` даёт итог по кластеру ровно один раз — читать через `sum(...) GROUP BY`. В `replicatedDatabase` источники-storage-таблицы квалифицируются в глобальный `Distributed` `<replicatedDatabaseName>.t` (`FROM kafka2ch.orders FINAL`, `FINAL` применяется на каждом шарде), а ссылки на refresh-цели — в `default.t`; все имена полные, поэтому statement'ы работают и без `USE`, и под `USE kafka2ch`, а Replicated database их не создаёт. Читать локально на ноде подключения: `SELECT … FROM default.t` (без `Distributed`, иначе итог умножится на число шардов); `ReadAggregates` делает это при `ReadAggregates__Database=default` (`docker-compose.cluster.replicated-db.yml`). Цена и причина выбора — [R15 / TP-8](#cluster-кластерный-clickhouse).
+Произвольный SQL, дописывается в конец файла — для редких объектов, которые не выражаются через `mergeTreeTables` / `materializedViews` / `aggregates` (словари, функции, нестандартные MV). Может быть многострочной строкой JSON с `\n`. В снапшоте хранится только хэш: любое изменение — manual `TrailingSqlChanged`. В кластерном режиме переписывается `ClusterTrailingSqlRewriter` (см. [`cluster`](#cluster-кластерный-clickhouse)): таблицы семейства MergeTree → `Replicated*` `t_local` + `Distributed` `t`, `FROM`/`TO` известных storage-таблиц (включая цели `aggregates[]`) → `*_local`. Refreshable MV (`CREATE MATERIALIZED VIEW v REFRESH … [APPEND] TO t AS …`) переписываются по тем же правилам топологий, что и [`aggregates[]`](#aggregates) (цель `t_local`, в `onCluster` без `Replicated`; источник `t_local` в `onCluster`, `Distributed` `t` в `replicatedDatabase`).
 
 ---
 
@@ -617,4 +669,5 @@ TTL event_time + INTERVAL 90 DAY;
 - `repeatedMessageStrategy` не из списка `nested`  `arraytuple`  `flatten`
 - `cluster.name` не идентификатор; `replicatedPath` без `{table}` / `{uuid}`; `historyReplicatedPath` с `{shard}`
 - имя `<table><localTableSuffix>` совпадает с уже существующей таблицей / view
+- `aggregates[]`: `sourceTable` не из `pipeline.mergeTreeTables`; нет мер; функция меры/корзины не из списка; `count` с `column` или другая функция без `column`; дубли колонок цели; `refresh.mode` не `refreshable`; `refresh.every` не `<n> UNIT`; `final: true` над `MergeTree`; имя агрегата или его view занято; при генерации — колонка, которой нет в источнике, или невыводимый тип меры
 
