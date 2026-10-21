@@ -6,3 +6,7 @@ public sealed record OrderAggregateRow(
     ulong OrdersCount,
     double TotalAmount,
     ulong TotalQty);
+
+public sealed record OrderAggregatesSnapshot(
+    DateTime? RefreshedAt,
+    IReadOnlyList<OrderAggregateRow> Rows);

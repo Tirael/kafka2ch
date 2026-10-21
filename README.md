@@ -210,11 +210,11 @@ dotnet run --project src/Sandbox.App
 # Schema Registry subjects
 curl -s http://localhost:8081/subjects
 
-# Число сырых заказов
+# Число заказов (ReplacingMergeTree по (kafka_partition, kafka_offset): точный счёт — через FINAL)
 docker exec clickhouse clickhouse-client --password sandbox \
-  --query "SELECT count() FROM orders"
+  --query "SELECT count() FROM orders FINAL"
 
-# Поминутные агрегаты (SummingMergeTree — всегда через GROUP BY / sum)
+# Поминутные агрегаты (refreshable MV раз в минуту поверх orders FINAL; в кластере — через GROUP BY / sum)
 docker exec clickhouse clickhouse-client --password sandbox --query "
 SELECT minute, category,
        sum(orders_count) AS orders_count,
@@ -248,7 +248,7 @@ curl -s http://localhost:8081/subjects/orders-value/versions/latest | jq .
 
 ### Задержка появления данных
 
-Kafka engine в ClickHouse флашит блоками (размер блока / таймаут). В демо задержка в несколько секунд до появления строк в `orders` / `orders_agg_1m` — нормальное поведение.
+Kafka engine в ClickHouse флашит блоками (размер блока / таймаут). В демо задержка в несколько секунд до появления строк в `orders` — нормальное поведение. `orders_agg_1m` пересчитывается refreshable MV раз в минуту (`REFRESH EVERY 1 MINUTE`), поэтому агрегаты отстают до минуты; принудительно: `SYSTEM REFRESH VIEW orders_agg_mv`. Дедуп и модель агрегатов — [clickhouse.codegen.md](src/Sandbox.Contracts/clickhouse.codegen.md#дедуп-orders-at-least-once-kafka-engine).
 
 ## Сборка, codegen и тесты
 

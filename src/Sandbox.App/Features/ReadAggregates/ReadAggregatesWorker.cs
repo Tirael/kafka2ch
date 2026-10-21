@@ -14,27 +14,30 @@ public sealed class ReadAggregatesWorker(
         {
             try
             {
-                var orders = await StartupRetry.ExecuteAsync(
+                var snapshot = await StartupRetry.ExecuteAsync(
                     () => QueryOrderAggregatesAsync(stoppingToken),
                     new RetryContext(logger, timeProvider, stoppingToken));
 
-                if (orders.Count == 0)
+                if (snapshot.Rows.Count == 0)
                 {
                     logger.LogInformation(
-                        "No order aggregates in the last {WindowMinutes} minutes",
-                        _options.WindowMinutes);
+                        "No order aggregates in the last {WindowMinutes} minutes (refreshed at {RefreshedAt:u})",
+                        _options.WindowMinutes,
+                        snapshot.RefreshedAt);
                 }
                 else
                 {
-                    foreach (var row in orders)
+                    foreach (var row in snapshot.Rows)
                     {
                         logger.LogInformation(
-                            "Order aggregate {Minute:u} {Category}: orders={OrdersCount} amount={TotalAmount:F2} qty={TotalQty}",
+                            "Order aggregate {Minute:u} {Category}: orders={OrdersCount} amount={TotalAmount:F2} qty={TotalQty} " +
+                            "(refreshed at {RefreshedAt:u})",
                             row.Minute,
                             row.Category,
                             row.OrdersCount,
                             row.TotalAmount,
-                            row.TotalQty);
+                            row.TotalQty,
+                            snapshot.RefreshedAt);
                     }
                 }
             }
@@ -47,11 +50,19 @@ public sealed class ReadAggregatesWorker(
         }
     }
 
-    private async Task<IReadOnlyList<OrderAggregateRow>> QueryOrderAggregatesAsync(
-        CancellationToken cancellationToken)
+    private async Task<OrderAggregatesSnapshot> QueryOrderAggregatesAsync(CancellationToken cancellationToken)
     {
         await using var connection = connectionFactory.CreateConnection();
         await connection.OpenAsync(cancellationToken);
+
+        await using var refreshCommand = connection.CreateCommand();
+        refreshCommand.CommandText =
+            """
+            SELECT max(last_success_time)
+            FROM system.view_refreshes
+            WHERE database = currentDatabase() AND view = 'orders_agg_mv'
+            """;
+        var refreshedAt = await refreshCommand.ExecuteScalarAsync(cancellationToken) as DateTime?;
 
         await using var command = connection.CreateCommand();
         command.CommandText =
@@ -79,6 +90,6 @@ public sealed class ReadAggregatesWorker(
                 Convert.ToUInt64(reader.GetValue(4))));
         }
 
-        return rows;
+        return new OrderAggregatesSnapshot(refreshedAt, rows);
     }
 }
