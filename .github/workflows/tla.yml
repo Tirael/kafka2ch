@@ -1,0 +1,47 @@
+name: TLA+
+
+on:
+  schedule:
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "specs/**"
+      - "scripts/check-tla.sh"
+      - ".github/workflows/tla.yml"
+
+concurrency:
+  group: tla-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  tlc:
+    name: TLC model check
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Java
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      # scripts/check-tla.sh pins tla2tools.jar (version + sha256), downloads it,
+      # and fails on any unexpected result for specs/*.cfg.
+      - name: Run TLC on specs/*.cfg
+        run: bash scripts/check-tla.sh
+
+      - name: Upload TLC logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: tlc-logs
+          path: artifacts/tlc/*.log
+          if-no-files-found: ignore
