@@ -97,6 +97,8 @@ ORDER BY (event_time, order_id, kafka_partition, kafka_offset)
 
 Workflow: правка proto → build падает на drift → `Cli migrate --name …` → review/commit → apply через `clickhouse-migrate` / Migrator. Только BACKWARD-compatible эволюция proto; `SkipClickHouseSnapshotCheck=true` — escape hatch.
 
+Формат снапшота — `version: 2`: кроме v1-полей хранит `cluster`, `kafkaTables[].key` (`format`, `messageType`, `skipBytes`) и per-table `shardingKey` / `materializedViewsWriteThroughDistributed`. Снапшот `version: 1` читается с апгрейдом в памяти: недостающие поля берутся из текущего конфига (считается, что топология и ключи с момента v1 не менялись). `Cli migrate snapshot-upgrade --config … --assemblies …` переписывает файл в v2 без изменения схемы и без новой миграции — сделайте это **до** смены топологии или ключа, иначе изменение не будет замечено. Смена `key` (формат, тип, `skipBytes`) — пересоздание Kafka-таблицы и её MV (автоматически).
+
 ---
 
 ## `cluster` (кластерный ClickHouse)
@@ -129,7 +131,7 @@ Workflow: правка proto → build падает на drift → `Cli migrate 
 
 **`ddlMode=replicatedDatabase`:** `CREATE DATABASE … ON CLUSTER … ENGINE = Replicated('<replicatedDatabasePath>', '{shard}', '{replica}')` (топология БД совпадает с `remote_servers`: 2 шарда × 2 реплики в compose), затем `schema_migrations` в `default` с `ON CLUSTER` и общим Keeper-путём (история на всех шардах), `USE <replicatedDatabaseName>`; таблицы/MV — `Replicated*MergeTree` без аргументов (путь задаёт Replicated DB), без `ON CLUSTER`. `DETACH` очередей — `PERMANENTLY`. Migrator: `--ddl-mode replicatedDatabase` / `ClickHouse__DdlMode`, `ClickHouse__Database=<replicatedDatabaseName>`. Пример: [`clickhouse.codegen.cluster.replicated-db.json`](clickhouse.codegen.cluster.replicated-db.json); compose: `-f docker-compose.cluster.yml -f docker-compose.cluster.replicated-db.yml`.
 
-Снапшот/drift кластер не учитывают. Один проект на single-node и cluster → **отдельные** `migrations` / snapshot / `00_*.sql` на конфиг; `Cli migrate --config …` и apply — **отдельно для каждого** конфига (это ожидаемо).
+Снапшот (`version: 2`) хранит секцию `cluster` (`name`, `ddlMode`, `localTableSuffix`, `shardingKey`, `materializedViewsWriteThroughDistributed`; `null` — single-node) и per-table `shardingKey` / `materializedViewsWriteThroughDistributed` у `mergeTreeTables`. Их смена — drift на build и **manual** `ClusterTopologyChanged` в `migrate`: генератор не умеет переносить данные между топологиями, миграция содержит только комментарий «нужна миграция данных/топологии». Пути Keeper и параметры Replicated database в снапшот не входят. Один проект на single-node и cluster → **отдельные** `migrations` / snapshot / `00_*.sql` на конфиг; `Cli migrate --config …` и apply — **отдельно для каждого** конфига (это ожидаемо).
 
 ### `extends` / `outputDirectory`
 
