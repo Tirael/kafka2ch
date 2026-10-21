@@ -38,6 +38,7 @@ cp .env.example .env
 | `CLICKHOUSE_IMAGE` | ClickHouse Server | `clickhouse/clickhouse-server:26.6.3.62` |
 | `CLICKHOUSE_PASSWORD` | пароль пользователя `default` | `sandbox` |
 | `KAFKA_UI_IMAGE` | Kafka UI | `provectuslabs/kafka-ui:v0.7.2` |
+| `PROMETHEUS_IMAGE` | Prometheus (профиль `observability`) | `prom/prometheus:v3.5.0` |
 
 Пароль ClickHouse должен совпадать с `ClickHouse__Password` / секцией `ClickHouse` в приложении (в compose уже прокидывается из `.env`).
 
@@ -49,6 +50,8 @@ cp .env.example .env
 | `8081` | Schema Registry |
 | `8123` / `9000` | ClickHouse HTTP / native |
 | `8080` | Kafka UI |
+| `9363` | ClickHouse Prometheus endpoint (`/metrics`) |
+| `9090` | Prometheus (профиль `observability`) |
 
 Внутри Docker-сети брокер доступен как `kafka:9092`, с хоста — `localhost:29092`.
 
@@ -63,6 +66,7 @@ cp .env.example .env
 | `PublishOrders__Topic` / `IntervalMs` | топик и интервал публикации заказов |
 | `ClickHouse__Host` / `Port` / `Password` / … | подключение к ClickHouse |
 | `ReadAggregates__IntervalMs` / `WindowMinutes` | период и окно чтения агрегатов |
+| `ConsumerHealth__IntervalMs` / `Cluster` / … | health-check Kafka consumers ClickHouse ([docs/observability.md](docs/observability.md#health-check-в-sandboxapp)) |
 
 В docker-compose эти значения уже заданы для работы внутри сети (`kafka:9092`, `clickhouse:8123` и т.д.).
 
@@ -82,7 +86,7 @@ docker compose ps
 docker compose logs -f sandbox-app
 ```
 
-В логах `sandbox-app` должны появляться сообщения о публикации и периодический вывод агрегатов.
+В логах `sandbox-app` должны появляться сообщения о публикации, периодический вывод агрегатов и строка `Kafka consumers of orders_queue: Healthy …` от health-check.
 
 Остановка:
 
@@ -235,6 +239,8 @@ docker exec clickhouse clickhouse-client --password sandbox \
   --query "SELECT * FROM system.kafka_consumers FORMAT Vertical"
 ```
 
+Наблюдаемость (назначения, lag, `orders_queue_errors`, `system.view_refreshes`, Prometheus endpoint `:9363`, алерты, health-check `ConsumerHealth` в логах `sandbox-app`) — [docs/observability.md](docs/observability.md). Prometheus с правилами алертов: `docker compose --profile observability up -d`.
+
 Kafka UI: http://localhost:8080
 
 ### Schema Registry
@@ -277,7 +283,7 @@ dotnet test tests/ClickHouseSchemaGen.UnitTests
 dotnet test tests/ClickHouseSchemaGen.IntegrationTests
 ```
 
-Тесты не зависят от `src/Sandbox.Contracts` и `docker/`: собственные `.proto`, фикстуры `clickhouse.codegen*.json` и `keeper-test.xml` лежат в [`tests/ClickHouseSchemaGen.TestContracts`](tests/ClickHouseSchemaGen.TestContracts) и копируются в `bin/…/TestContracts/` (пути — `TestContractsPaths`).
+Тесты не зависят от `src/Sandbox.Contracts` и `docker/` (из `src/` подключается только `Sandbox.Observability`; unit-тесты лишь сверяют `.env.example`, compose и `docker/clickhouse/config/prometheus.xml` с фикстурами): собственные `.proto`, фикстуры `clickhouse.codegen*.json`, `keeper-test.xml` и `prometheus.xml` лежат в [`tests/ClickHouseSchemaGen.TestContracts`](tests/ClickHouseSchemaGen.TestContracts) и копируются в `bin/…/TestContracts/` (пути — `TestContractsPaths`).
 
 ### NuGet-пакеты (внешний consumer)
 
@@ -357,14 +363,16 @@ docker exec kafka kafka-console-consumer \
 ## Структура репозитория
 
 ```
-src/Sandbox.App/          # worker: PublishOrders, ReadAggregates
+src/Sandbox.App/          # worker: PublishOrders, ReadAggregates, ConsumerHealth
+src/Sandbox.Observability/ # SQL и оценка здоровья Kafka consumers ClickHouse
 src/Sandbox.Contracts/    # protobuf + clickhouse.codegen.json
 tools/ClickHouseSchemaGen # proto3 → ClickHouse DDL (+ .Tasks / .Cli / .Migrator NuGet)
 samples/NuGetCodegenSmoke # smoke: restore Tasks package + generate
 tests/ClickHouseSchemaGen.TestContracts # test-only protobuf + codegen/Keeper fixtures
 docker/clickhouse/        # init SQL + format schemas
 docker/clickhouse-cluster/ # init SQL, migrations и конфиги кластерного варианта
-docs/                     # ATAM, TLA+/TLC-отчёт, Kafka2/ClickPipes assessments
+docker/prometheus/        # scrape-конфиги, правила алертов и promtool-тесты
+docs/                     # ATAM, TLA+/TLC-отчёт, Kafka2/ClickPipes assessments, observability
 scripts/verify-pipeline.sh
 scripts/verify-cluster.sh
 scripts/pack-verify.sh    # dotnet pack + NuGet smoke + unit tests
