@@ -186,6 +186,13 @@ public sealed class KafkaPipelineFixture : IAsyncLifetime
         await ExecuteAsync("SYSTEM WAIT VIEW orders_agg_mv");
     }
 
+    public async Task<string> ReadServerErrorLogAsync()
+    {
+        var result = await _clickHouse.ExecAsync(
+            ["sh", "-c", "tail -n 50 /var/log/clickhouse-server/clickhouse-server.err.log"]);
+        return result.Stdout + result.Stderr;
+    }
+
     public async Task<object?> ScalarAsync(string sql)
     {
         await using var connection = new ClickHouseConnection(_clickHouse.GetConnectionString());

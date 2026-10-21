@@ -69,8 +69,7 @@ public sealed class ConsumerHealthE2ETests : IAsyncLifetime
         brokenReport.Issues.Should().Contain(issue => issue.Contains("1 parse errors"));
         brokenReport.AssignedPartitions.Should().Be(KafkaPipelineFixture.TopicPartitions);
 
-        using var http = new HttpClient();
-        var metrics = await http.GetStringAsync(_pipeline.PrometheusMetricsUri);
+        var metrics = await ScrapeMetricsAsync();
         MetricValue(metrics, "ClickHouseMetrics_KafkaAssignedPartitions").Should().BeGreaterThan(0);
         MetricValue(metrics, "ClickHouseProfileEvents_KafkaCommits").Should().BeGreaterThan(0);
         MetricValue(metrics, "ClickHouseProfileEvents_KafkaMessagesPolled").Should().BeGreaterThan(0);
@@ -90,6 +89,28 @@ public sealed class ConsumerHealthE2ETests : IAsyncLifetime
                 .WithEndOffsetsAsync(admin, TimeSpan.FromSeconds(10));
             if (condition(snapshot) || DateTimeOffset.UtcNow >= deadline)
                 return snapshot;
+
+            await Task.Delay(PollInterval);
+        }
+    }
+
+    private async Task<string> ScrapeMetricsAsync()
+    {
+        using var http = new HttpClient();
+        var deadline = DateTimeOffset.UtcNow + TimeSpan.FromSeconds(30);
+        while (true)
+        {
+            using var response = await http.GetAsync(_pipeline.PrometheusMetricsUri);
+            var body = await response.Content.ReadAsStringAsync();
+            if (response.IsSuccessStatusCode)
+                return body;
+
+            if (DateTimeOffset.UtcNow >= deadline)
+            {
+                response.IsSuccessStatusCode.Should().BeTrue(
+                    $"GET {_pipeline.PrometheusMetricsUri} returned {(int)response.StatusCode}: {body}\n" +
+                    await _pipeline.ReadServerErrorLogAsync());
+            }
 
             await Task.Delay(PollInterval);
         }
