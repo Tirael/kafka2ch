@@ -17,6 +17,8 @@ public sealed record SchemaSnapshot
     public IReadOnlyList<MergeTreeTableSnapshot> MergeTreeTables { get; init; } = [];
 
     public IReadOnlyList<MaterializedViewSnapshot> MaterializedViews { get; init; } = [];
+
+    public IReadOnlyList<AggregateSnapshot>? Aggregates { get; init; }
 }
 
 public sealed record ClusterSnapshot
@@ -135,4 +137,58 @@ public sealed record SnapshotColumnMapping
     public required string Target { get; init; }
 
     public string? Expression { get; init; }
+}
+
+public sealed record AggregateSnapshot
+{
+    public required string Name { get; init; }
+
+    public required string ViewName { get; init; }
+
+    public required string SourceTable { get; init; }
+
+    public string? Engine { get; init; }
+
+    public required string OrderBy { get; init; }
+
+    public bool Final { get; init; }
+
+    public required string RefreshMode { get; init; }
+
+    public required string RefreshEvery { get; init; }
+
+    public AggregateTimeBucketSnapshot? TimeBucket { get; init; }
+
+    public IReadOnlyList<AggregateColumnSnapshot> GroupBy { get; init; } = [];
+
+    public IReadOnlyList<AggregateMeasureSnapshot> Measures { get; init; } = [];
+}
+
+public sealed record AggregateTimeBucketSnapshot
+{
+    public required string Column { get; init; }
+
+    public required string Function { get; init; }
+
+    public required string Alias { get; init; }
+
+    public required string Type { get; init; }
+}
+
+public sealed record AggregateColumnSnapshot
+{
+    public required string Name { get; init; }
+
+    public required string Type { get; init; }
+}
+
+public sealed record AggregateMeasureSnapshot
+{
+    public required string Function { get; init; }
+
+    public string? Column { get; init; }
+
+    public required string Alias { get; init; }
+
+    public required string Type { get; init; }
 }

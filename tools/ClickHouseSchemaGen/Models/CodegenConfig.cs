@@ -168,6 +168,8 @@ public sealed class PipelineConfig
 
     public List<MaterializedViewConfig> MaterializedViews { get; set; } = [];
 
+    public List<AggregateConfig> Aggregates { get; set; } = [];
+
     public string? TrailingSql { get; set; }
 }
 
