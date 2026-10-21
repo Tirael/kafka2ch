@@ -15,4 +15,4 @@ ORDER BY version;
 USE kafka2ch;
 
 INSERT INTO default.schema_migrations (version, name, checksum, applied_at, kind) VALUES ('20261016123828', 'add_order_lines2_by_line_id', 'b57c84fa75b76ebfb6cf31d45270195494d72681e07d0e1511db01de35554bcb', toDateTime(0), 'migration');
-INSERT INTO default.schema_migrations (version, name, checksum, applied_at, kind) VALUES ('20261021205603', 'dedup_orders_by_kafka_offset', 'c21a2d9c46973210b0a385c48b17bab6c127ad68761f7061a0440cc970ba998e', toDateTime(0), 'migration');
+INSERT INTO default.schema_migrations (version, name, checksum, applied_at, kind) VALUES ('20261021205603', 'dedup_orders_by_kafka_offset', '4fd383abe06c5098196e6eabb79095dacbe8d576555819b2e53138240e26238e', toDateTime(0), 'migration');

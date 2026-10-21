@@ -43,6 +43,8 @@ ENGINE = Distributed('kafka2ch', currentDatabase(), orders_local, cityHash64(ord
 
 DROP TABLE IF EXISTS orders_agg_1m SYNC;
 DROP TABLE IF EXISTS orders_agg_1m_local SYNC;
+DROP VIEW IF EXISTS default.orders_agg_mv ON CLUSTER kafka2ch SYNC;
+DROP TABLE IF EXISTS default.orders_agg_1m ON CLUSTER kafka2ch SYNC;
 
 CREATE TABLE default.orders_agg_1m ON CLUSTER kafka2ch
 (
