@@ -116,6 +116,14 @@ public sealed class KafkaSettingsConfig
 
     public int NumConsumers { get; set; } = 1;
 
+    public int? MaxBlockSize { get; set; }
+
+    public int? FlushIntervalMs { get; set; }
+
+    public int? PollMaxBatchSize { get; set; }
+
+    public bool? ThreadPerConsumer { get; set; }
+
     public bool FlattenNested { get; set; }
 
     public bool ProtobufOneofPresence { get; set; } = true;
