@@ -78,6 +78,17 @@ public sealed class ClusterReplicatedDatabaseShardsIntegrationTests : IAsyncLife
             (await ScalarAsync(connection, "SELECT count() FROM orders")).Should().Be(150);
         }
 
+        await ExecuteAsync(shard1Replica1, "ALTER TABLE orders_local ADD COLUMN probe UInt8 DEFAULT 1");
+        await ExecuteAsync(shard1Replica1, "ALTER TABLE orders ADD COLUMN probe UInt8 DEFAULT 1");
+        (await QueryRowsAsync(shard1Replica1,
+                "SELECT getMacro('replica'), table FROM clusterAllReplicas('kafka2ch', system.columns) " +
+                $"WHERE database = '{DatabaseName}' AND table IN ('orders_local', 'orders') AND name = 'probe' " +
+                "ORDER BY 1, 2"))
+            .Select(row => $"{row[0]}:{row[1]}")
+            .Should().Equal(
+                "ch1:orders", "ch1:orders_local", "ch2:orders", "ch2:orders_local",
+                "ch3:orders", "ch3:orders_local", "ch4:orders", "ch4:orders_local");
+
         (await QueryRowsAsync(shard1Replica1,
                 "SELECT count(DISTINCT uuid) FROM clusterAllReplicas('kafka2ch', system.databases) " +
                 $"WHERE name = '{DatabaseName}'"))
