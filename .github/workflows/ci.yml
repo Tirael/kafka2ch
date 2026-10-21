@@ -48,6 +48,20 @@ jobs:
           git config --global core.autocrlf false
           git reset --hard HEAD
 
+      # Migrations added by the PR must be newer than every migration on the base
+      # branch, and changed snapshots must descend from the base snapshot.
+      - name: Migration versions
+        if: github.event_name == 'pull_request' && runner.os == 'Linux'
+        shell: bash
+        run: |
+          unshallow=()
+          if [[ "$(git rev-parse --is-shallow-repository)" == "true" ]]; then unshallow=(--unshallow); fi
+          git fetch --no-tags "${unshallow[@]}" origin \
+            "+refs/heads/${GITHUB_BASE_REF}:refs/remotes/origin/${GITHUB_BASE_REF}" \
+            "+${GITHUB_REF}:refs/remotes/origin/pr-merge"
+          scripts/check-migration-versions.test.sh
+          scripts/check-migration-versions.sh "origin/${GITHUB_BASE_REF}"
+
       - name: Setup .NET
         uses: actions/setup-dotnet@v6
         with:
