@@ -110,7 +110,11 @@ public static class SchemaSnapshotMapper
                 NumConsumers = plan.Config.Kafka.NumConsumers,
                 FlattenNested = plan.Config.Kafka.FlattenNested,
                 ProtobufOneofPresence = plan.Config.Kafka.ProtobufOneofPresence,
-                ProtobufFlattenGoogleWrappers = plan.Config.Kafka.ProtobufFlattenGoogleWrappers
+                ProtobufFlattenGoogleWrappers = plan.Config.Kafka.ProtobufFlattenGoogleWrappers,
+                HandleErrorMode = plan.Config.Kafka.UsesDefaultHandleErrorMode
+                    ? null
+                    : plan.Config.Kafka.HandleErrorMode.ToLowerInvariant(),
+                SkipBrokenMessages = plan.Config.Kafka.SkipBrokenMessages
             },
             Columns = plan.Columns
                 .Select(c => new SnapshotColumn
@@ -148,6 +152,7 @@ public static class SchemaSnapshotMapper
             Origin = plan.Origin,
             SourceTable = plan.Config.SourceTable,
             TargetTable = plan.Config.TargetTable,
+            Where = plan.Config.Where,
             Columns = plan.Config.Columns
                 .Select(c => new SnapshotColumnMapping
                 {
@@ -189,6 +194,7 @@ public static class SchemaSnapshotMapper
                 Name = snapshot.Name,
                 SourceTable = snapshot.SourceTable,
                 TargetTable = snapshot.TargetTable,
+                Where = snapshot.Where,
                 Columns = snapshot.Columns
                     .Select(c => new PipelineColumnMapping
                     {
@@ -217,7 +223,9 @@ public static class SchemaSnapshotMapper
                 NumConsumers = snapshot.Kafka.NumConsumers,
                 FlattenNested = snapshot.Kafka.FlattenNested,
                 ProtobufOneofPresence = snapshot.Kafka.ProtobufOneofPresence,
-                ProtobufFlattenGoogleWrappers = snapshot.Kafka.ProtobufFlattenGoogleWrappers
+                ProtobufFlattenGoogleWrappers = snapshot.Kafka.ProtobufFlattenGoogleWrappers,
+                HandleErrorMode = snapshot.Kafka.HandleErrorMode ?? KafkaHandleErrorModes.Default,
+                SkipBrokenMessages = snapshot.Kafka.SkipBrokenMessages
             },
             PersistKafkaMeta = snapshot.PersistKafkaMeta,
             FieldOverrides = template?.FieldOverrides

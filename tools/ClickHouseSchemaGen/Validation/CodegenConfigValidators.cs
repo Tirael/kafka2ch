@@ -27,6 +27,18 @@ internal sealed class KafkaSettingsConfigValidator : AbstractValidator<KafkaSett
         RuleFor(settings => settings.GroupName).NotEmpty();
         RuleFor(settings => settings.SkipBytes).GreaterThanOrEqualTo(0);
         RuleFor(settings => settings.NumConsumers).GreaterThan(0);
+        RuleFor(settings => settings.HandleErrorMode)
+            .Must(mode => KafkaHandleErrorModes.All.Contains(mode, StringComparer.OrdinalIgnoreCase))
+            .WithMessage($"handleErrorMode must be one of: {string.Join(", ", KafkaHandleErrorModes.All)}.");
+        RuleFor(settings => settings.SkipBrokenMessages)
+            .GreaterThanOrEqualTo(0)
+            .When(settings => settings.SkipBrokenMessages.HasValue);
+        RuleFor(settings => settings.SkipBrokenMessages)
+            .Null()
+            .WithMessage(settings =>
+                $"skipBrokenMessages applies only to handleErrorMode '{KafkaHandleErrorModes.Default}'; " +
+                $"'{settings.HandleErrorMode}' already keeps broken messages out of the consumer path.")
+            .When(settings => !settings.UsesDefaultHandleErrorMode);
     }
 }
 

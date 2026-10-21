@@ -124,14 +124,14 @@ public sealed class ClickHouseSchemaGenerator(
                 Origin = PlanOrigin.Auto
             });
 
-        return new ResolvedSchemaPlan
+        return KafkaErrorStream.Apply(new ResolvedSchemaPlan
         {
             Config = config,
             KafkaTables = kafkaTables,
             MergeTreeTables = mergeTreePlans,
             MaterializedViews = explicitViews.Concat(autoViews).ToList(),
             TrailingSql = config.Pipeline.TrailingSql
-        };
+        });
     }
 
     public void GenerateFromConfigFile(string configPath, bool checkSnapshot = true)

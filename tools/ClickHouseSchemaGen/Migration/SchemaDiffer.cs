@@ -98,6 +98,16 @@ public static class SchemaDiffer
         if (oldKafka.ProtobufFlattenGoogleWrappers != newKafka.ProtobufFlattenGoogleWrappers)
             reasons.Add("protobufFlattenGoogleWrappers changed");
 
+        if (oldKafka.UsesDefaultHandleErrorMode != newKafka.UsesDefaultHandleErrorMode
+            || (!newKafka.UsesDefaultHandleErrorMode
+                && !string.Equals(oldKafka.HandleErrorMode, newKafka.HandleErrorMode, StringComparison.OrdinalIgnoreCase)))
+        {
+            reasons.Add("handleErrorMode changed");
+        }
+
+        if (oldKafka.SkipBrokenMessages != newKafka.SkipBrokenMessages)
+            reasons.Add("skipBrokenMessages changed");
+
         if (HasColumnDiff(oldTable.Columns, newTable.Columns))
             reasons.Add("proto columns changed");
 
@@ -179,6 +189,7 @@ public static class SchemaDiffer
 
             if (oldView.Origin == newView.Origin
                 && MappingsEqual(oldView.Config.Columns, newView.Config.Columns)
+                && string.Equals(oldView.Config.Where, newView.Config.Where, StringComparison.Ordinal)
                 && string.Equals(oldView.Config.SourceTable, newView.Config.SourceTable, StringComparison.OrdinalIgnoreCase)
                 && string.Equals(oldView.Config.TargetTable, newView.Config.TargetTable, StringComparison.OrdinalIgnoreCase))
             {

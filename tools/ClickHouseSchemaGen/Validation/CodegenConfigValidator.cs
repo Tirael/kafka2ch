@@ -33,6 +33,11 @@ public sealed class CodegenConfigValidator : AbstractValidator<CodegenConfig>
             .WithMessage("Kafka table output paths must be unique.");
 
         RuleFor(config => config)
+            .Must(config => FindErrorStreamWithoutPipeline(config) is null)
+            .WithMessage(config => FindErrorStreamWithoutPipeline(config) ?? "handleErrorMode 'stream' requires a pipeline.")
+            .When(config => config.Pipeline is null);
+
+        RuleFor(config => config)
             .Must(config => FindObjectNameConflict(config) is null)
             .WithMessage(config => FindObjectNameConflict(config) ?? "ClickHouse object names must be unique.")
             .When(config => config.Pipeline is not null);
@@ -95,30 +100,65 @@ public sealed class CodegenConfigValidator : AbstractValidator<CodegenConfig>
                 return $"Materialized view '{view.Name}' conflicts with an existing table of the same name.";
         }
 
+        var usedNames = tableNames
+            .Concat(config.Pipeline.MaterializedViews.Select(view => view.Name))
+            .Concat(AutoViewNames(config.Pipeline))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var queue in KafkaErrorStream.StreamingQueues(config))
+        {
+            foreach (var name in KafkaErrorStream.GeneratedObjectNames(queue))
+            {
+                if (!usedNames.Add(name))
+                {
+                    return $"Kafka table '{queue.TableName}' with handleErrorMode '{KafkaHandleErrorModes.Stream}' " +
+                        $"generates '{name}', but that name is already used. Rename the conflicting object.";
+                }
+            }
+        }
+
         return null;
     }
+
+    private static string? FindErrorStreamWithoutPipeline(CodegenConfig config)
+    {
+        var queue = KafkaErrorStream.StreamingQueues(config).FirstOrDefault();
+        return queue is null
+            ? null
+            : $"Kafka table '{queue.TableName}' with handleErrorMode '{KafkaHandleErrorModes.Stream}' generates " +
+                $"'{KafkaErrorStream.TableName(queue.TableName)}' in the pipeline script; configure pipeline.";
+    }
+
+    private static IEnumerable<string> AutoViewNames(PipelineConfig pipeline) =>
+        pipeline.MergeTreeTables
+            .Where(table => MaterializedViewAutoGenerator.ShouldCreate(table, pipeline.MaterializedViews))
+            .Select(table => MaterializedViewAutoGenerator.DefaultName(table.TableName));
 
     private static string? FindLocalTableNameConflict(CodegenConfig config)
     {
         if (config.Pipeline is null)
             return null;
 
-        var autoViewNames = config.Pipeline.MergeTreeTables
-            .Where(table => MaterializedViewAutoGenerator.ShouldCreate(table, config.Pipeline.MaterializedViews))
-            .Select(table => MaterializedViewAutoGenerator.DefaultName(table.TableName));
+        var errorStreamNames = KafkaErrorStream.StreamingQueues(config)
+            .SelectMany(KafkaErrorStream.GeneratedObjectNames);
 
         var names = config.KafkaTables.Select(table => table.TableName)
             .Concat(config.Pipeline.MergeTreeTables.Select(table => table.TableName))
             .Concat(config.Pipeline.MaterializedViews.Select(view => view.Name))
-            .Concat(autoViewNames)
+            .Concat(AutoViewNames(config.Pipeline))
+            .Concat(errorStreamNames)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var table in config.Pipeline.MergeTreeTables)
+        var storedTables = config.Pipeline.MergeTreeTables
+            .Select(table => table.TableName)
+            .Concat(KafkaErrorStream.StreamingQueues(config).Select(queue => KafkaErrorStream.TableName(queue.TableName)));
+
+        foreach (var tableName in storedTables)
         {
-            var localName = table.TableName + config.Cluster.LocalTableSuffix;
+            var localName = tableName + config.Cluster.LocalTableSuffix;
             if (!names.Add(localName))
             {
-                return $"MergeTree table '{table.TableName}' stores rows in '{localName}' in cluster mode, " +
+                return $"MergeTree table '{tableName}' stores rows in '{localName}' in cluster mode, " +
                     "but that name is already used. Rename the table or change cluster.localTableSuffix.";
             }
         }

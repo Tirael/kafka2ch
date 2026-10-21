@@ -31,8 +31,18 @@ public static class MaterializedViewGenerator
                     + $"{SqlColumnFormatter.FormatColumnName(mapping.Target)}{comma}");
         }
 
+        if (string.IsNullOrWhiteSpace(config.Where))
+        {
+            builder.AppendLine($"FROM {config.SourceTable};");
+        }
+        else
+        {
+            builder
+                .AppendLine($"FROM {config.SourceTable}")
+                .AppendLine($"WHERE {config.Where.Trim()};");
+        }
+
         return SqlText.Normalize(builder
-            .AppendLine($"FROM {config.SourceTable};")
             .AppendLine()
             .ToString());
     }
