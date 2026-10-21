@@ -27,6 +27,9 @@ public static class SchemaSnapshotSerializer
             ?? throw new InvalidOperationException($"Snapshot file '{path}' is empty or invalid.");
     }
 
+    public static SchemaSnapshot Load(string path, ResolvedSchemaPlan currentPlan) =>
+        SchemaSnapshotUpgrader.Upgrade(Load(path), currentPlan);
+
     public static void Save(string path, SchemaSnapshot snapshot)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);

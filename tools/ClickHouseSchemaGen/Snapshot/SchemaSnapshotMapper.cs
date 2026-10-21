@@ -18,6 +18,7 @@ public static class SchemaSnapshotMapper
         {
             ParentChecksum = parentChecksum,
             TrailingSqlHash = plan.TrailingSqlHash ?? ComputeTrailingSqlHash(plan.TrailingSql),
+            Cluster = ToClusterSnapshot(plan.Config.Cluster),
             KafkaTables = plan.KafkaTables
                 .Select(kafka => ToKafkaSnapshot(kafka, metaByQueue[kafka.Config.TableName]))
                 .ToList(),
@@ -71,6 +72,7 @@ public static class SchemaSnapshotMapper
 
         var config = new CodegenConfig
         {
+            Cluster = RestoreCluster(snapshot.Cluster, configForMessageTypes.Cluster),
             Defaults = configForMessageTypes.Defaults,
             FieldOverrides = configForMessageTypes.FieldOverrides,
             KafkaTables = kafkaPlans.Select(p => p.Config).ToList(),
@@ -89,6 +91,28 @@ public static class SchemaSnapshotMapper
         };
     }
 
+    internal static ClusterSnapshot? ToClusterSnapshot(ClusterConfig? cluster) =>
+        cluster?.Enabled != true
+            ? null
+            : new ClusterSnapshot
+            {
+                Name = cluster.Name!.Trim(),
+                DdlMode = ClusterDdlModes.All.FirstOrDefault(mode =>
+                        string.Equals(mode, cluster.DdlMode, StringComparison.OrdinalIgnoreCase))
+                    ?? cluster.DdlMode,
+                LocalTableSuffix = cluster.LocalTableSuffix,
+                ShardingKey = cluster.ShardingKey.Trim(),
+                MaterializedViewsWriteThroughDistributed = cluster.MaterializedViewsWriteThroughDistributed
+            };
+
+    internal static KafkaKeySnapshot ToKeySnapshot(KafkaKeyConfig key) =>
+        new()
+        {
+            Format = key.Format.ToLowerInvariant(),
+            MessageType = key.MessageType,
+            SkipBytes = key.SkipBytes
+        };
+
     internal static string? ComputeTrailingSqlHash(string? trailingSql) =>
         string.IsNullOrWhiteSpace(trailingSql)
             ? null
@@ -100,6 +124,7 @@ public static class SchemaSnapshotMapper
             TableName = plan.Config.TableName,
             ProtoFile = plan.Config.ProtoFile,
             MessageName = plan.Config.MessageName,
+            Key = ToKeySnapshot(plan.Config.Key),
             PersistKafkaMeta = meta,
             Kafka = new KafkaSettingsSnapshot
             {
@@ -135,6 +160,8 @@ public static class SchemaSnapshotMapper
             OrderBy = plan.Config.OrderBy,
             Engine = MergeTreeEngines.ToSnapshot(plan.Config.Engine),
             Ttl = plan.Config.Ttl,
+            ShardingKey = plan.Config.ShardingKey,
+            MaterializedViewsWriteThroughDistributed = plan.Config.MaterializedViewsWriteThroughDistributed,
             Columns = plan.Config.Columns
                 .Select(c => new SnapshotColumn
                 {
@@ -173,6 +200,8 @@ public static class SchemaSnapshotMapper
                 OrderBy = snapshot.OrderBy,
                 Engine = MergeTreeEngines.Normalize(snapshot.Engine),
                 Ttl = snapshot.Ttl,
+                ShardingKey = snapshot.ShardingKey,
+                MaterializedViewsWriteThroughDistributed = snapshot.MaterializedViewsWriteThroughDistributed,
                 SourceTable = snapshot.SourceTable,
                 Columns = snapshot.Columns
                     .Select(c => new PipelineColumnConfig
@@ -227,8 +256,35 @@ public static class SchemaSnapshotMapper
                 HandleErrorMode = snapshot.Kafka.HandleErrorMode ?? KafkaHandleErrorModes.Default,
                 SkipBrokenMessages = snapshot.Kafka.SkipBrokenMessages
             },
+            Key = new KafkaKeyConfig
+            {
+                Format = snapshot.Key?.Format ?? KafkaKeyFormats.String,
+                MessageType = snapshot.Key?.MessageType,
+                SkipBytes = snapshot.Key?.SkipBytes,
+                FieldOverrides = template?.Key.FieldOverrides
+                    ?? new Dictionary<string, FieldOverrideConfig>(StringComparer.OrdinalIgnoreCase)
+            },
             PersistKafkaMeta = snapshot.PersistKafkaMeta,
             FieldOverrides = template?.FieldOverrides
                 ?? new Dictionary<string, FieldOverrideConfig>(StringComparer.OrdinalIgnoreCase)
         };
+
+    private static ClusterConfig RestoreCluster(ClusterSnapshot? snapshot, ClusterConfig template) =>
+        snapshot is null
+            ? new ClusterConfig()
+            : new ClusterConfig
+            {
+                Name = snapshot.Name,
+                DdlMode = snapshot.DdlMode,
+                ReplicatedPath = template.ReplicatedPath,
+                ReplicaName = template.ReplicaName,
+                HistoryReplicatedPath = template.HistoryReplicatedPath,
+                HistoryReplicaName = template.HistoryReplicaName,
+                LocalTableSuffix = snapshot.LocalTableSuffix,
+                ShardingKey = snapshot.ShardingKey,
+                MaterializedViewsWriteThroughDistributed = snapshot.MaterializedViewsWriteThroughDistributed,
+                ReplicatedDatabaseName = template.ReplicatedDatabaseName,
+                ReplicatedDatabasePath = template.ReplicatedDatabasePath,
+                ReplicatedDatabaseReplicaName = template.ReplicatedDatabaseReplicaName
+            };
 }

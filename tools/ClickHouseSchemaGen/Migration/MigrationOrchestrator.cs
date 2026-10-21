@@ -36,7 +36,7 @@ public sealed class MigrationOrchestrator(ClickHouseSchemaGenerator generator, T
                 SnapshotPath: paths.SnapshotPath);
         }
 
-        var snapshot = SchemaSnapshotSerializer.Load(paths.SnapshotPath);
+        var snapshot = SchemaSnapshotSerializer.Load(paths.SnapshotPath, plan);
         var differences = SnapshotDriftChecker.CollectDifferences(SchemaSnapshotMapper.FromPlan(plan), snapshot);
         return new MigrationStatusResult(
             HasSnapshot: true,
@@ -61,9 +61,9 @@ public sealed class MigrationOrchestrator(ClickHouseSchemaGenerator generator, T
                 $"Snapshot not found at '{paths.SnapshotPath}'. Run migrate init first.");
         }
 
-        var oldSnapshot = SchemaSnapshotSerializer.Load(paths.SnapshotPath);
-        var oldPlan = SchemaSnapshotMapper.ToPlan(oldSnapshot, config);
         var newPlan = generator.BuildPlan(config);
+        var oldSnapshot = SchemaSnapshotSerializer.Load(paths.SnapshotPath, newPlan);
+        var oldPlan = SchemaSnapshotMapper.ToPlan(oldSnapshot, config);
 
         ProtoCompatibilityValidator.Validate(oldPlan, newPlan);
 
@@ -115,6 +115,21 @@ public sealed class MigrationOrchestrator(ClickHouseSchemaGenerator generator, T
             Message: $"Migration written to '{migrationPath}' and snapshot updated.");
     }
 
+    public SnapshotUpgradeResult UpgradeSnapshot(string configPath)
+    {
+        var (config, paths) = LoadContext(configPath);
+        if (!File.Exists(paths.SnapshotPath))
+        {
+            throw new InvalidOperationException(
+                $"Snapshot not found at '{paths.SnapshotPath}'. Run migrate init first.");
+        }
+
+        var snapshot = SchemaSnapshotSerializer.Load(paths.SnapshotPath);
+        var upgraded = SchemaSnapshotUpgrader.Upgrade(snapshot, generator.BuildPlan(config));
+        SchemaSnapshotSerializer.Save(paths.SnapshotPath, upgraded);
+        return new SnapshotUpgradeResult(paths.SnapshotPath, snapshot.Version, upgraded.Version);
+    }
+
     public string WriteVersionsScript(string configPath)
     {
         var (config, paths) = LoadContext(configPath);
@@ -157,6 +172,11 @@ public sealed record MigrationStatusResult(
     bool IsDrifted,
     IReadOnlyList<string> Differences,
     string SnapshotPath);
+
+public sealed record SnapshotUpgradeResult(
+    string SnapshotPath,
+    int FromVersion,
+    int ToVersion);
 
 public sealed record MigrationRunResult(
     int ExitCode,

@@ -11,9 +11,11 @@ public static class SchemaDiffer
         List<string> warnings = [];
 
         DiffTrailingSql(oldPlan, newPlan, changes);
+        DiffCluster(oldPlan, newPlan, changes);
         DiffKafkaTables(oldPlan, newPlan, changes, warnings);
         DiffMergeTreeTables(oldPlan, newPlan, changes);
         DiffMaterializedViews(oldPlan, newPlan, changes);
+        DiffKafkaDependentViews(oldPlan, newPlan, changes);
 
         return new SchemaDiff { Changes = changes, Warnings = warnings };
     }
@@ -27,6 +29,18 @@ public static class SchemaDiffer
         var newHash = newPlan.TrailingSqlHash ?? SchemaSnapshotMapper.ComputeTrailingSqlHash(newPlan.TrailingSql);
         if (!string.Equals(oldHash, newHash, StringComparison.OrdinalIgnoreCase))
             changes.Add(new TrailingSqlChanged(oldHash, newHash));
+    }
+
+    private static void DiffCluster(
+        ResolvedSchemaPlan oldPlan,
+        ResolvedSchemaPlan newPlan,
+        List<SchemaChange> changes)
+    {
+        var reasons = ClusterTopology.Compare(
+            SchemaSnapshotMapper.ToClusterSnapshot(oldPlan.Config.Cluster),
+            SchemaSnapshotMapper.ToClusterSnapshot(newPlan.Config.Cluster));
+        if (reasons.Count > 0)
+            changes.Add(new ClusterTopologyChanged("cluster", string.Join("; ", reasons)));
     }
 
     private static void DiffKafkaTables(
@@ -108,6 +122,10 @@ public static class SchemaDiffer
         if (oldKafka.SkipBrokenMessages != newKafka.SkipBrokenMessages)
             reasons.Add("skipBrokenMessages changed");
 
+        reasons.AddRange(KafkaKeyComparison.Compare(
+            SchemaSnapshotMapper.ToKeySnapshot(oldTable.Config.Key),
+            SchemaSnapshotMapper.ToKeySnapshot(newTable.Config.Key)));
+
         if (HasColumnDiff(oldTable.Columns, newTable.Columns))
             reasons.Add("proto columns changed");
 
@@ -146,6 +164,14 @@ public static class SchemaDiffer
                     oldTable.Config.Ttl,
                     newTable.Config.Ttl));
             }
+
+            var topologyReasons = ClusterTopology.CompareTable(
+                oldTable.Config.ShardingKey,
+                newTable.Config.ShardingKey,
+                oldTable.Config.MaterializedViewsWriteThroughDistributed,
+                newTable.Config.MaterializedViewsWriteThroughDistributed);
+            if (topologyReasons.Count > 0)
+                changes.Add(new ClusterTopologyChanged(name, string.Join("; ", topologyReasons)));
 
             var oldEngine = MergeTreeEngines.Normalize(oldTable.Config.Engine);
             var newEngine = MergeTreeEngines.Normalize(newTable.Config.Engine);
@@ -199,6 +225,67 @@ public static class SchemaDiffer
             changes.Add(new ViewChanged(newView.Config.Name, newView.Config.SourceTable, newView.Config.TargetTable));
         }
     }
+
+    private static void DiffKafkaDependentViews(
+        ResolvedSchemaPlan oldPlan,
+        ResolvedSchemaPlan newPlan,
+        List<SchemaChange> changes)
+    {
+        var oldByName = oldPlan.KafkaTables.ToDictionary(t => t.Config.TableName, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var newTable in newPlan.KafkaTables)
+        {
+            var name = newTable.Config.TableName;
+            if (!oldByName.TryGetValue(name, out var oldTable))
+                continue;
+
+            var keyChanged = KafkaKeyComparison.Compare(
+                SchemaSnapshotMapper.ToKeySnapshot(oldTable.Config.Key),
+                SchemaSnapshotMapper.ToKeySnapshot(newTable.Config.Key)).Count > 0;
+            var metaChanged = !MetaEquals(ResolveMeta(oldPlan, oldTable), ResolveMeta(newPlan, newTable));
+            if (!keyChanged && !metaChanged)
+                continue;
+
+            var views = newPlan.MaterializedViews
+                .Where(v => string.Equals(v.Config.SourceTable, name, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            var changedViews = changes.OfType<ViewChanged>()
+                .Select(v => v.ViewName)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            if (!keyChanged)
+            {
+                var alreadyCovered = views.Any(v => changedViews.Contains(v.Config.Name))
+                    || changes.OfType<KafkaTableChanged>().Any(c =>
+                        string.Equals(c.TableName, name, StringComparison.OrdinalIgnoreCase));
+                if (alreadyCovered)
+                    continue;
+
+                if (views.Count == 0)
+                {
+                    changes.Add(new KafkaTableChanged(name, "persistKafkaMeta changed"));
+                    continue;
+                }
+            }
+
+            foreach (var view in views.Where(v => !changedViews.Contains(v.Config.Name)))
+                changes.Add(new ViewChanged(view.Config.Name, view.Config.SourceTable, view.Config.TargetTable));
+        }
+    }
+
+    private static PersistKafkaMetaConfig ResolveMeta(ResolvedSchemaPlan plan, KafkaTablePlan table) =>
+        KafkaMetaColumnFactory.Resolve(
+            plan.Config.Defaults.PersistKafkaMeta,
+            table.Config.PersistKafkaMeta,
+            includeKafkaMeta: null);
+
+    private static bool MetaEquals(PersistKafkaMetaConfig left, PersistKafkaMetaConfig right) =>
+        left.Key == right.Key
+        && left.Headers == right.Headers
+        && left.Topic == right.Topic
+        && left.Partition == right.Partition
+        && left.Offset == right.Offset
+        && left.TimestampMs == right.TimestampMs;
 
     private static void DiffColumns(
         string tableName,

@@ -157,7 +157,7 @@ public sealed class MergeTreeEngineTests
             SchemaSnapshotSerializer.Save(path, SchemaSnapshotMapper.FromPlan(plan));
             File.ReadAllText(path).Should().Contain("\"engine\": \"ReplacingMergeTree(event_time)\"");
 
-            var loaded = SchemaSnapshotSerializer.Load(path);
+            var loaded = SchemaSnapshotSerializer.Load(path, plan);
             var mapped = SchemaSnapshotMapper.ToPlan(loaded, plan.Config);
 
             mapped.MergeTreeTables.Single().Config.Engine.Should().Be("ReplacingMergeTree(event_time)");
@@ -179,7 +179,7 @@ public sealed class MergeTreeEngineTests
         {
             File.WriteAllText(path, LegacySnapshotJson);
 
-            var loaded = SchemaSnapshotSerializer.Load(path);
+            var loaded = SchemaSnapshotSerializer.Load(path, plan);
             var mapped = SchemaSnapshotMapper.ToPlan(loaded, plan.Config);
 
             loaded.MergeTreeTables.Single().Engine.Should().BeNull();
@@ -204,7 +204,7 @@ public sealed class MergeTreeEngineTests
         {
             File.WriteAllText(path, LegacySnapshotJson);
 
-            var loaded = SchemaSnapshotSerializer.Load(path);
+            var loaded = SchemaSnapshotSerializer.Load(path, plan);
             var mapped = SchemaSnapshotMapper.ToPlan(loaded, plan.Config);
 
             FluentActions.Invoking(() => SnapshotDriftChecker.Check(plan, loaded, "clickhouse.codegen.json"))

@@ -236,6 +236,14 @@ public static partial class MigrationSqlGenerator
                         $"-- Manual origin change for {origin.TableName}: "
                             + $"{origin.OldOrigin} -> {origin.NewOrigin}.");
                     break;
+                case ClusterTopologyChanged topology:
+                    builder.AppendLine(
+                        $"-- Manual cluster topology change ({topology.Scope}): {topology.Reason}.");
+                    builder.AppendLine(
+                        "-- Requires a data/topology migration: create the objects for the new topology "
+                            + "(local/Distributed tables or Replicated database), copy the data, switch Kafka queues "
+                            + "and materialized views, then drop the old objects. It cannot be generated automatically.");
+                    break;
                 case TrailingSqlChanged trailing:
                     builder.AppendLine(
                         $"-- Manual trailingSql update required "
