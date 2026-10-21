@@ -22,7 +22,18 @@ internal sealed class KafkaSettingsConfigValidator : AbstractValidator<KafkaSett
 {
     public KafkaSettingsConfigValidator()
     {
-        RuleFor(settings => settings.BrokerList).NotEmpty();
+        RuleFor(settings => settings.BrokerList)
+            .NotEmpty()
+            .When(settings => settings.BrokerList is not null);
+        RuleFor(settings => settings.NamedCollection)
+            .Must(name => name is null || ValidationRules.IsSqlIdentifier(name))
+            .WithMessage("namedCollection must be a ClickHouse identifier (letters, digits, '_').");
+        RuleFor(settings => settings.BrokerList)
+            .Null()
+            .WithMessage(settings =>
+                $"brokerList and namedCollection are mutually exclusive: brokers of '{settings.NamedCollection}' " +
+                "are defined in the ClickHouse named collection (kafka_broker_list), remove brokerList.")
+            .When(settings => settings.NamedCollection is not null);
         RuleFor(settings => settings.Topic).NotEmpty();
         RuleFor(settings => settings.GroupName).NotEmpty();
         RuleFor(settings => settings.SkipBytes).GreaterThanOrEqualTo(0);

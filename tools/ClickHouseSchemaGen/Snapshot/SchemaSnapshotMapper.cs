@@ -128,7 +128,8 @@ public static class SchemaSnapshotMapper
             PersistKafkaMeta = meta,
             Kafka = new KafkaSettingsSnapshot
             {
-                BrokerList = plan.Config.Kafka.BrokerList,
+                BrokerList = plan.Config.Kafka.ResolvedBrokerList,
+                NamedCollection = plan.Config.Kafka.ResolvedNamedCollection,
                 Topic = plan.Config.Kafka.Topic,
                 GroupName = plan.Config.Kafka.GroupName,
                 SkipBytes = plan.Config.Kafka.SkipBytes,
@@ -246,6 +247,7 @@ public static class SchemaSnapshotMapper
             Kafka = new KafkaSettingsConfig
             {
                 BrokerList = snapshot.Kafka.BrokerList,
+                NamedCollection = snapshot.Kafka.NamedCollection,
                 Topic = snapshot.Kafka.Topic,
                 GroupName = snapshot.Kafka.GroupName,
                 SkipBytes = snapshot.Kafka.SkipBytes,

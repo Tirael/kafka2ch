@@ -93,9 +93,20 @@ public sealed class KafkaKeyConfig
 
 public sealed class KafkaSettingsConfig
 {
-    public string? BrokerList { get; set; } = "kafka:9092";
+    public const string DefaultBrokerList = "kafka:9092";
+
+    public string? BrokerList { get; set; }
 
     public string? NamedCollection { get; set; }
+
+    [JsonIgnore]
+    public bool UsesNamedCollection => !string.IsNullOrWhiteSpace(NamedCollection);
+
+    [JsonIgnore]
+    public string? ResolvedNamedCollection => UsesNamedCollection ? NamedCollection!.Trim() : null;
+
+    [JsonIgnore]
+    public string? ResolvedBrokerList => BrokerList ?? (UsesNamedCollection ? null : DefaultBrokerList);
 
     public string Topic { get; set; } = "orders";
 
