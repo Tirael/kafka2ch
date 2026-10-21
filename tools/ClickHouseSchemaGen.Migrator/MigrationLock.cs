@@ -250,7 +250,10 @@ public sealed class MigrationLock : IAsyncDisposable
             var own = leases.Where(lease => lease.Owner == options.Owner).Select(lease => (DateTime?)lease.ExpiresAt).Min();
             var others = leases.Where(lease => lease.Owner != options.Owner).ToList();
             if (own is not null && RowLockWins(own.Value, others.Select(lease => lease.ExpiresAt)))
+            {
+                await ExecuteAsync(connection, deleteExpiredSql, cancellationToken);
                 return;
+            }
 
             await ExecuteAsync(connection, releaseSql, cancellationToken);
             var holder = others.OrderBy(lease => lease.ExpiresAt).FirstOrDefault();
