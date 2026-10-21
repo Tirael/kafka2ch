@@ -13,5 +13,13 @@ public static class TestContractsPaths
     public static string ClusterReplicatedDbCodegenConfigPath =>
         Path.Combine(RootDirectory, "clickhouse.codegen.cluster.replicated-db.json");
 
+    public static string DedupCodegenConfigPath => Path.Combine(RootDirectory, "clickhouse.codegen.dedup.json");
+
+    public static string ClusterDedupCodegenConfigPath =>
+        Path.Combine(RootDirectory, "clickhouse.codegen.cluster.dedup.json");
+
+    public static string ClusterReplicatedDbDedupCodegenConfigPath =>
+        Path.Combine(RootDirectory, "clickhouse.codegen.cluster.replicated-db.dedup.json");
+
     public static string KeeperTestConfigPath => Path.Combine(RootDirectory, "keeper-test.xml");
 }

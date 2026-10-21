@@ -32,6 +32,7 @@ public sealed class KafkaClickHousePipelineE2ETests : IAsyncLifetime
             .Should().BeEquivalentTo(published);
         Convert.ToUInt64(await _pipeline.ScalarAsync("SELECT countIf(`kafka_key.order_id` != order_id) FROM orders"))
             .Should().Be(0UL);
+        await _pipeline.RefreshAggregatesAsync();
         Convert.ToUInt64(await _pipeline.ScalarAsync("SELECT sum(orders_count) FROM orders_agg_1m"))
             .Should().Be(count);
         Convert.ToUInt64(await _pipeline.ScalarAsync("SELECT sum(total_qty) FROM orders_agg_1m"))

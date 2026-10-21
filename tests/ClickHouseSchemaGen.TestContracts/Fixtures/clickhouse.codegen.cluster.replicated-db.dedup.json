@@ -1,0 +1,33 @@
+{
+  "extends": "clickhouse.codegen.cluster.dedup.json",
+  "outputDirectory": "clickhouse-cluster/init-replicated-db",
+  "cluster": {
+    "name": "kafka2ch",
+    "ddlMode": "replicatedDatabase",
+    "replicatedDatabaseName": "kafka2ch",
+    "replicatedDatabasePath": "/clickhouse/databases/{uuid}",
+    "replicatedDatabaseReplicaName": "{replica}",
+    "materializedViewsWriteThroughDistributed": false
+  },
+  "pipeline": {
+    "mergeTreeTables": [
+      {
+        "tableName": "orders",
+        "engine": "ReplacingMergeTree",
+        "orderBy": "(event_time, order_id, kafka_partition, kafka_offset)",
+        "includeKafkaMeta": true,
+        "shardingKey": "cityHash64(order_id)",
+        "columns": [
+          { "name": "order_id", "type": "String" },
+          { "name": "category", "type": "LowCardinality(String)" },
+          { "name": "currency", "type": "LowCardinality(String)" },
+          { "name": "amount", "type": "Float64" },
+          { "name": "quantity", "type": "UInt32" },
+          { "name": "status", "type": "LowCardinality(String)" },
+          { "name": "payment", "type": "LowCardinality(String)" },
+          { "name": "event_time", "type": "DateTime64(3)" }
+        ]
+      }
+    ]
+  }
+}
