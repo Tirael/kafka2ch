@@ -93,6 +93,14 @@ ORDER BY (event_time, order_id, kafka_partition, kafka_offset)
 - `migrationsDirectory` → `docker/clickhouse/migrations`
 - `versionsOutputPath` → `00_schema_migrations.sql`
 - `autoRewrite` (по умолчанию `false`) — разрешить автоматический `MODIFY COLUMN` для смен типа класса `Rewrite` (`DateTime -> DateTime64`, `Enum8 -> Enum16`); без него такие смены попадают в manual-блок и требуют `--allow-manual`
+- `formatSchemasDirectory` (опционально) → каталог `.proto`, который выкладывается в `format_schema_path` ClickHouse (`docker/clickhouse/format_schemas`). Если задан, `migrate` пишет в начало миграции маркер `-- require:format_schema <protoFile>.proto sha256=<hash>` для каждой пересоздаваемой или новой Kafka-очереди (hash — `SqlChecksum` канонического текста `.proto`).
+
+**Preflight Migrator** перед первым statement'ом каждой миграции:
+
+1. Для каждого маркера `-- require:format_schema` читает файл на всех репликах (`clusterAllReplicas('<cluster>', view(SELECT … file(<format_schema_path>/<file>, NULL)))`, single-node — локально) и сравнивает `SqlChecksum` содержимого с маркером. Отсутствие файла или расхождение хэша — ошибка, миграция не начинается, очереди не трогаются. `file()` читает только внутри `user_files_path`, поэтому `format_schema_path` должен лежать под ним: compose монтирует `format_schemas` в `/var/lib/clickhouse/user_files/format_schemas` и задаёт путь в [`docker/clickhouse/config/format_schemas.xml`](../../docker/clickhouse/config/format_schemas.xml).
+2. Dry-run: каждый `CREATE TABLE … ENGINE = Kafka` из миграции создаётся как `{queue}__preflight` во временной БД `kafka2ch_preflight_<guid>` (без `ON CLUSTER`, `kafka_group_name` с суффиксом `__preflight`), SELECT каждого MV над этими очередями проверяется через `EXPLAIN QUERY TREE`; затем БД удаляется. MV не создаются, поэтому Kafka не читается. Если миграция определяет ещё не существующие функции, проверка MV пропускается с предупреждением.
+
+`--skip-preflight` отключает обе проверки (окружения, где `format_schema_path` вне `user_files_path` или нет прав `FILE`).
 
 `00_schema_migrations.sql` создаёт таблицу `schema_migrations` и записывает baseline-миграции (`kind = 'migration'`). Префикс `00` зарезервирован: файл обязан идти раньше любого init-скрипта (валидатор конфига падает иначе), потому что каждый сгенерированный init-скрипт (`01_*`, `02_*`, …) в конце записывает себя строкой `kind = 'init'` (version — префикс файла, checksum — SHA-256 тела скрипта без этой строки). Сама таблица версий не числится миграцией: её создаёт и обновляет (`ALTER … ADD COLUMN IF NOT EXISTS kind`) Migrator до применения миграций, по аналогии с `VersionInfo` в FluentMigrator. Migrator учитывает только `kind = 'migration'`.
 

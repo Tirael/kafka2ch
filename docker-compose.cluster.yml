@@ -8,7 +8,8 @@ x-clickhouse-node: &clickhouse-node
     clickhouse-keeper-03:
       condition: service_healthy
   volumes:
-    - ./docker/clickhouse/format_schemas:/var/lib/clickhouse/format_schemas
+    - ./docker/clickhouse/format_schemas:/var/lib/clickhouse/user_files/format_schemas
+    - ./docker/clickhouse/config/format_schemas.xml:/etc/clickhouse-server/config.d/format_schemas.xml:ro
     - ./docker/clickhouse/config/kafka.xml:/etc/clickhouse-server/config.d/kafka.xml:ro
     - ./docker/clickhouse/config/named-collections-users.xml:/etc/clickhouse-server/users.d/named-collections.xml:ro
     - ./docker/clickhouse/config/prometheus.xml:/etc/clickhouse-server/config.d/prometheus.xml:ro
@@ -64,7 +65,8 @@ services:
       CLICKHOUSE_REPLICA: clickhouse
       KAFKA_BROKER_LIST: ${KAFKA_BROKER_LIST:-kafka:9092}
     volumes: !override
-      - ./docker/clickhouse/format_schemas:/var/lib/clickhouse/format_schemas
+      - ./docker/clickhouse/format_schemas:/var/lib/clickhouse/user_files/format_schemas
+      - ./docker/clickhouse/config/format_schemas.xml:/etc/clickhouse-server/config.d/format_schemas.xml:ro
       - ./docker/clickhouse/config/kafka.xml:/etc/clickhouse-server/config.d/kafka.xml:ro
       - ./docker/clickhouse/config/named-collections-users.xml:/etc/clickhouse-server/users.d/named-collections.xml:ro
       - ./docker/clickhouse/config/prometheus.xml:/etc/clickhouse-server/config.d/prometheus.xml:ro

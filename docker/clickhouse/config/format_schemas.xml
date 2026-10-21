@@ -1,0 +1,3 @@
+<clickhouse>
+    <format_schema_path>/var/lib/clickhouse/user_files/format_schemas/</format_schema_path>
+</clickhouse>

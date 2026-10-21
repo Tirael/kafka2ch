@@ -140,6 +140,8 @@ dotnet exec tools/ClickHouseSchemaGen.Migrator/bin/Debug/net8.0/ClickHouseSchema
    самую долгую миграцию). Перед применением пишется `kind = 'started'`, после — `migration`; `started` без `migration`
    при следующем запуске даёт предупреждение «interrupted run», и миграция применяется повторно (SQL должен быть идемпотентным).
 
+   До первого statement'а Migrator выполняет preflight: проверяет `-- require:format_schema <file> sha256=<hash>` на всех репликах через `file()` (поэтому `format_schemas` смонтирован в `/var/lib/clickhouse/user_files/format_schemas`, см. `docker/clickhouse/config/format_schemas.xml`) и dry-run'ит DDL очередей/MV во временной БД. Отключить — `--skip-preflight`. Подробности — [clickhouse.codegen.md](src/Sandbox.Contracts/clickhouse.codegen.md#миграции-схемы).
+
 Контроль мутаций и распределённого DDL:
 
 - смена типа `Rewrite` (`DateTime -> DateTime64`, `Enum8 -> Enum16`) переписывает все парты, поэтому по умолчанию она manual (`--allow-manual`); автоматически — только с `"migrations": { "autoRewrite": true }`;
