@@ -84,7 +84,7 @@ public sealed record MigrationPlan
             ColumnRemoved => true,
             ColumnRenamed => true,
             ColumnAdded => true,
-            ColumnTypeChanged { Kind: TypeChangeKind.Destructive or TypeChangeKind.Manual } => true,
+            ColumnTypeChanged { Kind: TypeChangeKind.Destructive or TypeChangeKind.Manual or TypeChangeKind.Rewrite } => true,
             OrderByOrTtlChanged => true,
             EngineChanged => true,
             OriginChanged => true,

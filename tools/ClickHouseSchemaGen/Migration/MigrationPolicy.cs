@@ -12,10 +12,11 @@ public static class MigrationPolicy
         List<SchemaChange> manual = [];
 
         var manualTables = CollectManualTables(diff, oldPlan, newPlan);
+        var autoRewrite = newPlan.Config.Migrations.AutoRewrite;
 
         foreach (var change in diff.Changes)
         {
-            if (ShouldBeManual(change, manualTables))
+            if (ShouldBeManual(change, manualTables, autoRewrite))
                 manual.Add(change);
             else
                 automatic.Add(change);
@@ -69,11 +70,12 @@ public static class MigrationPolicy
         return manualTables;
     }
 
-    private static bool ShouldBeManual(SchemaChange change, HashSet<string> manualTables) =>
+    private static bool ShouldBeManual(SchemaChange change, HashSet<string> manualTables, bool autoRewrite) =>
         change switch
         {
             ColumnRemoved => true,
             ColumnTypeChanged { Kind: TypeChangeKind.Destructive or TypeChangeKind.Manual } => true,
+            ColumnTypeChanged { Kind: TypeChangeKind.Rewrite } when !autoRewrite => true,
             OrderByOrTtlChanged => true,
             EngineChanged => true,
             OriginChanged => true,
