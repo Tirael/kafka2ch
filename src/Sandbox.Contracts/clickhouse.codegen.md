@@ -34,7 +34,7 @@ dotnet build src/Sandbox.Contracts
 }
 ```
 
-Без секции `kafka` подставляются значения по умолчанию модели (`brokerList: kafka:9092`, `topic: orders`, `groupName: clickhouse-orders`, `skipBytes: 6` и т.д.). Для другого топика секцию `kafka` задайте явно.
+Без секции `kafka` подставляются значения по умолчанию модели (`brokerList: kafka:9092` при отсутствии `namedCollection`, `topic: orders`, `groupName: clickhouse-orders`, `skipBytes: 6` и т.д.). Для другого топика секцию `kafka` задайте явно.
 
 ---
 
@@ -229,7 +229,8 @@ Workflow: правка proto → build падает на drift → `Cli migrate 
 
 | Поле                            | По умолчанию          | Описание                                                              |
 | ------------------------------- | --------------------- | --------------------------------------------------------------------- |
-| `brokerList`                    | `"kafka:9092"`        | Брокеры Kafka                                                         |
+| `brokerList`                    | `"kafka:9092"`        | Брокеры Kafka (`kafka_broker_list` в DDL); взаимоисключается с `namedCollection` |
+| `namedCollection`               | —                     | Имя named collection ClickHouse с брокерами и секретами: `ENGINE = Kafka(<имя>)` без `kafka_broker_list` |
 | `topic`                         | `"orders"`            | Топик                                                                 |
 | `groupName`                     | `"clickhouse-orders"` | Consumer group                                                        |
 | `skipBytes`                     | `6`                   | Пропуск Confluent Protobuf envelope (`00` + 4 байта schema id + `00`) |
@@ -241,6 +242,52 @@ Workflow: правка proto → build падает на drift → `Cli migrate 
 | `skipBrokenMessages`            | —                     | `kafka_skip_broken_messages` (≥ 0), только при `handleErrorMode: default` |
 
 `handleErrorMode` и `skipBrokenMessages` попадают в `SETTINGS` только при значениях не по умолчанию. Их изменение пересоздаёт queue (`KafkaTableChanged`).
+
+#### `namedCollection` (брокеры и секреты вне DDL)
+
+Демо-конфиг использует `"namedCollection": "kafka_orders"`. Генератор пишет:
+
+```sql
+ENGINE = Kafka(kafka_orders)
+SETTINGS
+    kafka_topic_list = 'orders',
+    kafka_group_name = 'clickhouse-orders',
+    kafka_format = 'ProtobufSingle',
+    ...
+```
+
+- В DDL, миграциях и `schema.snapshot.json` нет брокеров и секретов; snapshot хранит только имя коллекции (`"namedCollection": "kafka_orders"`, без `brokerList`). Смена брокеров/паролей внутри коллекции не порождает diff и миграцию (нужен рестарт/пересоздание consumer'ов ClickHouse, а не изменение схемы). Смена имени коллекции или переход `brokerList` ↔ `namedCollection` — `KafkaTableChanged` (автоматическое пересоздание queue, offsets группы сохраняются).
+- `brokerList` и `namedCollection` взаимоисключаются (ошибка валидации). Без обоих — `kafka_broker_list = 'kafka:9092'` (как раньше).
+- Коллекция должна существовать до `CREATE TABLE` на **каждой** ноде, где создаётся queue (`ON CLUSTER` / Replicated database): иначе `There is no named collection`. В compose её задаёт [`docker/clickhouse/config/kafka.xml`](../../docker/clickhouse/config/kafka.xml) (монтируется на все ноды), брокеры — из env `KAFKA_BROKER_LIST` (`from_env`, по умолчанию `kafka:9092`).
+- Пользователю, выполняющему init/миграции, нужен грант `NAMED COLLECTION` на коллекцию. Пользователи из `users.xml` его не имеют без `<named_collection_control>1</named_collection_control>` ([`named-collections-users.xml`](../../docker/clickhouse/config/named-collections-users.xml) для `default` в compose); для SQL-пользователей — `GRANT NAMED COLLECTION ON kafka_orders TO migrator`. `show_named_collections_secrets` оставьте `0`.
+- Precedence в ClickHouse 26.6: значения из `SETTINGS` перекрывают одноимённые ключи коллекции (`loadFromNamedCollection`, затем `loadFromQuery`). Держите в коллекции только подключение (`kafka_broker_list`, `kafka_security_protocol`, `kafka_sasl_*`, `<kafka>`), а `kafka_topic_list` / `kafka_group_name` / `kafka_format` / `kafka_schema` / `kafka_num_consumers` / `kafka_handle_error_mode` — в codegen (они в snapshot и диффятся). Ключи схемы, положенные в коллекцию, генератор не видит.
+- Глобальная секция `<kafka>` сервера **не** мержится для таблиц на named collection: librdkafka-настройки (`session_timeout_ms`, `heartbeat_interval_ms`, TLS, OAUTHBEARER) кладите во вложенный `<kafka>` коллекции (точки → `_`).
+
+SASL/TLS (пример для production; значения — из env/секретов, в git не коммитить):
+
+```xml
+<clickhouse>
+    <named_collections>
+        <kafka_orders>
+            <kafka_broker_list from_env="KAFKA_BROKER_LIST"/>
+            <kafka_security_protocol>SASL_SSL</kafka_security_protocol>
+            <kafka_sasl_mechanism>SCRAM-SHA-512</kafka_sasl_mechanism>
+            <kafka_sasl_username from_env="KAFKA_SASL_USERNAME"/>
+            <kafka_sasl_password from_env="KAFKA_SASL_PASSWORD"/>
+            <kafka>
+                <ssl_ca_location>/etc/clickhouse-server/kafka/ca.pem</ssl_ca_location>
+                <ssl_certificate_location>/etc/clickhouse-server/kafka/client.pem</ssl_certificate_location>
+                <ssl_key_location>/etc/clickhouse-server/kafka/client.key</ssl_key_location>
+                <ssl_endpoint_identification_algorithm>https</ssl_endpoint_identification_algorithm>
+                <session_timeout_ms>60000</session_timeout_ms>
+                <heartbeat_interval_ms>10000</heartbeat_interval_ms>
+            </kafka>
+        </kafka_orders>
+    </named_collections>
+</clickhouse>
+```
+
+`kafka_security_protocol`: `PLAINTEXT` \| `SSL` \| `SASL_PLAINTEXT` \| `SASL_SSL`; `kafka_sasl_mechanism`: `PLAIN` \| `SCRAM-SHA-256` \| `SCRAM-SHA-512` \| `GSSAPI` \| `OAUTHBEARER` (для OIDC — `sasl_oauthbearer_*` во вложенном `<kafka>`). Mutual TLS без SASL: `kafka_security_protocol = SSL` + `ssl_*`. При незаданной переменной `from_env` ClickHouse лишь пишет warning `Env variable is not set` и оставляет ключ пустым (queue не подключится), поэтому compose всегда передаёт `KAFKA_BROKER_LIST`.
 
 При `handleErrorMode: "stream"` битое сообщение не останавливает потребление: генератор добавляет в `pipeline` таблицу `{tableName}_errors` (MergeTree: `_topic`, `_partition`, `_offset`, `_raw_message`, `_error`, `received_at`; в кластере — `*_local` + `Distributed`) и view `{tableName}_errors_mv … WHERE length(_error) > 0` (в кластере пишет в `*_local`), а все остальные view этой queue получают `WHERE length(_error) = 0`. Для `stream` нужна секция `pipeline`; имена `{tableName}_errors` / `{tableName}_errors_mv` (и `{tableName}_errors_local` в кластере) не должны быть заняты.
 
@@ -563,6 +610,7 @@ TTL event_time + INTERVAL 90 DAY;
 - Автогенерируемое имя view `{tableName}_mv` уже занято другим materialized view
 - TTL ссылается на колонку, которой нет в `columns` (например `created_at`, когда в `columns` есть только `event_time`)
 - `engine` не из семейства MergeTree (`MergeTree`, `ReplacingMergeTree`, `SummingMergeTree`, `AggregatingMergeTree`, `CollapsingMergeTree`), с `Replicated`-префиксом, с неверным числом аргументов (`CollapsingMergeTree` без `sign`, `MergeTree(x)`) или с несбалансированными скобками
+- `kafka.brokerList` вместе с `kafka.namedCollection` (взаимоисключаются); `namedCollection` не идентификатор (`[A-Za-z_][A-Za-z0-9_]*`)
 - `kafka.handleErrorMode` не `default` / `stream` / `dead_letter_queue`; `skipBrokenMessages` < 0 или вместе с не-`default` режимом; `stream` без `pipeline` или с занятым именем `{tableName}_errors` / `{tableName}_errors_mv`
 - `key.format` не `string` / `protobuf`; `key.format: protobuf` без `key.messageType`; `key.messageType` / `skipBytes` / `fieldOverrides` при строковом ключе
 - MV ссылается на `_key.<поле>`, которого нет в protobuf-ключе (или ключ строковый)

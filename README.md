@@ -146,7 +146,7 @@ docker compose -f docker-compose.yml -f docker-compose.cluster.yml \
   -f docker-compose.cluster.replicated-db.yml up -d --build
 ```
 
-Overlay [`docker-compose.cluster.yml`](docker-compose.cluster.yml): `clickhouse` = шард 1 / реплика 1 (порты те же), плюс `clickhouse-02..04`, `clickhouse-keeper-01..03`, `clickhouse-cluster-init`, топики на 4 партиции. На всех нодах (и на single-node) монтируется [`docker/clickhouse/config/kafka.xml`](docker/clickhouse/config/kafka.xml) (`session_timeout_ms` / `heartbeat_interval_ms` для Kafka engine).
+Overlay [`docker-compose.cluster.yml`](docker-compose.cluster.yml): `clickhouse` = шард 1 / реплика 1 (порты те же), плюс `clickhouse-02..04`, `clickhouse-keeper-01..03`, `clickhouse-cluster-init`, топики на 4 партиции. На всех нодах (и на single-node) монтируется [`docker/clickhouse/config/kafka.xml`](docker/clickhouse/config/kafka.xml): named collection `kafka_orders` (брокеры из env `KAFKA_BROKER_LIST`, `session_timeout_ms` / `heartbeat_interval_ms`), на которую ссылается `ENGINE = Kafka(kafka_orders)`, и [`named-collections-users.xml`](docker/clickhouse/config/named-collections-users.xml) (грант на её использование для `default`). Брокеры и SASL/TLS-секреты не попадают в DDL, миграции и snapshot — см. [`namedCollection`](src/Sandbox.Contracts/clickhouse.codegen.md#namedcollection-брокеры-и-секреты-вне-ddl).
 
 | Нода | Шард | Реплика |
 |---|---|---|
