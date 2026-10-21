@@ -30,6 +30,12 @@ echo "==> In-repo Contracts codegen (ProjectReference / local Tasks)"
 dotnet build "${ROOT}/src/Sandbox.Contracts/Sandbox.Contracts.csproj" -c Release --nologo
 
 echo "==> NuGet smoke: restore Tasks package + generate"
+# VersionPrefix is fixed, so a previously restored package would shadow the fresh pack.
+GLOBAL_PACKAGES="$(dotnet nuget locals global-packages --list --force-english-output | sed 's/^global-packages: //')"
+rm -rf "${GLOBAL_PACKAGES%/}"/clickhouseschemagen.* \
+  "${ROOT}/samples/NuGetCodegenSmoke/obj" \
+  "${ROOT}/samples/NuGetCodegenSmoke/bin" \
+  "${ROOT}/samples/NuGetCodegenSmoke/generated"
 dotnet build "${ROOT}/samples/NuGetCodegenSmoke/NuGetCodegenSmoke.csproj" -c Release --nologo
 test -f "${ROOT}/samples/NuGetCodegenSmoke/generated/01_orders_queue.sql"
 echo "Generated: samples/NuGetCodegenSmoke/generated/01_orders_queue.sql"
