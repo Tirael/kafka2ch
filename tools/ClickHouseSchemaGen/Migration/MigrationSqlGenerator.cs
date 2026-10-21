@@ -9,7 +9,8 @@ public static partial class MigrationSqlGenerator
         string migrationName,
         string? parentChecksum,
         string targetChecksum,
-        DateTimeOffset generatedAt)
+        DateTimeOffset generatedAt,
+        IReadOnlyDictionary<string, string>? formatSchemaChecksums = null)
     {
         ArgumentNullException.ThrowIfNull(plan);
         ArgumentNullException.ThrowIfNull(oldPlan);
@@ -30,6 +31,8 @@ public static partial class MigrationSqlGenerator
             .OrderBy(q => q, StringComparer.Ordinal)
             .ToList();
 
+        AppendFormatSchemaRequirements(builder, newPlan, kafkaRecreates, addedKafkaTables, formatSchemaChecksums);
+
         foreach (var queue in detachedQueues)
         {
             builder.AppendLine(cluster.DetachTableSql(queue));
@@ -48,6 +51,35 @@ public static partial class MigrationSqlGenerator
         AppendManualBlock(builder, plan, newPlan, cluster);
 
         return SqlText.Normalize(builder.ToString());
+    }
+
+    private static void AppendFormatSchemaRequirements(
+        StringBuilder builder,
+        ResolvedSchemaPlan newPlan,
+        HashSet<string> kafkaRecreates,
+        HashSet<string> addedKafkaTables,
+        IReadOnlyDictionary<string, string>? formatSchemaChecksums)
+    {
+        if (formatSchemaChecksums is null)
+            return;
+
+        var fileNames = newPlan.KafkaTables
+            .Where(t => kafkaRecreates.Contains(t.Config.TableName) || addedKafkaTables.Contains(t.Config.TableName))
+            .Select(t => FormatSchemaRequirement.FileNameFor(t.Config.ProtoFile))
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(f => f, StringComparer.Ordinal)
+            .ToList();
+
+        foreach (var fileName in fileNames)
+        {
+            if (!formatSchemaChecksums.TryGetValue(fileName, out var checksum))
+                throw new InvalidOperationException($"No checksum provided for format schema '{fileName}'.");
+
+            builder.AppendLine(new FormatSchemaRequirement(fileName, checksum).ToMarker());
+        }
+
+        if (fileNames.Count > 0)
+            builder.AppendLine();
     }
 
     private static void AppendMergeTreeAutomaticChanges(

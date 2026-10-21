@@ -101,7 +101,12 @@ public sealed class MigrationOrchestrator(ClickHouseSchemaGenerator generator, T
                     $"{version}_{name}",
                     topology.ParentChecksum,
                     topology.TargetChecksum,
-                    generatedAt));
+                    generatedAt,
+                    topology.Paths.FormatSchemasDirectory is null
+                        ? null
+                        : FormatSchemaRequirement.ComputeChecksums(
+                            topology.Config.KafkaTables,
+                            topology.Paths.FormatSchemasDirectory)));
             files.Add(migrationPath, sql);
             migrationPaths.Add(migrationPath);
 
@@ -310,7 +315,10 @@ public sealed class MigrationOrchestrator(ClickHouseSchemaGenerator generator, T
         return (config, new MigrationPaths(
             SnapshotPath: CodegenConfigLoader.ResolvePath(configPath, config.Migrations.SnapshotPath),
             MigrationsDirectory: CodegenConfigLoader.ResolvePath(configPath, config.Migrations.MigrationsDirectory),
-            VersionsOutputPath: CodegenConfigLoader.ResolvePath(configPath, config.Migrations.VersionsOutputPath)));
+            VersionsOutputPath: CodegenConfigLoader.ResolvePath(configPath, config.Migrations.VersionsOutputPath),
+            FormatSchemasDirectory: string.IsNullOrWhiteSpace(config.Migrations.FormatSchemasDirectory)
+                ? null
+                : CodegenConfigLoader.ResolvePath(configPath, config.Migrations.FormatSchemasDirectory)));
     }
 
     private static MigrationFileInfo FindMigration(
@@ -420,7 +428,8 @@ public sealed class MigrationOrchestrator(ClickHouseSchemaGenerator generator, T
 public sealed record MigrationPaths(
     string SnapshotPath,
     string MigrationsDirectory,
-    string VersionsOutputPath);
+    string VersionsOutputPath,
+    string? FormatSchemasDirectory = null);
 
 public sealed record MigrationStatusResult(
     bool HasSnapshot,

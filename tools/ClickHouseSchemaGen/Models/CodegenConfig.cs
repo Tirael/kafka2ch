@@ -30,6 +30,8 @@ public sealed class MigrationsConfig
         $"../../docker/clickhouse/init/{SchemaMigrationsTable.DefaultScriptFileName}";
 
     public bool AutoRewrite { get; set; }
+
+    public string? FormatSchemasDirectory { get; set; }
 }
 
 public sealed class CodegenDefaults

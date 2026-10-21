@@ -101,7 +101,7 @@ public sealed class MigrationQueueLifecycleIntegrationTests : IAsyncLifetime
             CREATE TABLE IF NOT EXISTS orders_queue (broken NoSuchType) ENGINE = Kafka;
             """);
 
-        var act = () => CreateRunner().ApplyAsync(_clickHouse.GetConnectionString(), _migrationsDirectory, CancellationToken.None);
+        var act = () => CreateRunner(skipPreflight: true).ApplyAsync(_clickHouse.GetConnectionString(), _migrationsDirectory, CancellationToken.None);
 
         var failure = (await act.Should().ThrowAsync<MigrationFailedException>()).Which;
         failure.Report.Restored.Should().Equal("orders_queue", "orders_mv");
@@ -177,7 +177,8 @@ public sealed class MigrationQueueLifecycleIntegrationTests : IAsyncLifetime
         }
     }
 
-    private static MigrationRunner CreateRunner() => new(NullLogger.Instance, TimeProvider.System);
+    private static MigrationRunner CreateRunner(bool skipPreflight = false) =>
+        new(NullLogger.Instance, TimeProvider.System, skipPreflight: skipPreflight);
 
     private async Task<object?> ScalarAsync(string sql)
     {
