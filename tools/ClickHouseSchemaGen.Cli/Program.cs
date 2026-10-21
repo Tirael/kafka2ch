@@ -43,7 +43,7 @@ static int RunMigrate(string[] args)
 {
     if (args.Length == 0)
     {
-        Console.Error.WriteLine("Missing migrate subcommand (init|status|versions|snapshot-upgrade|verify|--name).");
+        Console.Error.WriteLine("Missing migrate subcommand (init|status|versions|snapshot-upgrade|verify|rebase|--name).");
         return 1;
     }
 
@@ -73,6 +73,21 @@ static int RunMigrate(string[] args)
         Console.WriteLine(upgrade.FromVersion == upgrade.ToVersion
             ? $"Snapshot '{upgrade.SnapshotPath}' is already version {upgrade.ToVersion}; rewritten without changes."
             : $"Upgraded snapshot '{upgrade.SnapshotPath}' from version {upgrade.FromVersion} to {upgrade.ToVersion}.");
+        return 0;
+    }
+
+    if (args[0] == "rebase")
+    {
+        var rebaseArgs = args.AsSpan(1).ToArray();
+        var configPath = RequireConfig(rebaseArgs);
+        var migration = OptionalArg(rebaseArgs, "--name")
+            ?? throw new InvalidOperationException("Missing required --name for migrate rebase.");
+        var rebase = orchestrator.Rebase(
+            configPath,
+            migration,
+            OptionalArg(rebaseArgs, "--version"),
+            OptionalArg(rebaseArgs, "--parent-snapshot"));
+        Console.WriteLine($"Renamed '{rebase.OldPath}' -> '{rebase.NewPath}' and regenerated the migration baseline.");
         return 0;
     }
 
@@ -175,12 +190,14 @@ static void LoadMessageAssemblies(string[] args)
     }
 }
 
-static string RequireConfig(string[] args)
+static string RequireConfig(string[] args) =>
+    OptionalArg(args, "--config")
+        ?? throw new InvalidOperationException("Missing required --config argument.");
+
+static string? OptionalArg(string[] args, string name)
 {
-    var configIndex = Array.IndexOf(args, "--config");
-    if (configIndex < 0 || configIndex + 1 >= args.Length)
-        throw new InvalidOperationException("Missing required --config argument.");
-    return args[configIndex + 1];
+    var index = Array.IndexOf(args, name);
+    return index < 0 || index + 1 >= args.Length ? null : args[index + 1];
 }
 
 static int UnknownCommand(string command)
@@ -199,6 +216,8 @@ static void PrintUsage()
           clickhouse-schema-gen migrate versions --config <path>   (rewrite versionsOutputPath from migrations)
           clickhouse-schema-gen migrate snapshot-upgrade --config <path> [--assemblies <dll[;dll…]>]
                                                                    (rewrite schema.snapshot.json in the current format)
+          clickhouse-schema-gen migrate rebase --config <path> --name <file> [--version <yyyyMMddHHmmss>] [--parent-snapshot <path>]
+                                (rename an unapplied migration to a version after all others and rewrite versionsOutputPath)
           clickhouse-schema-gen migrate --config <path> [--config <path> …] --name <name> [--assemblies <dll[;dll…]>] [--allow-manual]
           clickhouse-schema-gen migrate --all-topologies <topologies.json> --name <name> [--assemblies <dll[;dll…]>] [--allow-manual]
                                                                    (one version for every topology; snapshots updated all or none)

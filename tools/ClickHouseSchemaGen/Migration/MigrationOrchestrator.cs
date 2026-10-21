@@ -242,6 +242,50 @@ public sealed class MigrationOrchestrator(ClickHouseSchemaGenerator generator, T
         return new SnapshotUpgradeResult(paths.SnapshotPath, snapshot.Version, upgraded.Version);
     }
 
+    public MigrationRebaseResult Rebase(
+        string configPath,
+        string migration,
+        string? version = null,
+        string? parentSnapshotPath = null,
+        TimeProvider? timeProvider = null)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(migration);
+        var clock = timeProvider ?? _defaultTimeProvider;
+
+        var (config, paths) = LoadContext(configPath);
+        var migrations = SchemaMigrationsScriptGenerator.ReadFromDirectory(paths.MigrationsDirectory);
+        var source = FindMigration(migrations, migration, paths.MigrationsDirectory);
+        var latest = migrations
+            .Where(m => !ReferenceEquals(m, source))
+            .Select(m => m.Version)
+            .OrderBy(v => v, StringComparer.Ordinal)
+            .LastOrDefault();
+
+        var newVersion = version is null
+            ? MigrationVersion.Next(latest, clock.GetUtcNow())
+            : ValidateExplicitVersion(version, latest);
+
+        var sql = File.ReadAllText(source.Path);
+        ValidateSnapshotChain(paths.SnapshotPath, parentSnapshotPath, source, sql);
+
+        var newPath = Path.Combine(Path.GetDirectoryName(source.Path)!, $"{newVersion}_{source.Name}.sql");
+        if (File.Exists(newPath))
+            throw new InvalidOperationException($"Migration file '{newPath}' already exists.");
+
+        if (MigrationVersion.ReadHeader(sql, MigrationHeaderField.Migration) is null)
+        {
+            File.Move(source.Path, newPath);
+        }
+        else
+        {
+            File.WriteAllText(newPath, MigrationVersion.RewriteMigrationHeader(sql, $"{newVersion}_{source.Name}"));
+            File.Delete(source.Path);
+        }
+
+        WriteVersionsScript(config, paths);
+        return new MigrationRebaseResult(source.Path, newPath, newVersion);
+    }
+
     public string WriteVersionsScript(string configPath)
     {
         var (config, paths) = LoadContext(configPath);
@@ -268,6 +312,105 @@ public sealed class MigrationOrchestrator(ClickHouseSchemaGenerator generator, T
             MigrationsDirectory: CodegenConfigLoader.ResolvePath(configPath, config.Migrations.MigrationsDirectory),
             VersionsOutputPath: CodegenConfigLoader.ResolvePath(configPath, config.Migrations.VersionsOutputPath)));
     }
+
+    private static MigrationFileInfo FindMigration(
+        IReadOnlyList<MigrationFileInfo> migrations,
+        string migration,
+        string migrationsDirectory)
+    {
+        var key = Path.GetFileName(migration);
+        if (key.EndsWith(".sql", StringComparison.OrdinalIgnoreCase))
+            key = key[..^".sql".Length];
+
+        var matches = migrations
+            .Where(m => string.Equals($"{m.Version}_{m.Name}", key, StringComparison.Ordinal)
+                || string.Equals(m.Name, key, StringComparison.Ordinal))
+            .ToList();
+
+        return matches.Count switch
+        {
+            0 => throw new InvalidOperationException(
+                $"Migration '{migration}' not found in '{migrationsDirectory}'."),
+            1 => matches[0],
+            _ => throw new InvalidOperationException(
+                $"Migration name '{migration}' is ambiguous: "
+                + string.Join(", ", matches.Select(m => Path.GetFileName(m.Path)))
+                + ". Pass the full file name.")
+        };
+    }
+
+    private static string ValidateExplicitVersion(string version, string? latest)
+    {
+        if (version.Length != MigrationVersion.Format.Length || !MigrationVersion.TryParse(version, out _))
+        {
+            throw new InvalidOperationException(
+                $"Invalid version '{version}'; expected {MigrationVersion.Format} (UTC).");
+        }
+
+        if (latest is not null && string.CompareOrdinal(version, latest) <= 0)
+        {
+            throw new InvalidOperationException(
+                $"Version '{version}' must be greater than the latest migration version '{latest}'.");
+        }
+
+        return version;
+    }
+
+    private static void ValidateSnapshotChain(
+        string snapshotPath,
+        string? parentSnapshotPath,
+        MigrationFileInfo migration,
+        string sql)
+    {
+        if (!File.Exists(snapshotPath))
+        {
+            throw new InvalidOperationException(
+                $"Snapshot not found at '{snapshotPath}'. Run migrate init first.");
+        }
+
+        var snapshot = SchemaSnapshotSerializer.Load(snapshotPath);
+        if (string.IsNullOrWhiteSpace(snapshot.ParentChecksum))
+        {
+            throw new InvalidOperationException(
+                $"Snapshot '{snapshotPath}' has no parentChecksum, so it was not produced by a migration. "
+                + "Restore the snapshot from the base branch and regenerate the migration with migrate --name.");
+        }
+
+        if (parentSnapshotPath is not null)
+        {
+            var expectedParent = SnapshotChecksum(SchemaSnapshotSerializer.Load(parentSnapshotPath));
+            if (!string.Equals(snapshot.ParentChecksum, expectedParent, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException(
+                    $"Snapshot '{snapshotPath}' was not generated over '{parentSnapshotPath}' "
+                    + $"(parentChecksum {snapshot.ParentChecksum}, expected {expectedParent}). "
+                    + "Restore the snapshot from the base branch and regenerate the migration with migrate --name.");
+            }
+        }
+
+        var fileName = Path.GetFileName(migration.Path);
+        var headerTarget = MigrationVersion.ReadHeader(sql, MigrationHeaderField.TargetChecksum);
+        var snapshotChecksum = SnapshotChecksum(snapshot);
+        if (headerTarget is not null
+            && !string.Equals(headerTarget, snapshotChecksum, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                $"Migration '{fileName}' Target checksum {headerTarget} does not match snapshot '{snapshotPath}' "
+                + $"({snapshotChecksum}); only the migration that produced the current snapshot can be rebased.");
+        }
+
+        var headerParent = MigrationVersion.ReadHeader(sql, MigrationHeaderField.ParentChecksum);
+        if (headerParent is not null
+            && !string.Equals(headerParent, snapshot.ParentChecksum, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                $"Migration '{fileName}' Parent checksum {headerParent} does not match snapshot parentChecksum "
+                + $"{snapshot.ParentChecksum} in '{snapshotPath}'.");
+        }
+    }
+
+    private static string SnapshotChecksum(SchemaSnapshot snapshot) =>
+        SchemaSnapshotSerializer.ComputeChecksum(SchemaSnapshotSerializer.SerializeToString(snapshot));
 
     private static string SanitizeMigrationName(string name) =>
         string.Join('_', name.Split(Path.GetInvalidFileNameChars(), StringSplitOptions.RemoveEmptyEntries))
@@ -309,3 +452,8 @@ internal sealed record TopologyMigration(
     string ParentChecksum,
     string TargetChecksum,
     string? AdoptionMessage = null);
+
+public sealed record MigrationRebaseResult(
+    string OldPath,
+    string NewPath,
+    string Version);
