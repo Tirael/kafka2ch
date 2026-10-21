@@ -1,5 +1,6 @@
 global using AwesomeAssertions;
 global using ClickHouseSchemaGen;
+global using ClickHouseSchemaGen.Descriptors;
 global using ClickHouseSchemaGen.Generation;
 global using ClickHouseSchemaGen.Mapping;
 global using ClickHouseSchemaGen.Migration;
@@ -17,4 +18,5 @@ global using ClickHouseSchemaGen.TestContracts.Common;
 global using ClickHouseSchemaGen.TestContracts.Fixtures;
 global using System.Text;
 global using System.Text.Json;
+global using System.Text.Json.Nodes;
 global using Xunit;

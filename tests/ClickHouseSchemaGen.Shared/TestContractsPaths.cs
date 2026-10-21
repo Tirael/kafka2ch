@@ -24,4 +24,6 @@ public static class TestContractsPaths
     public static string KeeperTestConfigPath => Path.Combine(RootDirectory, "keeper-test.xml");
 
     public static string PrometheusConfigPath => Path.Combine(RootDirectory, "prometheus.xml");
+
+    public static string DescriptorSetPath => Path.Combine(RootDirectory, "test-contracts.binpb");
 }

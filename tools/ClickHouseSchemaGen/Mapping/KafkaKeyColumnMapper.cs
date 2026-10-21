@@ -1,6 +1,8 @@
 namespace ClickHouseSchemaGen.Mapping;
 
-public sealed class KafkaKeyColumnMapper(DenormalizationPlanner planner)
+public sealed class KafkaKeyColumnMapper(
+    DenormalizationPlanner planner,
+    IMessageDescriptorSource? descriptors = null)
 {
     public const string KeyColumn = "_key";
 
@@ -22,7 +24,7 @@ public sealed class KafkaKeyColumnMapper(DenormalizationPlanner planner)
         if (!table.Key.IsProtobuf)
             return [];
 
-        var descriptor = ProtoDescriptorResolver.ResolveDescriptor(table.Key.MessageType!);
+        var descriptor = (descriptors ?? AssemblyMessageDescriptorSource.Instance).Resolve(table.Key.MessageType!);
         var payload = $"substring({KeyColumn}, {(table.Key.SkipBytes ?? table.Kafka.SkipBytes) + 1})";
 
         return planner.MapMessage(descriptor, defaults, table.Key.FieldOverrides)

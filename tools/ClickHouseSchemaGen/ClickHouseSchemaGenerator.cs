@@ -2,17 +2,19 @@ namespace ClickHouseSchemaGen;
 
 public sealed class ClickHouseSchemaGenerator(
     DenormalizationPlanner planner,
-    CodegenConfigValidator? configValidator = null)
+    CodegenConfigValidator? configValidator = null,
+    IMessageDescriptorSource? descriptorSource = null)
 {
     private readonly CodegenConfigValidator _configValidator = configValidator ?? new();
-    private readonly KafkaKeyColumnMapper _keyMapper = new(planner);
 
     public string GenerateKafkaTableSql(
         KafkaTableConfig config,
         CodegenDefaults defaults,
         CodegenConfig? rootConfig = null)
     {
-        var descriptor = ProtoDescriptorResolver.ResolveDescriptor(config.MessageType);
+        var descriptors = descriptorSource
+            ?? (rootConfig is null ? AssemblyMessageDescriptorSource.Instance : MessageDescriptorSources.For(rootConfig));
+        var descriptor = descriptors.Resolve(config.MessageType);
         var overrides = MergeFieldOverrides(rootConfig?.FieldOverrides, config.FieldOverrides);
         var columns = planner.MapMessage(descriptor, defaults, overrides);
         return KafkaTableGenerator.Generate(
@@ -28,6 +30,9 @@ public sealed class ClickHouseSchemaGenerator(
     {
         _configValidator.ValidateAndThrow(config);
 
+        var descriptors = descriptorSource ?? MessageDescriptorSources.For(config);
+        var keyMapper = new KafkaKeyColumnMapper(planner, descriptors);
+
         var kafkaTables = new List<KafkaTablePlan>();
         var queueColumnsByTable = new Dictionary<string, IReadOnlyList<ClickHouseColumn>>(StringComparer.OrdinalIgnoreCase);
         var metaByQueue = new Dictionary<string, PersistKafkaMetaConfig>(StringComparer.OrdinalIgnoreCase);
@@ -35,10 +40,10 @@ public sealed class ClickHouseSchemaGenerator(
 
         foreach (var table in config.KafkaTables)
         {
-            var columns = MapKafkaTableColumns(table, config);
+            var columns = MapKafkaTableColumns(table, config, descriptors);
             queueColumnsByTable[table.TableName] = columns;
             kafkaTables.Add(new KafkaTablePlan { Config = table, Columns = columns });
-            keyColumnsByQueue[table.TableName] = _keyMapper.MapKeyColumns(table, config.Defaults);
+            keyColumnsByQueue[table.TableName] = keyMapper.MapKeyColumns(table, config.Defaults);
             metaByQueue[table.TableName] = KafkaMetaColumnFactory.Resolve(
                 config.Defaults.PersistKafkaMeta,
                 table.PersistKafkaMeta,
@@ -222,9 +227,12 @@ public sealed class ClickHouseSchemaGenerator(
             $"Available columns: {string.Join(", ", table.Columns.Select(column => column.Name))}.");
     }
 
-    private IReadOnlyList<ClickHouseColumn> MapKafkaTableColumns(KafkaTableConfig table, CodegenConfig rootConfig)
+    private IReadOnlyList<ClickHouseColumn> MapKafkaTableColumns(
+        KafkaTableConfig table,
+        CodegenConfig rootConfig,
+        IMessageDescriptorSource descriptors)
     {
-        var descriptor = ProtoDescriptorResolver.ResolveDescriptor(table.MessageType);
+        var descriptor = descriptors.Resolve(table.MessageType);
         var overrides = MergeFieldOverrides(rootConfig.FieldOverrides, table.FieldOverrides);
         return planner.MapMessage(descriptor, rootConfig.Defaults, overrides);
     }
@@ -242,25 +250,4 @@ public sealed class ClickHouseSchemaGenerator(
         new Dictionary<string, FieldOverrideConfig>(StringComparer.OrdinalIgnoreCase)
             .MergeInto(rootOverrides)
             .MergeInto(tableOverrides);
-}
-
-internal static class ProtoDescriptorResolver
-{
-    public static MessageDescriptor ResolveDescriptor(string messageType)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(messageType);
-
-        var type = Type.GetType(messageType, throwOnError: true)
-            ?? throw new InvalidOperationException($"Message type '{messageType}' was not found.");
-
-        if (!typeof(IMessage).IsAssignableFrom(type))
-            throw new InvalidOperationException($"Type '{messageType}' is not a protobuf message.");
-
-        var descriptorProperty = type.GetProperty(
-            "Descriptor",
-            BindingFlags.Public | BindingFlags.Static)
-            ?? throw new InvalidOperationException($"Type '{messageType}' has no Descriptor property.");
-
-        return (MessageDescriptor)descriptorProperty.GetValue(null)!;
-    }
 }
