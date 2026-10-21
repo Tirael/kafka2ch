@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "parentChecksum": "c3958834e94c3f077eec29b9abd11eca80b9ab8d158fd065008ae85694f8f5cf",
+  "parentChecksum": "c9cc13aad4ec106d5b2d7432100059108e6ee533ca74e03cf17638e34f2fc647",
   "trailingSqlHash": "0cb8bde0a48a4fd3d746a12db0ed2f8e94dde1e04a9705963f96436df3be3a8a",
   "kafkaTables": [
     {
@@ -15,7 +15,8 @@
         "numConsumers": 1,
         "flattenNested": false,
         "protobufOneofPresence": true,
-        "protobufFlattenGoogleWrappers": true
+        "protobufFlattenGoogleWrappers": true,
+        "handleErrorMode": "stream"
       },
       "persistKafkaMeta": {
         "key": true,
@@ -218,6 +219,44 @@
           "fieldNumberPath": ""
         }
       ]
+    },
+    {
+      "tableName": "orders_queue_errors",
+      "origin": "auto",
+      "sourceTable": "orders_queue",
+      "orderBy": "(_topic, _partition, _offset)",
+      "columns": [
+        {
+          "name": "_error",
+          "type": "String",
+          "fieldNumberPath": ""
+        },
+        {
+          "name": "_offset",
+          "type": "UInt64",
+          "fieldNumberPath": ""
+        },
+        {
+          "name": "_partition",
+          "type": "UInt64",
+          "fieldNumberPath": ""
+        },
+        {
+          "name": "_raw_message",
+          "type": "String",
+          "fieldNumberPath": ""
+        },
+        {
+          "name": "_topic",
+          "type": "LowCardinality(String)",
+          "fieldNumberPath": ""
+        },
+        {
+          "name": "received_at",
+          "type": "DateTime",
+          "fieldNumberPath": ""
+        }
+      ]
     }
   ],
   "materializedViews": [
@@ -226,6 +265,7 @@
       "origin": "explicit",
       "sourceTable": "orders_queue",
       "targetTable": "orders",
+      "where": "length(_error) = 0",
       "columns": [
         {
           "source": "price.amount",
@@ -283,6 +323,40 @@
           "source": "status",
           "target": "status",
           "expression": "toString(status)"
+        }
+      ]
+    },
+    {
+      "name": "orders_queue_errors_mv",
+      "origin": "auto",
+      "sourceTable": "orders_queue",
+      "targetTable": "orders_queue_errors",
+      "where": "length(_error) \u003E 0",
+      "columns": [
+        {
+          "source": "_error",
+          "target": "_error"
+        },
+        {
+          "source": "_offset",
+          "target": "_offset"
+        },
+        {
+          "source": "_partition",
+          "target": "_partition"
+        },
+        {
+          "source": "_raw_message",
+          "target": "_raw_message"
+        },
+        {
+          "source": "_topic",
+          "target": "_topic"
+        },
+        {
+          "source": "received_at",
+          "target": "received_at",
+          "expression": "now()"
         }
       ]
     }

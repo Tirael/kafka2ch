@@ -17,6 +17,18 @@ CREATE TABLE orders
 ENGINE = ReplacingMergeTree
 ORDER BY (event_time, order_id, kafka_partition, kafka_offset);
 
+CREATE TABLE orders_queue_errors
+(
+    _topic               LowCardinality(String),
+    _partition           UInt64,
+    _offset              UInt64,
+    _raw_message         String,
+    _error               String,
+    received_at          DateTime
+)
+ENGINE = MergeTree
+ORDER BY (_topic, _partition, _offset);
+
 CREATE OR REPLACE FUNCTION protobufWireVarint AS (m, p) ->
     arrayFold(
         (acc, b) -> if(
@@ -98,7 +110,19 @@ SELECT
     mapFromArrays(`_headers.name`, `_headers.value`) AS kafka_headers,
     _partition                   AS kafka_partition,
     _offset                      AS kafka_offset
-FROM orders_queue;
+FROM orders_queue
+WHERE length(_error) = 0;
+
+CREATE MATERIALIZED VIEW orders_queue_errors_mv TO orders_queue_errors AS
+SELECT
+    _topic                       AS _topic,
+    _partition                   AS _partition,
+    _offset                      AS _offset,
+    _raw_message                 AS _raw_message,
+    _error                       AS _error,
+    now()                        AS received_at
+FROM orders_queue
+WHERE length(_error) > 0;
 
 CREATE TABLE orders_agg_1m
 (
@@ -123,4 +147,4 @@ SELECT
 FROM orders FINAL
 GROUP BY minute, category;
 
-INSERT INTO schema_migrations (version, name, checksum, applied_at, kind) VALUES ('02', '02_pipeline.sql', '718fa547750db385f86a7a289a2b2e935b3a0e9d92523d9b12531796646b20dd', now(), 'init');
+INSERT INTO schema_migrations (version, name, checksum, applied_at, kind) VALUES ('02', '02_pipeline.sql', '418fe06cf223eddd46fcd90aefb7ff4485c9b8de9882f7abab5b9b7da7ae6a18', now(), 'init');

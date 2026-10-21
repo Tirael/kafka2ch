@@ -34,7 +34,8 @@
         "numConsumers": 1,
         "flattenNested": false,
         "protobufOneofPresence": true,
-        "protobufFlattenGoogleWrappers": true
+        "protobufFlattenGoogleWrappers": true,
+        "handleErrorMode": "stream"
       },
       "key": {
         "format": "protobuf",

@@ -22,6 +22,21 @@ ORDER BY (event_time, order_id, kafka_partition, kafka_offset);
 CREATE TABLE orders AS orders_local
 ENGINE = Distributed('kafka2ch', currentDatabase(), orders_local, cityHash64(order_id));
 
+CREATE TABLE orders_queue_errors_local
+(
+    _topic               LowCardinality(String),
+    _partition           UInt64,
+    _offset              UInt64,
+    _raw_message         String,
+    _error               String,
+    received_at          DateTime
+)
+ENGINE = ReplicatedMergeTree
+ORDER BY (_topic, _partition, _offset);
+
+CREATE TABLE orders_queue_errors AS orders_queue_errors_local
+ENGINE = Distributed('kafka2ch', currentDatabase(), orders_queue_errors_local, rand());
+
 CREATE OR REPLACE FUNCTION protobufWireVarint AS (m, p) ->
     arrayFold(
         (acc, b) -> if(
@@ -103,7 +118,19 @@ SELECT
     mapFromArrays(`_headers.name`, `_headers.value`) AS kafka_headers,
     _partition                   AS kafka_partition,
     _offset                      AS kafka_offset
-FROM orders_queue;
+FROM orders_queue
+WHERE length(_error) = 0;
+
+CREATE MATERIALIZED VIEW orders_queue_errors_mv TO orders_queue_errors_local AS
+SELECT
+    _topic                       AS _topic,
+    _partition                   AS _partition,
+    _offset                      AS _offset,
+    _raw_message                 AS _raw_message,
+    _error                       AS _error,
+    now()                        AS received_at
+FROM orders_queue
+WHERE length(_error) > 0;
 
 CREATE TABLE default.orders_agg_1m ON CLUSTER kafka2ch
 (
@@ -128,4 +155,4 @@ SELECT
 FROM kafka2ch.orders FINAL
 GROUP BY minute, category;
 
-INSERT INTO default.schema_migrations (version, name, checksum, applied_at, kind) VALUES ('02', '02_pipeline.sql', 'bf91b011bfe780cec9e3582910e436b0df7ca1f33be04d86fa6ee45183660c1e', now(), 'init');
+INSERT INTO default.schema_migrations (version, name, checksum, applied_at, kind) VALUES ('02', '02_pipeline.sql', '1728c78d36825f3f9dc7652b3dad38f7e8ea577657c10e962e4163ca383541cc', now(), 'init');
