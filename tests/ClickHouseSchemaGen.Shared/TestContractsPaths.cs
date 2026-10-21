@@ -22,4 +22,6 @@ public static class TestContractsPaths
         Path.Combine(RootDirectory, "clickhouse.codegen.cluster.replicated-db.dedup.json");
 
     public static string KeeperTestConfigPath => Path.Combine(RootDirectory, "keeper-test.xml");
+
+    public static string PrometheusConfigPath => Path.Combine(RootDirectory, "prometheus.xml");
 }

@@ -25,6 +25,7 @@
     <ProjectReference Include="..\ClickHouseSchemaGen.TestContracts\ClickHouseSchemaGen.TestContracts.csproj" />
     <ProjectReference Include="..\..\tools\ClickHouseSchemaGen\ClickHouseSchemaGen.csproj" />
     <ProjectReference Include="..\..\tools\ClickHouseSchemaGen.Migrator\ClickHouseSchemaGen.Migrator.csproj" />
+    <ProjectReference Include="..\..\src\Sandbox.Observability\Sandbox.Observability.csproj" />
   </ItemGroup>
 
 </Project>
