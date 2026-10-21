@@ -38,6 +38,21 @@ internal sealed class KafkaSettingsConfigValidator : AbstractValidator<KafkaSett
         RuleFor(settings => settings.GroupName).NotEmpty();
         RuleFor(settings => settings.SkipBytes).GreaterThanOrEqualTo(0);
         RuleFor(settings => settings.NumConsumers).GreaterThan(0);
+        RuleFor(settings => settings.MaxBlockSize)
+            .InclusiveBetween(1, KafkaThroughputLimits.MaxBlockSize)
+            .When(settings => settings.MaxBlockSize.HasValue);
+        RuleFor(settings => settings.FlushIntervalMs)
+            .InclusiveBetween(KafkaThroughputLimits.MinFlushIntervalMs, KafkaThroughputLimits.MaxFlushIntervalMs)
+            .When(settings => settings.FlushIntervalMs.HasValue);
+        RuleFor(settings => settings.PollMaxBatchSize)
+            .InclusiveBetween(1, KafkaThroughputLimits.MaxBlockSize)
+            .When(settings => settings.PollMaxBatchSize.HasValue);
+        RuleFor(settings => settings.PollMaxBatchSize)
+            .LessThanOrEqualTo(settings => settings.MaxBlockSize)
+            .WithMessage(settings =>
+                $"pollMaxBatchSize ({settings.PollMaxBatchSize}) must not exceed maxBlockSize ({settings.MaxBlockSize}): " +
+                "a poll batch larger than the block is split anyway.")
+            .When(settings => settings.PollMaxBatchSize.HasValue && settings.MaxBlockSize.HasValue);
         RuleFor(settings => settings.HandleErrorMode)
             .Must(mode => KafkaHandleErrorModes.All.Contains(mode, StringComparer.OrdinalIgnoreCase))
             .WithMessage($"handleErrorMode must be one of: {string.Join(", ", KafkaHandleErrorModes.All)}.");

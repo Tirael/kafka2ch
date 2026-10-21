@@ -215,6 +215,18 @@ public static class SchemaDiffer
         if (oldKafka.NumConsumers != newKafka.NumConsumers)
             reasons.Add("numConsumers changed");
 
+        if (oldKafka.MaxBlockSize != newKafka.MaxBlockSize)
+            reasons.Add("maxBlockSize changed");
+
+        if (oldKafka.FlushIntervalMs != newKafka.FlushIntervalMs)
+            reasons.Add("flushIntervalMs changed");
+
+        if (oldKafka.PollMaxBatchSize != newKafka.PollMaxBatchSize)
+            reasons.Add("pollMaxBatchSize changed");
+
+        if (oldKafka.ThreadPerConsumer != newKafka.ThreadPerConsumer)
+            reasons.Add("threadPerConsumer changed");
+
         if (oldKafka.FlattenNested != newKafka.FlattenNested)
             reasons.Add("flattenNested changed");
 

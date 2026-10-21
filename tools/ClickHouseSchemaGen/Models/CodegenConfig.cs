@@ -144,6 +144,15 @@ public sealed class KafkaSettingsConfig
         || string.Equals(HandleErrorMode, KafkaHandleErrorModes.Default, StringComparison.OrdinalIgnoreCase);
 }
 
+public static class KafkaThroughputLimits
+{
+    public const int MaxBlockSize = 10_000_000;
+
+    public const int MinFlushIntervalMs = 100;
+
+    public const int MaxFlushIntervalMs = 600_000;
+}
+
 public static class KafkaHandleErrorModes
 {
     public const string Default = "default";
