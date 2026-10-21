@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, cursor/w2-8-ci-pack-codegen-282f]
   pull_request:
   workflow_dispatch:
 
