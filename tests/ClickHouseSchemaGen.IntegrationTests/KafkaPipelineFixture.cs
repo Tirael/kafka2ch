@@ -139,6 +139,21 @@ public sealed class KafkaPipelineFixture : IAsyncLifetime
         }
     }
 
+    public async Task ExecuteAsync(string sql)
+    {
+        await using var connection = new ClickHouseConnection(_clickHouse.GetConnectionString());
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        await command.ExecuteNonQueryAsync();
+    }
+
+    public async Task RefreshAggregatesAsync()
+    {
+        await ExecuteAsync("SYSTEM REFRESH VIEW orders_agg_mv");
+        await ExecuteAsync("SYSTEM WAIT VIEW orders_agg_mv");
+    }
+
     public async Task<object?> ScalarAsync(string sql)
     {
         await using var connection = new ClickHouseConnection(_clickHouse.GetConnectionString());

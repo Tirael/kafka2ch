@@ -39,6 +39,36 @@ public sealed class KafkaClickHousePipelineE2ETests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task GivenRedeliveredKafkaMessages_WhenStoredTwice_ThenFinalAndAggregatesCountEachMessageOnce()
+    {
+        const int count = 200;
+        var orders = Enumerable.Range(0, count).Select(E2eOrders.Create).ToList();
+        var published = new ConcurrentQueue<string>();
+
+        using (var producer = _pipeline.CreateProducer())
+        {
+            await KafkaPipelineFixture.PublishAsync(producer, orders, published);
+            producer.Flush(TimeSpan.FromSeconds(30));
+        }
+
+        (await _pipeline.WaitForCountAsync("SELECT count() FROM orders", count, ConsumeTimeout)).Should().Be(count);
+
+        await _pipeline.ExecuteAsync("SYSTEM STOP MERGES orders");
+        await _pipeline.ExecuteAsync("INSERT INTO orders SELECT * FROM orders");
+        Convert.ToUInt64(await _pipeline.ScalarAsync("SELECT count() FROM orders"))
+            .Should().Be(2 * count, "the redelivered copies must be physically stored before deduplication");
+
+        await _pipeline.RefreshAggregatesAsync();
+
+        Convert.ToUInt64(await _pipeline.ScalarAsync("SELECT count() FROM orders FINAL")).Should().Be(count);
+        Convert.ToUInt64(await _pipeline.ScalarAsync("SELECT uniqExact(kafka_partition, kafka_offset) FROM orders"))
+            .Should().Be(count);
+        Convert.ToUInt64(await _pipeline.ScalarAsync("SELECT sum(orders_count) FROM orders_agg_1m")).Should().Be(count);
+        Convert.ToUInt64(await _pipeline.ScalarAsync("SELECT sum(total_qty) FROM orders_agg_1m"))
+            .Should().Be((ulong)Enumerable.Range(0, count).Sum(sequence => E2eOrders.QuantityOf(sequence)));
+    }
+
+    [Fact]
     public async Task GivenQueueRecreateMigration_WhenAppliedDuringPublishing_ThenNoOrdersAreLost()
     {
         var migrationSql = KafkaRecreateMigrationFixture.GenerateSql(_pipeline.ConfigPath);
