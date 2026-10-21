@@ -1,3 +1,6 @@
+global using System.Diagnostics.CodeAnalysis;
+global using System.Data;
+global using System.Globalization;
 global using System.Text.RegularExpressions;
 global using ClickHouse.Client.ADO;
 global using ClickHouseSchemaGen.Generation;
