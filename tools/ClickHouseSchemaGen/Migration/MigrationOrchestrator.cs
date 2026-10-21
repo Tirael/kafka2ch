@@ -49,11 +49,107 @@ public sealed class MigrationOrchestrator(ClickHouseSchemaGenerator generator, T
         string configPath,
         string name,
         bool allowManual,
+        TimeProvider? timeProvider = null) =>
+        Migrate([configPath], name, allowManual, timeProvider);
+
+    public MigrationRunResult Migrate(
+        IReadOnlyList<string> configPaths,
+        string name,
+        bool allowManual,
         TimeProvider? timeProvider = null)
     {
+        ArgumentNullException.ThrowIfNull(configPaths);
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
-        var clock = timeProvider ?? _defaultTimeProvider;
+        if (configPaths.Count == 0)
+            throw new ArgumentException("At least one codegen config is required.", nameof(configPaths));
 
+        var clock = timeProvider ?? _defaultTimeProvider;
+        var topologies = configPaths.Select(PlanTopology).ToList();
+        EnsureDistinctTargets(topologies);
+
+        if (topologies.All(topology => topology.Diff.Changes.Count == 0))
+        {
+            return new MigrationRunResult(
+                ExitCode: 0,
+                MigrationPaths: [],
+                Message: "No schema changes detected.");
+        }
+
+        var generatedAt = clock.GetUtcNow();
+        var version = generatedAt.ToString("yyyyMMddHHmmss");
+        var fileName = $"{version}_{SanitizeMigrationName(name)}.sql";
+        var requiresManualApproval = topologies.Any(topology => topology.MigrationPlan.RequiresManualApproval);
+        var updateSnapshots = !requiresManualApproval || allowManual;
+
+        var files = new AtomicFileSet();
+        var migrationPaths = new List<string>();
+        foreach (var topology in topologies)
+        {
+            var migrationPath = Path.Combine(topology.Paths.MigrationsDirectory, fileName);
+            var sql = SqlText.Normalize(topology.Diff.Changes.Count == 0
+                ? NoOpMigrationSql
+                : MigrationSqlGenerator.Generate(
+                    topology.MigrationPlan,
+                    topology.OldPlan,
+                    topology.NewPlan,
+                    $"{version}_{name}",
+                    topology.ParentChecksum,
+                    topology.TargetChecksum,
+                    generatedAt));
+            files.Add(migrationPath, sql);
+            migrationPaths.Add(migrationPath);
+
+            if (!updateSnapshots)
+                continue;
+
+            if (topology.Diff.Changes.Count > 0)
+                files.Add(topology.Paths.SnapshotPath, SchemaSnapshotSerializer.SerializeToString(topology.NewSnapshot));
+
+            var migrations = SchemaMigrationsScriptGenerator.ReadFromDirectory(topology.Paths.MigrationsDirectory)
+                .Append(new MigrationFileInfo(
+                    version,
+                    Path.GetFileNameWithoutExtension(fileName)[(version.Length + 1)..],
+                    SqlChecksum.Compute(sql),
+                    migrationPath))
+                .ToList();
+            files.Add(
+                topology.Paths.VersionsOutputPath,
+                SqlText.Normalize(SchemaMigrationsScriptGenerator.Generate(migrations, ClusterDdl.For(topology.Config))));
+        }
+
+        files.Commit();
+
+        var written = string.Join(", ", migrationPaths.Select(path => $"'{path}'"));
+        if (!updateSnapshots)
+        {
+            return new MigrationRunResult(
+                ExitCode: 2,
+                MigrationPaths: migrationPaths,
+                Message: "Migration SQL was written, but manual/destructive changes "
+                    + "require --allow-manual before updating the snapshot.");
+        }
+
+        return new MigrationRunResult(
+            ExitCode: 0,
+            MigrationPaths: migrationPaths,
+            Message: migrationPaths.Count == 1
+                ? $"Migration written to {written} and snapshot updated."
+                : $"Migration written to {written} and snapshots updated.");
+    }
+
+    public MigrationHistoryVerification Verify(IReadOnlyList<string> configPaths, string? baselineVersion)
+    {
+        ArgumentNullException.ThrowIfNull(configPaths);
+        return MigrationHistoryVerifier.Verify(
+            configPaths.Select(configPath => LoadContext(configPath).Paths.MigrationsDirectory).ToList(),
+            baselineVersion);
+    }
+
+    private const string NoOpMigrationSql =
+        "-- No schema changes for this topology; keeps migration versions aligned across topologies.\n";
+
+    private TopologyMigration PlanTopology(string configPath)
+    {
         var (config, paths) = LoadContext(configPath);
         if (!File.Exists(paths.SnapshotPath))
         {
@@ -68,14 +164,6 @@ public sealed class MigrationOrchestrator(ClickHouseSchemaGenerator generator, T
         ProtoCompatibilityValidator.Validate(oldPlan, newPlan);
 
         var diff = SchemaDiffer.Diff(oldPlan, newPlan);
-        if (diff.Changes.Count == 0)
-        {
-            return new MigrationRunResult(
-                ExitCode: 0,
-                MigrationPath: null,
-                Message: "No schema changes detected.");
-        }
-
         var migrationPlan = MigrationPolicy.Apply(diff, oldPlan, newPlan);
         var parentChecksum = SchemaSnapshotSerializer.ComputeChecksum(
             SchemaSnapshotSerializer.SerializeToString(oldSnapshot));
@@ -83,36 +171,34 @@ public sealed class MigrationOrchestrator(ClickHouseSchemaGenerator generator, T
         var targetChecksum = SchemaSnapshotSerializer.ComputeChecksum(
             SchemaSnapshotSerializer.SerializeToString(newSnapshot));
 
-        var version = clock.GetUtcNow().ToString("yyyyMMddHHmmss");
-        Directory.CreateDirectory(paths.MigrationsDirectory);
-        var migrationPath = Path.Combine(paths.MigrationsDirectory, $"{version}_{SanitizeMigrationName(name)}.sql");
-        var sql = MigrationSqlGenerator.Generate(
-            migrationPlan,
+        return new TopologyMigration(
+            config,
+            paths,
             oldPlan,
             newPlan,
-            $"{version}_{name}",
+            diff,
+            migrationPlan,
+            newSnapshot,
             parentChecksum,
-            targetChecksum,
-            clock.GetUtcNow());
+            targetChecksum);
+    }
 
-        File.WriteAllText(migrationPath, SqlText.Normalize(sql));
-
-        if (migrationPlan.RequiresManualApproval && !allowManual)
+    private static void EnsureDistinctTargets(IReadOnlyList<TopologyMigration> topologies)
+    {
+        var duplicate = topologies
+            .SelectMany(topology => new[]
+            {
+                topology.Paths.MigrationsDirectory,
+                topology.Paths.SnapshotPath,
+                topology.Paths.VersionsOutputPath
+            })
+            .GroupBy(path => path, StringComparer.Ordinal)
+            .FirstOrDefault(group => group.Count() > 1);
+        if (duplicate is not null)
         {
-            return new MigrationRunResult(
-                ExitCode: 2,
-                MigrationPath: migrationPath,
-                Message: "Migration SQL was written, but manual/destructive changes "
-                    + "require --allow-manual before updating the snapshot.");
+            throw new InvalidOperationException(
+                $"Several codegen configs share the same migrations directory, snapshot or versions script '{duplicate.Key}'.");
         }
-
-        SchemaSnapshotSerializer.Save(paths.SnapshotPath, newSnapshot);
-        WriteVersionsScript(config, paths);
-
-        return new MigrationRunResult(
-            ExitCode: 0,
-            MigrationPath: migrationPath,
-            Message: $"Migration written to '{migrationPath}' and snapshot updated.");
     }
 
     public SnapshotUpgradeResult UpgradeSnapshot(string configPath)
@@ -180,5 +266,19 @@ public sealed record SnapshotUpgradeResult(
 
 public sealed record MigrationRunResult(
     int ExitCode,
-    string? MigrationPath,
-    string Message);
+    IReadOnlyList<string> MigrationPaths,
+    string Message)
+{
+    public string? MigrationPath => MigrationPaths.Count > 0 ? MigrationPaths[0] : null;
+}
+
+internal sealed record TopologyMigration(
+    CodegenConfig Config,
+    MigrationPaths Paths,
+    ResolvedSchemaPlan OldPlan,
+    ResolvedSchemaPlan NewPlan,
+    SchemaDiff Diff,
+    MigrationPlan MigrationPlan,
+    SchemaSnapshot NewSnapshot,
+    string ParentChecksum,
+    string TargetChecksum);

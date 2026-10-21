@@ -65,6 +65,9 @@ jobs:
       - name: Build
         run: dotnet build kafka2ch.sln --configuration Release --no-restore
 
+      - name: Migration versions match across topologies
+        run: dotnet exec tools/ClickHouseSchemaGen.Cli/bin/Release/net8.0/ClickHouseSchemaGen.Cli.dll migrate verify --all-topologies src/Sandbox.Contracts/clickhouse.topologies.json
+
       - name: Unit tests
         run: dotnet test tests/ClickHouseSchemaGen.UnitTests/ClickHouseSchemaGen.UnitTests.csproj --configuration Release --no-build --logger "trx;LogFileName=unit-tests.trx" --results-directory TestResults
 

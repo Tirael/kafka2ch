@@ -249,6 +249,23 @@ flowchart LR
 - `.cursor/skills/senior-csharp-developer/TOOLS.md`: добавить команды `migrate` и список новых генерируемых файлов.
 - Bootstrap в репозитории: `migrate init` -> первый `schema.snapshot.json` + `00_schema_migrations.sql` с пустой таблицей; каталог `docker/clickhouse/migrations/.gitkeep`. Включить `persistKafkaMeta.key/headers` для orders в `clickhouse.codegen.json` как часть того же bootstrap (или отдельной первой миграции `add_kafka_meta`).
 
+## Несколько топологий: одна миграция и baseline истории
+
+Три конфига (`clickhouse.codegen.json`, `clickhouse.codegen.cluster.json`, `clickhouse.codegen.cluster.replicated-db.json`) — три snapshot'а и три каталога миграций. Перечень — в корневом конфиге [`src/Sandbox.Contracts/clickhouse.topologies.json`](src/Sandbox.Contracts/clickhouse.topologies.json):
+
+```json
+{
+  "topologies": ["clickhouse.codegen.json", "clickhouse.codegen.cluster.json", "clickhouse.codegen.cluster.replicated-db.json"],
+  "migrationsBaseline": "20261021211545"
+}
+```
+
+- `migrate --all-topologies src/Sandbox.Contracts/clickhouse.topologies.json --name <change>` (или `--config a.json --config b.json …`) — одна версия и одно имя файла для всех топологий; SQL каждой топологии — в её каталог. Топология без изменений получает no-op файл (только комментарий), чтобы множества версий совпадали.
+- Атомарность: сначала планируются все топологии в памяти (snapshot, diff, proto-проверка, SQL, `00_schema_migrations.sql`) — любая ошибка до записи ничего не трогает. Затем все файлы пишутся во временные `*.tmp-<guid>` и переносятся на место; при сбое на любом файле (в т.ч. во второй топологии) уже перенесённые файлы удаляются, исходные восстанавливаются из `*.bak-<guid>`. Snapshot'ы обновляются все или ни одного; при manual-изменениях без `--allow-manual` SQL пишется для всех топологий, snapshot'ы — ни для одной (exit 2).
+- `migrate verify --all-topologies <path>` (или `--config … --baseline <version>`) — падает, если множества версий миграций **после baseline** в каталогах различаются, и печатает недостающие версии по каталогам. Запускается в CI.
+
+**Решение: фиксируем baseline, историю задним числом не выравниваем.** Миграции с версией `<= migrationsBaseline` могут расходиться между топологиями и принимаются как есть: кластерные init-скрипты стартовали позже (в них нет `20261008115350_persist_protobuf_kafka_key`, уже вошедшей в кластерный init), а `dedup_orders_by_kafka_offset` сгенерирован раздельными запусками (`20261021205603` в replicated-db против `20261021205602` в single-node/cluster). No-op «эквиваленты» не добавляем: живые базы уже записали свои версии в `schema_migrations`, переименование или вставка задним числом сломает checksum/out-of-order проверку раннера. Все миграции **после** baseline обязаны иметь одинаковые версии во всех каталогах — генерировать их только через `migrate --all-topologies`. Baseline двигается вперёд только вручную и только если в истории до новой точки снова появилось осознанное расхождение (например, после `migrate rebase` старой миграции поверх `main`); тогда же обновить этот раздел.
+
 ## Ключевые риски и как закрыты
 
 - Регрессия init SQL при рефакторинге в `ResolvedSchemaPlan` — сравнение сгенерированных файлов до/после (git diff пустой без meta); diff от meta — явный и в snapshot.

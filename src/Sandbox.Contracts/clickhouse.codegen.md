@@ -131,7 +131,7 @@ Workflow: правка proto → build падает на drift → `Cli migrate 
 
 **`ddlMode=replicatedDatabase`:** `CREATE DATABASE … ON CLUSTER … ENGINE = Replicated('<replicatedDatabasePath>', '{shard}', '{replica}')` (топология БД совпадает с `remote_servers`: 2 шарда × 2 реплики в compose), затем `schema_migrations` в `default` с `ON CLUSTER` и общим Keeper-путём (история на всех шардах), `USE <replicatedDatabaseName>`; таблицы/MV — `Replicated*MergeTree` без аргументов (путь задаёт Replicated DB), без `ON CLUSTER`. `DETACH` очередей — `PERMANENTLY`. Migrator: `--ddl-mode replicatedDatabase` / `ClickHouse__DdlMode`, `ClickHouse__Database=<replicatedDatabaseName>`. Пример: [`clickhouse.codegen.cluster.replicated-db.json`](clickhouse.codegen.cluster.replicated-db.json); compose: `-f docker-compose.cluster.yml -f docker-compose.cluster.replicated-db.yml`.
 
-Снапшот (`version: 2`) хранит секцию `cluster` (`name`, `ddlMode`, `localTableSuffix`, `shardingKey`, `materializedViewsWriteThroughDistributed`; `null` — single-node) и per-table `shardingKey` / `materializedViewsWriteThroughDistributed` у `mergeTreeTables`. Их смена — drift на build и **manual** `ClusterTopologyChanged` в `migrate`: генератор не умеет переносить данные между топологиями, миграция содержит только комментарий «нужна миграция данных/топологии». Пути Keeper и параметры Replicated database в снапшот не входят. Один проект на single-node и cluster → **отдельные** `migrations` / snapshot / `00_*.sql` на конфиг; `Cli migrate --config …` и apply — **отдельно для каждого** конфига (это ожидаемо).
+Снапшот (`version: 2`) хранит секцию `cluster` (`name`, `ddlMode`, `localTableSuffix`, `shardingKey`, `materializedViewsWriteThroughDistributed`; `null` — single-node) и per-table `shardingKey` / `materializedViewsWriteThroughDistributed` у `mergeTreeTables`. Их смена — drift на build и **manual** `ClusterTopologyChanged` в `migrate`: генератор не умеет переносить данные между топологиями, миграция содержит только комментарий «нужна миграция данных/топологии». Пути Keeper и параметры Replicated database в снапшот не входят. Один проект на single-node и cluster → **отдельные** `migrations` / snapshot / `00_*.sql` на конфиг; генерация — одним `Cli migrate --all-topologies clickhouse.topologies.json --name …` (одна версия во все каталоги, snapshot'ы атомарно), apply — **отдельно для каждого** каталога.
 
 ### `extends` / `outputDirectory`
 
@@ -152,7 +152,7 @@ Workflow: правка proto → build падает на drift → `Cli migrate 
 }
 ```
 
-`dotnet build src/Sandbox.Contracts` генерирует single-node, cluster (`onCluster`) и cluster (`replicatedDatabase`) варианты. Миграция: `Cli migrate --config <тот же codegen.json> --name …` — по разу на каждый конфиг. Apply: `Migrator --migrations <dir> --cluster kafka2ch [--ddl-mode onCluster|replicatedDatabase]` (env `ClickHouse__Cluster` / `ClickHouse__DdlMode` / `ClickHouse__Database`).
+`dotnet build src/Sandbox.Contracts` генерирует single-node, cluster (`onCluster`) и cluster (`replicatedDatabase`) варианты. Миграция: `Cli migrate --all-topologies clickhouse.topologies.json --name …` — сразу для всех конфигов из [`clickhouse.topologies.json`](clickhouse.topologies.json) (или `--config a.json --config b.json …`); `Cli migrate verify --all-topologies clickhouse.topologies.json` проверяет, что версии после `migrationsBaseline` совпадают во всех каталогах. Apply: `Migrator --migrations <dir> --cluster kafka2ch [--ddl-mode onCluster|replicatedDatabase]` (env `ClickHouse__Cluster` / `ClickHouse__DdlMode` / `ClickHouse__Database`).
 
 ---
 

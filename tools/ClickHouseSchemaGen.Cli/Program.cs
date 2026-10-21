@@ -43,7 +43,7 @@ static int RunMigrate(string[] args)
 {
     if (args.Length == 0)
     {
-        Console.Error.WriteLine("Missing migrate subcommand (init|status|versions|snapshot-upgrade|--name).");
+        Console.Error.WriteLine("Missing migrate subcommand (init|status|versions|snapshot-upgrade|verify|--name).");
         return 1;
     }
 
@@ -99,6 +99,26 @@ static int RunMigrate(string[] args)
         return 1;
     }
 
+    if (args[0] == "verify")
+    {
+        var (verifyConfigs, rootBaseline) = RequireTopologies(args.AsSpan(1).ToArray());
+        var baselineIndex = Array.IndexOf(args, "--baseline");
+        var baseline = baselineIndex >= 0 && baselineIndex + 1 < args.Length ? args[baselineIndex + 1] : rootBaseline;
+        var verification = orchestrator.Verify(verifyConfigs, baseline);
+        var scope = baseline is null ? "all migrations" : $"migrations after baseline {baseline}";
+        if (verification.IsConsistent)
+        {
+            Console.WriteLine($"Migration versions are identical across {verifyConfigs.Count} topologies ({scope}).");
+            return 0;
+        }
+
+        Console.Error.WriteLine($"Migration versions diverge across topologies ({scope}):");
+        foreach (var gap in verification.Gaps)
+            Console.Error.WriteLine($"  {gap.MigrationsDirectory} is missing {string.Join(", ", gap.MissingVersions)}");
+        Console.Error.WriteLine("Generate migrations for all topologies at once: migrate --all-topologies <path> --name <name>.");
+        return 1;
+    }
+
     var migrateArgs = args;
     LoadMessageAssemblies(migrateArgs);
     var nameIndex = Array.IndexOf(migrateArgs, "--name");
@@ -110,12 +130,33 @@ static int RunMigrate(string[] args)
 
     var name = migrateArgs[nameIndex + 1];
     var allowManual = migrateArgs.Contains("--allow-manual");
-    var configPathMigrate = RequireConfig(migrateArgs);
-    var result = orchestrator.Migrate(configPathMigrate, name, allowManual);
+    var (configPaths, _) = RequireTopologies(migrateArgs);
+    var result = orchestrator.Migrate(configPaths, name, allowManual);
     Console.WriteLine(result.Message);
-    if (result.MigrationPath is not null)
-        Console.WriteLine($"Migration file: {result.MigrationPath}");
+    foreach (var migrationPath in result.MigrationPaths)
+        Console.WriteLine($"Migration file: {migrationPath}");
     return result.ExitCode;
+}
+
+static (IReadOnlyList<string> ConfigPaths, string? Baseline) RequireTopologies(string[] args)
+{
+    var rootIndex = Array.IndexOf(args, "--all-topologies");
+    if (rootIndex >= 0)
+    {
+        if (rootIndex + 1 >= args.Length)
+            throw new InvalidOperationException("Missing path after --all-topologies.");
+        var topologies = TopologiesConfigLoader.Load(args[rootIndex + 1]);
+        return (topologies.ConfigPaths, topologies.MigrationsBaseline);
+    }
+
+    var configPaths = args
+        .Select((arg, index) => (arg, index))
+        .Where(entry => entry.arg == "--config" && entry.index + 1 < args.Length)
+        .Select(entry => args[entry.index + 1])
+        .ToList();
+    if (configPaths.Count == 0)
+        throw new InvalidOperationException("Missing required --config or --all-topologies argument.");
+    return (configPaths, null);
 }
 
 static void LoadMessageAssemblies(string[] args)
@@ -158,10 +199,17 @@ static void PrintUsage()
           clickhouse-schema-gen migrate versions --config <path>   (rewrite versionsOutputPath from migrations)
           clickhouse-schema-gen migrate snapshot-upgrade --config <path> [--assemblies <dll[;dll…]>]
                                                                    (rewrite schema.snapshot.json in the current format)
-          clickhouse-schema-gen migrate --config <path> --name <name> [--assemblies <dll[;dll…]>] [--allow-manual]
+          clickhouse-schema-gen migrate --config <path> [--config <path> …] --name <name> [--assemblies <dll[;dll…]>] [--allow-manual]
+          clickhouse-schema-gen migrate --all-topologies <topologies.json> --name <name> [--assemblies <dll[;dll…]>] [--allow-manual]
+                                                                   (one version for every topology; snapshots updated all or none)
+          clickhouse-schema-gen migrate verify --all-topologies <topologies.json> [--baseline <version>]
+          clickhouse-schema-gen migrate verify --config <path> --config <path> … [--baseline <version>]
+                                                                   (fail unless migration versions after the baseline match)
           clickhouse-schema-gen --config <path> [--assemblies <dll[;dll…]>]   (alias for generate)
 
-        --assemblies  Semicolon-separated paths to assemblies that define protobuf message types
-                      referenced by messageType in the codegen config (required when the tool
-                      package does not already reference those contracts).
+        --assemblies      Semicolon-separated paths to assemblies that define protobuf message types
+                          referenced by messageType in the codegen config (required when the tool
+                          package does not already reference those contracts).
+        --all-topologies  Root config listing codegen configs ("topologies") and the history
+                          baseline ("migrationsBaseline") accepted as divergent.
         """);

@@ -1,0 +1,8 @@
+{
+  "topologies": [
+    "clickhouse.codegen.json",
+    "clickhouse.codegen.cluster.json",
+    "clickhouse.codegen.cluster.replicated-db.json"
+  ],
+  "migrationsBaseline": "20261021211545"
+}
