@@ -49,6 +49,7 @@ services:
     ports:
       - "8123:8123"
       - "9000:9000"
+      - "9363:9363"
     environment:
       CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
       CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
@@ -58,6 +59,7 @@ services:
       - ./docker/clickhouse/format_schemas:/var/lib/clickhouse/format_schemas
       - ./docker/clickhouse/config/kafka.xml:/etc/clickhouse-server/config.d/kafka.xml:ro
       - ./docker/clickhouse/config/named-collections-users.xml:/etc/clickhouse-server/users.d/named-collections.xml:ro
+      - ./docker/clickhouse/config/prometheus.xml:/etc/clickhouse-server/config.d/prometheus.xml:ro
     healthcheck:
       test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
       interval: 10s
@@ -125,6 +127,7 @@ services:
       ClickHouse__Password: ${CLICKHOUSE_PASSWORD}
       ReadAggregates__IntervalMs: 5000
       ReadAggregates__WindowMinutes: 10
+      ConsumerHealth__IntervalMs: 30000
 
   kafka-ui:
     image: ${KAFKA_UI_IMAGE}
@@ -140,3 +143,16 @@ services:
       KAFKA_CLUSTERS_0_NAME: local
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
       KAFKA_CLUSTERS_0_SCHEMAREGISTRY: http://schema-registry:8081
+
+  prometheus:
+    image: ${PROMETHEUS_IMAGE:-prom/prometheus:v3.5.0}
+    container_name: prometheus
+    profiles: ["observability"]
+    ports:
+      - "9090:9090"
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+    volumes:
+      - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./docker/prometheus/alerts:/etc/prometheus/alerts:ro
