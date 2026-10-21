@@ -20,12 +20,13 @@ until ch --query "SELECT count() FROM clusterAllReplicas('${CLUSTER}', system.on
     sleep 2
 done
 
-history_db="$DATABASE"
-if [ "$(ch --query "EXISTS TABLE ${DATABASE}.schema_migrations")" = "1" ] \
-    && [ "$(ch --query "SELECT count() FROM ${DATABASE}.schema_migrations WHERE kind = 'init'")" -gt 0 ]; then
-    echo "Init scripts already applied; skipping."
-    exit 0
-fi
+for history_db in "${DATABASE}" default; do
+    if [ "$(ch --query "EXISTS TABLE ${history_db}.schema_migrations")" = "1" ] \
+        && [ "$(ch --query "SELECT count() FROM ${history_db}.schema_migrations WHERE kind = 'init'")" -gt 0 ]; then
+        echo "Init scripts already applied (${history_db}.schema_migrations); skipping."
+        exit 0
+    fi
+done
 
 first=1
 for script in $(ls "${INIT_DIR}"/*.sql | sort); do
