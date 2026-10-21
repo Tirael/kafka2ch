@@ -12,7 +12,7 @@ public sealed class KafkaPipelineFixture : IAsyncLifetime
 {
     public const string Topic = "orders";
 
-    private const int TopicPartitions = 2;
+    public const int TopicPartitions = 2;
     private const string KafkaListener = "kafka:19092";
     private const string SchemaRegistryAlias = "schema-registry";
     private const ushort SchemaRegistryPort = 8081;
@@ -104,6 +104,20 @@ public sealed class KafkaPipelineFixture : IAsyncLifetime
             .SetKeySerializer(new ProtobufSerializer<OrderKey>(_schemaRegistryClient!, serializerConfig))
             .SetValueSerializer(new ProtobufSerializer<OrderEvent>(_schemaRegistryClient!, serializerConfig))
             .Build();
+    }
+
+    public async Task<TopicPartitionOffset> PublishRawAsync(byte[] value, int partition)
+    {
+        using var producer = new ProducerBuilder<Null, byte[]>(new ProducerConfig
+        {
+            BootstrapServers = _kafka.GetBootstrapAddress(),
+            Acks = Acks.All
+        }).Build();
+
+        var result = await producer.ProduceAsync(
+            new TopicPartition(Topic, new Partition(partition)),
+            new Message<Null, byte[]> { Value = value });
+        return result.TopicPartitionOffset;
     }
 
     public static async Task PublishAsync(
