@@ -14,5 +14,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Sandbox.Contracts\Sandbox.Contracts.csproj" />
+    <ProjectReference Include="..\Sandbox.Observability\Sandbox.Observability.csproj" />
   </ItemGroup>
 </Project>

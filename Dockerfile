@@ -4,6 +4,7 @@ WORKDIR /src
 COPY kafka2ch.sln Directory.Build.props Directory.Packages.props ./
 COPY src/Sandbox.Contracts/Sandbox.Contracts.csproj src/Sandbox.Contracts/
 COPY src/Sandbox.App/Sandbox.App.csproj src/Sandbox.App/
+COPY src/Sandbox.Observability/Sandbox.Observability.csproj src/Sandbox.Observability/
 COPY tools/ClickHouseSchemaGen/ClickHouseSchemaGen.csproj tools/ClickHouseSchemaGen/
 COPY tools/ClickHouseSchemaGen.Migrator/ClickHouseSchemaGen.Migrator.csproj tools/ClickHouseSchemaGen.Migrator/
 RUN dotnet restore src/Sandbox.App/Sandbox.App.csproj
