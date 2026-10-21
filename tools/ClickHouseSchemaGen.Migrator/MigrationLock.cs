@@ -228,11 +228,8 @@ public sealed class MigrationLock : IAsyncDisposable
         CancellationToken cancellationToken)
     {
         var table = cluster.HistoryTableName;
-        await ExecuteAsync(
-            connection,
-            $"DELETE FROM {table} WHERE kind = '{SchemaMigrationsTable.LockKind}' AND applied_at <= now()",
-            cancellationToken);
-
+        var deleteExpiredSql =
+            $"DELETE FROM {table} WHERE kind = '{SchemaMigrationsTable.LockKind}' AND applied_at <= now()";
         var insertSql = SchemaMigrationsTable.InsertSql(
             LockKey,
             options.Owner,
@@ -245,6 +242,7 @@ public sealed class MigrationLock : IAsyncDisposable
         while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            await ExecuteAsync(connection, deleteExpiredSql, cancellationToken);
             await ExecuteAsync(connection, insertSql, cancellationToken);
             await Task.Delay(options.RowLockSettleDelay, timeProvider, cancellationToken);
 
