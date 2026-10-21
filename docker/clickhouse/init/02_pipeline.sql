@@ -10,10 +10,12 @@ CREATE TABLE orders
     event_time           DateTime64(3),
     kafka_key            String,
     `kafka_key.order_id` String,
-    kafka_headers        Map(String, String)
+    kafka_headers        Map(String, String),
+    kafka_partition      UInt64,
+    kafka_offset         UInt64
 )
-ENGINE = MergeTree
-ORDER BY (event_time, order_id);
+ENGINE = ReplacingMergeTree
+ORDER BY (event_time, order_id, kafka_partition, kafka_offset);
 
 CREATE OR REPLACE FUNCTION protobufWireVarint AS (m, p) ->
     arrayFold(
@@ -93,7 +95,9 @@ SELECT
     toDateTime64(event_time.seconds + event_time.nanos / 1000000000.0, 3) AS event_time,
     _key                         AS kafka_key,
     CAST(protobufWireBytes(substring(_key, 7), 1) AS String) AS `kafka_key.order_id`,
-    mapFromArrays(`_headers.name`, `_headers.value`) AS kafka_headers
+    mapFromArrays(`_headers.name`, `_headers.value`) AS kafka_headers,
+    _partition                   AS kafka_partition,
+    _offset                      AS kafka_offset
 FROM orders_queue;
 
 CREATE TABLE orders_agg_1m
@@ -104,17 +108,19 @@ CREATE TABLE orders_agg_1m
     total_amount  Float64,
     total_qty     UInt64
 )
-ENGINE = SummingMergeTree
+ENGINE = MergeTree
 ORDER BY (minute, category);
 
-CREATE MATERIALIZED VIEW orders_agg_mv TO orders_agg_1m AS
+CREATE MATERIALIZED VIEW orders_agg_mv
+REFRESH EVERY 1 MINUTE
+TO orders_agg_1m AS
 SELECT
     toStartOfMinute(event_time) AS minute,
     category,
     count()                     AS orders_count,
     sum(amount)                 AS total_amount,
     sum(quantity)               AS total_qty
-FROM orders
+FROM orders FINAL
 GROUP BY minute, category;
 
-INSERT INTO schema_migrations (version, name, checksum, applied_at, kind) VALUES ('02', '02_pipeline.sql', 'a9effc8757c62e65d8be6a6cca50a31ac9100e9aac8f961ba5a1aabbf88f6600', now(), 'init');
+INSERT INTO schema_migrations (version, name, checksum, applied_at, kind) VALUES ('02', '02_pipeline.sql', '718fa547750db385f86a7a289a2b2e935b3a0e9d92523d9b12531796646b20dd', now(), 'init');

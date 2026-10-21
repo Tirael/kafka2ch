@@ -12,10 +12,12 @@ CREATE TABLE orders_local
     event_time           DateTime64(3),
     kafka_key            String,
     `kafka_key.order_id` String,
-    kafka_headers        Map(String, String)
+    kafka_headers        Map(String, String),
+    kafka_partition      UInt64,
+    kafka_offset         UInt64
 )
-ENGINE = ReplicatedMergeTree
-ORDER BY (event_time, order_id);
+ENGINE = ReplicatedReplacingMergeTree
+ORDER BY (event_time, order_id, kafka_partition, kafka_offset);
 
 CREATE TABLE orders AS orders_local
 ENGINE = Distributed('kafka2ch', currentDatabase(), orders_local, cityHash64(order_id));
@@ -86,7 +88,7 @@ CREATE OR REPLACE FUNCTION protobufWireZigZag AS (bits) ->
         v -> if(bitAnd(v, 1) = 0, reinterpretAsInt64(bitShiftRight(v, 1)), -1 - reinterpretAsInt64(bitShiftRight(v, 1))),
         [bits])[1];
 
-CREATE MATERIALIZED VIEW orders_mv TO orders AS
+CREATE MATERIALIZED VIEW orders_mv TO orders_local AS
 SELECT
     order_id                     AS order_id,
     category                     AS category,
@@ -98,7 +100,9 @@ SELECT
     toDateTime64(event_time.seconds + event_time.nanos / 1000000000.0, 3) AS event_time,
     _key                         AS kafka_key,
     CAST(protobufWireBytes(substring(_key, 7), 1) AS String) AS `kafka_key.order_id`,
-    mapFromArrays(`_headers.name`, `_headers.value`) AS kafka_headers
+    mapFromArrays(`_headers.name`, `_headers.value`) AS kafka_headers,
+    _partition                   AS kafka_partition,
+    _offset                      AS kafka_offset
 FROM orders_queue;
 
 CREATE TABLE orders_agg_1m_local
@@ -109,20 +113,22 @@ CREATE TABLE orders_agg_1m_local
     total_amount  Float64,
     total_qty     UInt64
 )
-ENGINE = ReplicatedSummingMergeTree
+ENGINE = ReplicatedMergeTree
 ORDER BY (minute, category);
 
 CREATE TABLE orders_agg_1m AS orders_agg_1m_local
 ENGINE = Distributed('kafka2ch', currentDatabase(), orders_agg_1m_local, rand());
 
-CREATE MATERIALIZED VIEW orders_agg_mv TO orders_agg_1m AS
+CREATE MATERIALIZED VIEW orders_agg_mv
+REFRESH EVERY 1 MINUTE
+TO orders_agg_1m_local AS
 SELECT
     toStartOfMinute(event_time) AS minute,
     category,
     count()                     AS orders_count,
     sum(amount)                 AS total_amount,
     sum(quantity)               AS total_qty
-FROM orders_local
+FROM orders_local FINAL
 GROUP BY minute, category;
 
-INSERT INTO default.schema_migrations (version, name, checksum, applied_at, kind) VALUES ('02', '02_pipeline.sql', '6f2ea29524810fbbf7ccc4c202dec8654f8b829b8f709bf4d5c2c8c8473d082a', now(), 'init');
+INSERT INTO default.schema_migrations (version, name, checksum, applied_at, kind) VALUES ('02', '02_pipeline.sql', '8f142d74a165906a9ffa2f5e61cf5acce807787ad1665b9b2cc257e58349784d', now(), 'init');
