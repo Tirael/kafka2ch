@@ -111,11 +111,13 @@ docker compose up -d --build
 dotnet build src/Sandbox.Contracts -p:SkipClickHouseCodegen=true
 dotnet build tools/ClickHouseSchemaGen.Cli
 dotnet exec tools/ClickHouseSchemaGen.Cli/bin/Debug/net8.0/ClickHouseSchemaGen.Cli.dll \
-  migrate --config src/Sandbox.Contracts/clickhouse.codegen.json --name <change_name> \
+  migrate --all-topologies src/Sandbox.Contracts/clickhouse.topologies.json --name <change_name> \
   --assemblies src/Sandbox.Contracts/bin/Debug/net8.0/Sandbox.Contracts.dll
 ```
 
-4. Закоммитьте SQL в `docker/clickhouse/migrations/`, обновлённый `schema.snapshot.json` и `00_schema_migrations.sql`
+   Одна версия на все топологии (single-node, cluster, replicated-db): SQL пишется в каталог каждой, snapshot'ы обновляются все или ни одного. Проверка, что версии после baseline совпадают (её запускает CI): `… ClickHouseSchemaGen.Cli.dll migrate verify --all-topologies src/Sandbox.Contracts/clickhouse.topologies.json`. Baseline и почему старая история расходится — [MIGRATIONS_PLAN.md](MIGRATIONS_PLAN.md#несколько-топологий-одна-миграция-и-baseline-истории).
+
+4. Закоммитьте SQL в `docker/clickhouse*/migrations*/`, обновлённые `schema.snapshot.json` и `00_schema_migrations.sql`
    (пересобрать `00_schema_migrations.sql` из каталога миграций без новой миграции: `… ClickHouseSchemaGen.Cli.dll migrate versions --config <path>`;
    переписать `schema.snapshot.json` старого формата в текущий (v2) без изменения схемы: `… migrate snapshot-upgrade --config <path> --assemblies <dll>`).
    Checksum в `schema_migrations` (init, baseline и миграции) — SHA-256 от канонического текста `SqlChecksum` (LF, без BOM, без хвостовых пробелов и пустых строк, UTF-8), поэтому не зависит от CRLF/LF checkout на Windows и Linux.

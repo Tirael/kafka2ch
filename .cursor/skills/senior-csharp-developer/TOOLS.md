@@ -88,7 +88,9 @@ If `schema.snapshot.json` exists and the plan drifted, the build fails. Generate
 ```bash
 dotnet build tools/ClickHouseSchemaGen.Cli/ClickHouseSchemaGen.Cli.csproj
 dotnet exec tools/ClickHouseSchemaGen.Cli/bin/Debug/net8.0/ClickHouseSchemaGen.Cli.dll \
-  migrate --config src/Sandbox.Contracts/clickhouse.codegen.json --name <change_name>
+  migrate --all-topologies src/Sandbox.Contracts/clickhouse.topologies.json --name <change_name>
+dotnet exec tools/ClickHouseSchemaGen.Cli/bin/Debug/net8.0/ClickHouseSchemaGen.Cli.dll \
+  migrate verify --all-topologies src/Sandbox.Contracts/clickhouse.topologies.json
 ```
 
 Bootstrap snapshot (once):
