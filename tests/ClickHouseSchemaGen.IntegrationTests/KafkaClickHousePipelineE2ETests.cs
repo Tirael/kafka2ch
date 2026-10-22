@@ -118,7 +118,7 @@ public sealed class KafkaClickHousePipelineE2ETests : IAsyncLifetime
         Convert.ToString(await _pipeline.ScalarAsync("SHOW CREATE TABLE orders_queue"))
             .Should().Contain($"kafka_num_consumers = {KafkaRecreateMigrationFixture.NewNumConsumers}");
         Convert.ToUInt64(await _pipeline.ScalarAsync(
-                $"SELECT count() FROM schema_migrations WHERE version = '{KafkaRecreateMigrationFixture.Version}'"))
+                $"SELECT count() FROM schema_migrations WHERE kind = 'migration' AND version = '{KafkaRecreateMigrationFixture.Version}'"))
             .Should().Be(1UL);
 
         var expected = published.ToHashSet(StringComparer.Ordinal);
