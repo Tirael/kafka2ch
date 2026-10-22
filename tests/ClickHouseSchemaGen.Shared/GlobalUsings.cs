@@ -1,8 +1,15 @@
+global using System.Globalization;
 global using System.Text;
+global using FsCheck;
+global using FsCheck.Fluent;
 global using ClickHouseSchemaGen;
 global using ClickHouseSchemaGen.Generation;
 global using ClickHouseSchemaGen.Mapping;
 global using ClickHouseSchemaGen.Migration;
 global using ClickHouseSchemaGen.Models;
 global using ClickHouseSchemaGen.Planning;
+global using ClickHouseSchemaGen.TestContracts;
+global using ClickHouseSchemaGen.TestContracts.Fixtures;
+global using Google.Protobuf;
 global using Google.Protobuf.Reflection;
+global using Google.Protobuf.WellKnownTypes;

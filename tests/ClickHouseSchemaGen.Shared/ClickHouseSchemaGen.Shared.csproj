@@ -7,6 +7,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="FsCheck" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\ClickHouseSchemaGen.TestContracts\ClickHouseSchemaGen.TestContracts.csproj" />
     <ProjectReference Include="..\..\tools\ClickHouseSchemaGen\ClickHouseSchemaGen.csproj" />
   </ItemGroup>
