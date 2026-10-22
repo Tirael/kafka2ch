@@ -20,19 +20,25 @@ public static class KafkaTableGenerator
         SqlScriptWriter.AppendColumnDefinitions(builder, columns);
 
         builder.AppendLine(")")
-            .AppendLine("ENGINE = Kafka")
+            .AppendLine(config.Kafka.ResolvedNamedCollection is { } namedCollection
+                ? $"ENGINE = Kafka({namedCollection})"
+                : "ENGINE = Kafka")
             .AppendLine("SETTINGS");
 
-        List<string> settings =
+        List<string> settings = [];
+
+        if (config.Kafka.ResolvedBrokerList is { } brokerList)
+            settings.Add($"kafka_broker_list = '{brokerList}'");
+
+        settings.AddRange(
         [
-            $"kafka_broker_list = '{config.Kafka.BrokerList}'",
             $"kafka_topic_list = '{config.Kafka.Topic}'",
             $"kafka_group_name = '{config.Kafka.GroupName}'",
             "kafka_format = 'ProtobufSingle'",
             $"kafka_schema = '{config.ProtoFile}:{config.MessageName}'",
             $"kafka_schema_registry_skip_bytes = {config.Kafka.SkipBytes}",
             $"kafka_num_consumers = {config.Kafka.NumConsumers}"
-        ];
+        ]);
 
         if (!config.Kafka.UsesDefaultHandleErrorMode)
             settings.Add($"kafka_handle_error_mode = '{config.Kafka.HandleErrorMode.ToLowerInvariant()}'");

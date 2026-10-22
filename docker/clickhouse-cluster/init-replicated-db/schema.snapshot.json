@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "parentChecksum": "c9cc13aad4ec106d5b2d7432100059108e6ee533ca74e03cf17638e34f2fc647",
+  "parentChecksum": "2aa59d6ccb9a0d67f65a06a17d14d5e1c88acf2dae716a6d68676112aa1e1863",
   "trailingSqlHash": "0cb8bde0a48a4fd3d746a12db0ed2f8e94dde1e04a9705963f96436df3be3a8a",
   "cluster": {
     "name": "kafka2ch",
@@ -15,7 +15,7 @@
       "protoFile": "order_event",
       "messageName": "OrderEvent",
       "kafka": {
-        "brokerList": "kafka:9092",
+        "namedCollection": "kafka_orders",
         "topic": "orders",
         "groupName": "clickhouse-orders",
         "skipBytes": 6,

@@ -176,6 +176,9 @@ public static class SnapshotDriftChecker
         if (!string.Equals(expected.BrokerList, actual.BrokerList, StringComparison.Ordinal))
             differences.Add($"Kafka table '{tableName}' brokerList changed.");
 
+        if (!string.Equals(expected.NamedCollection, actual.NamedCollection, StringComparison.Ordinal))
+            differences.Add($"Kafka table '{tableName}' namedCollection changed.");
+
         if (!string.Equals(expected.Topic, actual.Topic, StringComparison.Ordinal))
             differences.Add($"Kafka table '{tableName}' topic changed.");
 

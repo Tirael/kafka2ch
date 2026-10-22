@@ -24,9 +24,8 @@ CREATE TABLE orders_queue ON CLUSTER kafka2ch
     attachments          Tuple(invoices Array(Tuple(name String, note Nullable(String))), receipts Array(Tuple(name String, note Nullable(String)))),
     order_lines2_by_line_id Map(Int64, Tuple(line2_id Int64, value2_price2 Float64, value2_quantity2 Int32, value2_created_at2_seconds Int64, value2_created_at2_nanos Int32, value2_changed_at2_seconds Int64, value2_changed_at2_nanos Int32, is_active2 UInt8))
 )
-ENGINE = Kafka
+ENGINE = Kafka(kafka_orders)
 SETTINGS
-    kafka_broker_list = 'kafka:9092',
     kafka_topic_list = 'orders',
     kafka_group_name = 'clickhouse-orders',
     kafka_format = 'ProtobufSingle',
@@ -38,4 +37,4 @@ SETTINGS
     input_format_protobuf_oneof_presence = 1,
     input_format_protobuf_flatten_google_wrappers = 1;
 
-INSERT INTO schema_migrations (version, name, checksum, applied_at, kind) VALUES ('01', '01_orders_queue.sql', 'ebd13b2700d30338a5e9b514702ecf5dc19a55e24cd13c22ba5708c0642f851e', now(), 'init');
+INSERT INTO schema_migrations (version, name, checksum, applied_at, kind) VALUES ('01', '01_orders_queue.sql', '3ff4d894243d61dd4f75949a5610b868afc66fe07194220469609e2992836c63', now(), 'init');

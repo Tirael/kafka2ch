@@ -13,7 +13,10 @@ public sealed class KafkaPipelineFixture : IAsyncLifetime
     public const string Topic = "orders";
 
     public const int TopicPartitions = 2;
+
+    public const string NamedCollection = "kafka_orders";
     private const string KafkaListener = "kafka:19092";
+    private const string BrokerListEnvironmentVariable = "KAFKA_BROKER_LIST";
     private const string SchemaRegistryAlias = "schema-registry";
     private const ushort SchemaRegistryPort = 8081;
 
@@ -48,6 +51,9 @@ public sealed class KafkaPipelineFixture : IAsyncLifetime
         _clickHouse = new ClickHouseBuilder(TestContainersEnv.FullClickHouseImageName)
             .WithNetwork(_network)
             .WithResourceMapping(FormatSchemas.Directory, "/var/lib/clickhouse/format_schemas")
+            .WithEnvironment(BrokerListEnvironmentVariable, KafkaListener)
+            .WithResourceMapping(Encoding.UTF8.GetBytes(NamedCollectionXml), "/etc/clickhouse-server/config.d/kafka.xml")
+            .WithResourceMapping(Encoding.UTF8.GetBytes(NamedCollectionUsageXml), "/etc/clickhouse-server/users.d/named-collections.xml")
             .Build();
     }
 
@@ -199,11 +205,35 @@ public sealed class KafkaPipelineFixture : IAsyncLifetime
 
         var kafkaTables = JsonNode.Parse(File.ReadAllText(TestContractsPaths.CodegenConfigPath))!["kafkaTables"]!.AsArray();
         foreach (var table in kafkaTables)
-            table!["kafka"]!["brokerList"] = KafkaListener;
+        {
+            var kafka = table!["kafka"]!.AsObject();
+            kafka.Remove("brokerList");
+            kafka["namedCollection"] = NamedCollection;
+        }
         config["kafkaTables"] = kafkaTables.DeepClone();
 
         File.WriteAllText(ConfigPath, config.ToJsonString());
     }
+
+    private static string NamedCollectionXml => $"""
+        <clickhouse>
+            <named_collections>
+                <{NamedCollection}>
+                    <kafka_broker_list from_env="{BrokerListEnvironmentVariable}"/>
+                </{NamedCollection}>
+            </named_collections>
+        </clickhouse>
+        """;
+
+    private static string NamedCollectionUsageXml => $"""
+        <clickhouse>
+            <users>
+                <{ClickHouseBuilder.DefaultUsername}>
+                    <named_collection_control>1</named_collection_control>
+                </{ClickHouseBuilder.DefaultUsername}>
+            </users>
+        </clickhouse>
+        """;
 
     private async Task CreateTopicAsync()
     {

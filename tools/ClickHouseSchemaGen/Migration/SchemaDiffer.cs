@@ -88,8 +88,11 @@ public static class SchemaDiffer
         var oldKafka = oldTable.Config.Kafka;
         var newKafka = newTable.Config.Kafka;
 
-        if (!string.Equals(oldKafka.BrokerList, newKafka.BrokerList, StringComparison.Ordinal))
+        if (!string.Equals(oldKafka.ResolvedBrokerList, newKafka.ResolvedBrokerList, StringComparison.Ordinal))
             reasons.Add("brokerList changed");
+
+        if (!string.Equals(oldKafka.ResolvedNamedCollection, newKafka.ResolvedNamedCollection, StringComparison.Ordinal))
+            reasons.Add("namedCollection changed");
 
         if (!string.Equals(oldKafka.Topic, newKafka.Topic, StringComparison.Ordinal))
             reasons.Add("topic changed");

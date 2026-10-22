@@ -156,9 +156,25 @@ public sealed class SnapshotV2Tests
 
     [Theory]
     [MemberData(nameof(TopologyConfigs))]
-    public void GivenAnySnapshotField_WhenOnlyItDrifts_ThenDifferReportsChange(string configPath)
+    public void GivenAnySnapshotField_WhenOnlyItDrifts_ThenDifferReportsChange(string configPath) =>
+        AssertDriftImpliesDiff(CodegenConfigLoader.Load(configPath));
+
+    [Theory]
+    [MemberData(nameof(TopologyConfigs))]
+    public void GivenNamedCollectionConfig_WhenAnySnapshotFieldDrifts_ThenDifferReportsChange(string configPath)
     {
         var config = CodegenConfigLoader.Load(configPath);
+        foreach (var table in config.KafkaTables)
+        {
+            table.Kafka.BrokerList = null;
+            table.Kafka.NamedCollection = "kafka_orders";
+        }
+
+        AssertDriftImpliesDiff(config);
+    }
+
+    private static void AssertDriftImpliesDiff(CodegenConfig config)
+    {
         var plan = SchemaGeneratorFactory.Create().BuildPlan(config);
         var baseline = SchemaSnapshotMapper.FromPlan(plan);
 

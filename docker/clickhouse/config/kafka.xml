@@ -3,4 +3,13 @@
         <session_timeout_ms>60000</session_timeout_ms>
         <heartbeat_interval_ms>10000</heartbeat_interval_ms>
     </kafka>
+    <named_collections>
+        <kafka_orders>
+            <kafka_broker_list from_env="KAFKA_BROKER_LIST"/>
+            <kafka>
+                <session_timeout_ms>60000</session_timeout_ms>
+                <heartbeat_interval_ms>10000</heartbeat_interval_ms>
+            </kafka>
+        </kafka_orders>
+    </named_collections>
 </clickhouse>

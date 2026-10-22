@@ -41,6 +41,28 @@ public sealed class KafkaClickHousePipelineE2ETests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task GivenQueueOnNamedCollection_WhenOrdersPublished_ThenConsumedWithBrokersOnlyInCollection()
+    {
+        const int count = 100;
+        var orders = Enumerable.Range(0, count).Select(E2eOrders.Create).ToList();
+        var published = new ConcurrentQueue<string>();
+
+        var engine = Convert.ToString(await _pipeline.ScalarAsync(
+            "SELECT engine_full FROM system.tables WHERE database = currentDatabase() AND name = 'orders_queue'"));
+        engine.Should().StartWith($"Kafka({KafkaPipelineFixture.NamedCollection})");
+        engine.Should().NotContain("kafka_broker_list");
+
+        using (var producer = _pipeline.CreateProducer())
+        {
+            await KafkaPipelineFixture.PublishAsync(producer, orders, published);
+            producer.Flush(TimeSpan.FromSeconds(30));
+        }
+
+        (await _pipeline.WaitForCountAsync("SELECT count() FROM orders", count, ConsumeTimeout)).Should().Be(count);
+        (await _pipeline.QueryStringsAsync("SELECT order_id FROM orders")).Should().BeEquivalentTo(published);
+    }
+
+    [Fact]
     public async Task GivenRedeliveredKafkaMessages_WhenStoredTwice_ThenFinalAndAggregatesCountEachMessageOnce()
     {
         const int count = 200;
