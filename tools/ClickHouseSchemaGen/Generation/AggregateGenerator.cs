@@ -25,7 +25,7 @@ public static class AggregateGenerator
         var columns = aggregate.TargetColumns;
         var width = columns.Max(column => column.Name.Length) + 2;
         var builder = new StringBuilder()
-            .AppendLine($"{create} {cluster.StorageTable(aggregate.Name)}{cluster.OnCluster}")
+            .AppendLine($"{create} {cluster.RefreshTargetTable(aggregate.Name)}{cluster.RefreshTargetOnCluster}")
             .AppendLine("(");
 
         for (var i = 0; i < columns.Count; i++)
@@ -40,7 +40,7 @@ public static class AggregateGenerator
             .AppendLine($"ORDER BY {aggregate.OrderBy};")
             .AppendLine();
 
-        if (cluster.Enabled)
+        if (cluster.EmitsRefreshTargetDistributed)
         {
             builder
                 .Append(cluster.DistributedTableStatement(aggregate.Name, shardingKey: null, ifNotExists))
@@ -58,9 +58,9 @@ public static class AggregateGenerator
         var selections = SelectList(aggregate);
         var width = selections.Where(item => item.Alias is not null).Select(item => item.Expression.Length).DefaultIfEmpty(0).Max();
         var builder = new StringBuilder()
-            .AppendLine($"CREATE MATERIALIZED VIEW {aggregate.ViewName}{cluster.OnCluster}")
+            .AppendLine($"CREATE MATERIALIZED VIEW {cluster.RefreshViewName(aggregate.ViewName)}{cluster.RefreshTargetOnCluster}")
             .AppendLine($"REFRESH EVERY {aggregate.RefreshEvery}")
-            .AppendLine($"TO {cluster.StorageTable(aggregate.Name)} AS")
+            .AppendLine($"TO {cluster.RefreshTargetTable(aggregate.Name)} AS")
             .AppendLine("SELECT");
 
         for (var i = 0; i < selections.Count; i++)

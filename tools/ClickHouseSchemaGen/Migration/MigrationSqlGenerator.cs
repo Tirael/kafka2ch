@@ -206,7 +206,8 @@ public static partial class MigrationSqlGenerator
                     builder.Append(AggregateGenerator.Generate(FindAggregate(newPlan, added.Name), cluster, ifNotExists: true));
                     break;
                 case AggregateChanged changed:
-                    builder.AppendLine($"DROP VIEW IF EXISTS {changed.OldViewName}{cluster.OnCluster};");
+                    builder.AppendLine(
+                        $"DROP VIEW IF EXISTS {cluster.RefreshViewName(changed.OldViewName)}{cluster.RefreshTargetOnCluster};");
                     builder.Append(AggregateGenerator.GenerateView(FindAggregate(newPlan, changed.Name), cluster));
                     break;
                 case AggregatesAdoptedFromTrailingSql adopted:
@@ -231,7 +232,8 @@ public static partial class MigrationSqlGenerator
         builder.AppendLine($"-- Manual aggregate change for {changed.Name}: {changed.Reason}.");
         builder.AppendLine(
             "-- The target table is recreated; the next refresh repopulates it from the source table.");
-        builder.AppendLine($"-- DROP VIEW IF EXISTS {changed.OldViewName}{cluster.OnCluster};");
+        builder.AppendLine(
+            $"-- DROP VIEW IF EXISTS {cluster.RefreshViewName(changed.OldViewName)}{cluster.RefreshTargetOnCluster};");
         AppendDropAggregateTables(builder, changed.Name, cluster);
         foreach (var line in AggregateGenerator.Generate(FindAggregate(newPlan, changed.Name), cluster)
                      .Split(SqlText.NewLine)
@@ -243,6 +245,13 @@ public static partial class MigrationSqlGenerator
 
     private static void AppendDropAggregateTables(StringBuilder builder, string name, ClusterDdl cluster)
     {
+        if (cluster.UsesReplicatedDatabase)
+        {
+            builder.AppendLine(
+                $"-- DROP TABLE IF EXISTS {cluster.RefreshTargetTable(name)}{cluster.RefreshTargetOnCluster};");
+            return;
+        }
+
         builder.AppendLine($"-- DROP TABLE IF EXISTS {name}{cluster.OnCluster};");
         if (cluster.Enabled)
             builder.AppendLine($"-- DROP TABLE IF EXISTS {cluster.StorageTable(name)}{cluster.OnCluster} SYNC;");
@@ -305,7 +314,8 @@ public static partial class MigrationSqlGenerator
                     AppendAggregateRecreateTemplate(builder, changed, newPlan, cluster);
                     break;
                 case AggregateRemoved removed:
-                    builder.AppendLine($"-- DROP VIEW IF EXISTS {removed.ViewName}{cluster.OnCluster};");
+                    builder.AppendLine(
+                        $"-- DROP VIEW IF EXISTS {cluster.RefreshViewName(removed.ViewName)}{cluster.RefreshTargetOnCluster};");
                     AppendDropAggregateTables(builder, removed.Name, cluster);
                     break;
                 case TrailingSqlChanged trailing:

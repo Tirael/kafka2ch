@@ -45,7 +45,9 @@ public sealed class AggregatesTests
         var legacy = SchemaPlanRenderer.RenderInitScripts(generator.BuildPlan(LegacyConfig(configPath)));
 
         rendered.Should().BeEquivalentTo(legacy);
-        rendered.Values.Should().Contain(sql => sql.Contains("CREATE MATERIALIZED VIEW orders_agg_mv", StringComparison.Ordinal));
+        rendered.Values.Should().Contain(sql =>
+            sql.Contains("CREATE MATERIALIZED VIEW orders_agg_mv", StringComparison.Ordinal)
+            || sql.Contains("CREATE MATERIALIZED VIEW default.orders_agg_mv", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -91,20 +93,39 @@ public sealed class AggregatesTests
     }
 
     [Fact]
-    public void GivenReplicatedDatabaseAggregate_WhenRender_ThenReplicatedLocalTargetReadsDistributedSourceFinal()
+    public void GivenReplicatedDatabaseAggregate_WhenRender_ThenDefaultDatabaseTargetOnClusterReadsDistributedSourceFinal()
     {
         var sql = RenderAggregates(
             TestContractsPaths.ClusterReplicatedDbDedupCodegenConfigPath,
             aggregate => aggregate.Engine = "SummingMergeTree");
 
-        sql.Should().StartWith("CREATE TABLE orders_agg_1m_local\n(");
-        sql.Should().Contain("ENGINE = ReplicatedSummingMergeTree\nORDER BY (minute, category);");
-        sql.Should().Contain(
-            "CREATE TABLE orders_agg_1m AS orders_agg_1m_local\n"
-                + "ENGINE = Distributed('kafka2ch', currentDatabase(), orders_agg_1m_local, rand());");
-        sql.Should().Contain("CREATE MATERIALIZED VIEW orders_agg_mv\nREFRESH EVERY 1 MINUTE\nTO orders_agg_1m_local AS");
-        sql.Should().Contain("FROM orders FINAL\nGROUP BY minute, category;");
-        sql.Should().NotContain("ON CLUSTER");
+        sql.TrimEnd().Should().Be("""
+            CREATE TABLE default.orders_agg_1m ON CLUSTER kafka2ch
+            (
+                minute        DateTime,
+                category      LowCardinality(String),
+                orders_count  UInt64,
+                total_amount  Float64,
+                total_qty     UInt64
+            )
+            ENGINE = SummingMergeTree
+            ORDER BY (minute, category);
+
+            CREATE MATERIALIZED VIEW default.orders_agg_mv ON CLUSTER kafka2ch
+            REFRESH EVERY 1 MINUTE
+            TO default.orders_agg_1m AS
+            SELECT
+                toStartOfMinute(event_time) AS minute,
+                category,
+                count()                     AS orders_count,
+                sum(amount)                 AS total_amount,
+                sum(quantity)               AS total_qty
+            FROM kafka2ch.orders FINAL
+            GROUP BY minute, category;
+            """.ReplaceLineEndings("\n"));
+        sql.Should().NotContain("orders_agg_1m_local");
+        sql.Should().NotContain("Distributed");
+        sql.Should().NotContain("ReplicatedSummingMergeTree");
     }
 
     [Fact]
@@ -364,10 +385,12 @@ public sealed class AggregatesTests
 
         diff.Changes.Should().ContainSingle().Which.Should().Be(new AggregateAdded("orders_agg_5m"));
         plan.RequiresManualApproval.Should().BeFalse();
-        sql.Should().Contain("CREATE TABLE IF NOT EXISTS orders_agg_5m_local\n");
-        sql.Should().Contain("ENGINE = ReplicatedMergeTree\n");
-        sql.Should().Contain("CREATE TABLE IF NOT EXISTS orders_agg_5m AS orders_agg_5m_local\n");
-        sql.Should().Contain("CREATE MATERIALIZED VIEW orders_agg_5m_mv\nREFRESH EVERY 5 MINUTE\nTO orders_agg_5m_local AS");
+        sql.Should().Contain("CREATE TABLE IF NOT EXISTS default.orders_agg_5m ON CLUSTER kafka2ch\n");
+        sql.Should().Contain("ENGINE = MergeTree\n");
+        sql.Should().Contain("CREATE MATERIALIZED VIEW default.orders_agg_5m_mv ON CLUSTER kafka2ch\nREFRESH EVERY 5 MINUTE\nTO default.orders_agg_5m AS");
+        sql.Should().Contain("FROM kafka2ch.orders FINAL");
+        sql.Should().NotContain("orders_agg_5m_local");
+        sql.Should().NotContain("Distributed");
     }
 
     [Fact]

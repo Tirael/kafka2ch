@@ -123,11 +123,11 @@ Workflow: правка proto → build падает на drift → `Cli migrate 
 
 Макросы `{shard}` / `{replica}` — в `<macros>` каждой ноды. Для production Keeper — ансамбль из **не менее 3** узлов (в compose-демо так и сделано).
 
-**Цель MV (default = `_local`):** Kafka→raw MV на каждой ноде пишет в свой шард (`TO t_local`). Опция `materializedViewsWriteThroughDistributed` переключает `TO t`, чтобы строки перешардировались по `shardingKey` (дороже; нужно, если ключ шардирования важнее привязки к партиции Kafka). Refreshable MV агрегатов (`aggregates[]` и refreshable MV в `trailingSql`) всегда пишут в `*_local`, даже при write-through; источник — см. [`aggregates[]`](#aggregates).
+**Цель MV (default = `_local`):** Kafka→raw MV на каждой ноде пишет в свой шард (`TO t_local`). Опция `materializedViewsWriteThroughDistributed` переключает `TO t`, чтобы строки перешардировались по `shardingKey` (дороже; нужно, если ключ шардирования важнее привязки к партиции Kafka). Refreshable MV агрегатов (`aggregates[]` и refreshable MV в `trailingSql`): в `onCluster` всегда `TO *_local` (даже при write-through); в `replicatedDatabase` — `default.*` с `ON CLUSTER`; источник — см. [`aggregates[]`](#aggregates).
 
 **Trade-off размещения (R15 / TP-8).** Write-through пишет в `Distributed` асинхронно: Kafka engine коммитит offset, когда блок принят в очередь `Distributed`, а не доставлен на шард, — сбой ноды между этими моментами теряет строки. Поэтому демо-конфиги (включая `replicatedDatabase`) пишут в `*_local`: offset коммитится только после записи в локальную реплицированную таблицу. Цена — шард строки определяется тем, какая нода получила партицию Kafka, а не `shardingKey`: `Distributed` `orders` с `cityHash64(order_id)` в этом режиме только читает. Следствие для дедупа: повторная доставка после ребаланса consumer group может попасть на другой шард, а `ReplacingMergeTree`/`FINAL` схлопывает дубли только внутри шарда — такие дубли ловит `scripts/verify-cluster.sh` (`count() FROM orders FINAL` ≠ `uniqExact(order_id)` → fail). Если важнее перешардирование по ключу, включите write-through **и** `distributed_foreground_insert = 1` в профиле пользователя Kafka-MV (синхронная доставка, медленнее consume).
 
-**Refreshable-агрегаты в `replicatedDatabase` (R15 / TP-8).** Refreshable MV и её цель создаются не в Replicated database, а в Atomic `default` с `ON CLUSTER`: `default.orders_agg_1m` — обычная `MergeTree`, `default.orders_agg_mv` читает глобальный `Distributed` `kafka2ch.orders FINAL`, каждая нода обновляется независимо и хранит полный агрегат кластера. Цена: каждый refresh — полный `orders FINAL` через `Distributed` на **каждой** из N нод (N× нагрузка на чтение; в compose N = 4) и N копий агрегата. Почему не внутри Replicated database: там refresh координируется по шардам (`default_replica_path` = `/clickhouse/tables/{uuid}/{shard}`), а refresh без `APPEND` подменяет цель DDL-операцией, которая реплицируется на **всю** базу. При реальных шардах (`replicatedDatabaseShardName = {shard}`) refresh каждого шарда заменяет цель и на чужих шардах: UUID таблиц расходятся, `SYSTEM WAIT VIEW` падает с `TABLE_UUID_MISMATCH` ([run 39680979057](https://github.com/Tirael/kafka2ch/actions/runs/39680979057), [run 39681723018](https://github.com/Tirael/kafka2ch/actions/runs/39681723018)); с одним именем шарда та же подмена оставляла данные только на шарде refresh-реплики. Для больших объёмов — заменить полный пересчёт на пересчёт свежих партиций или вынести агрегат в отдельный сервис.
+**Refreshable-агрегаты в `replicatedDatabase` (R15 / TP-8).** Refreshable MV и её цель создаются не в Replicated database, а в Atomic `default` с `ON CLUSTER`: `default.orders_agg_1m` — обычная `MergeTree`, `default.orders_agg_mv` читает глобальный `Distributed` `kafka2ch.orders FINAL`, каждая нода обновляется независимо и хранит полный агрегат кластера. Цена: каждый refresh — полный `orders FINAL` через `Distributed` на **каждой** из N нод (N× нагрузка на чтение; в compose N = 4) и N копий агрегата. Почему не внутри Replicated database: там refresh координируется по шардам (`default_replica_path` = `/clickhouse/tables/{uuid}/{shard}`), а refresh без `APPEND` подменяет цель DDL-операцией, которая реплицируется на **всю** базу. При реальных шардах (`replicatedDatabaseShardName = {shard}`) refresh каждого шарда заменяет цель и на чужих шардах: UUID таблиц расходятся, `SYSTEM WAIT VIEW` падает с `TABLE_UUID_MISMATCH` ([run 39680979057](https://github.com/Tirael/kafka2ch/actions/runs/39680979057), [run 39681723018](https://github.com/Tirael/kafka2ch/actions/runs/39681723018)); с одним именем шарда та же подмена оставляла данные только на шарде refresh-реплики. Для больших объёмов — заменить полный пересчёт на пересчёт свежих партиций или вынести агрегат в отдельный сервис. Подробности — [`aggregates[]`](#aggregates).
 
 **`ddlMode=replicatedDatabase`:** `CREATE DATABASE … ON CLUSTER … ENGINE = Replicated('<replicatedDatabasePath>', '{shard}', '{replica}')` (топология БД совпадает с `remote_servers`: 2 шарда × 2 реплики в compose), затем `schema_migrations` в `default` с `ON CLUSTER` и общим Keeper-путём (история на всех шардах), `USE <replicatedDatabaseName>`; таблицы/MV — `Replicated*MergeTree` без аргументов (путь задаёт Replicated DB), без `ON CLUSTER`. `DETACH` очередей — `PERMANENTLY`. Migrator: `--ddl-mode replicatedDatabase` / `ClickHouse__DdlMode`, `ClickHouse__Database=<replicatedDatabaseName>`. Пример: [`clickhouse.codegen.cluster.replicated-db.json`](clickhouse.codegen.cluster.replicated-db.json); compose: `-f docker-compose.cluster.yml -f docker-compose.cluster.replicated-db.yml`.
 
@@ -589,7 +589,7 @@ TTL event_time + INTERVAL 90 DAY;
 
 | Поле | По умолчанию | Описание |
 | --- | --- | --- |
-| `name` | — | целевая таблица (в кластере `name_local` + `Distributed` `name`) |
+| `name` | — | целевая таблица (`onCluster`: `name_local` + `Distributed` `name`; `replicatedDatabase`: `default.name` без `Distributed`) |
 | `viewName` | `{name}_mv` | имя refreshable MV |
 | `sourceTable` | — | одна из `pipeline.mergeTreeTables` |
 | `engine` | `MergeTree` | движок цели (семейство MergeTree, без `Replicated`) |
@@ -605,30 +605,30 @@ TTL event_time + INTERVAL 90 DAY;
 
 Колонки цели: корзина, `groupBy`, меры — в этом порядке; `SELECT` — те же выражения с `AS alias`, `GROUP BY` — ключи. Агрегаты рендерятся после MV пайплайна и до `trailingSql`.
 
-**Топологии** (refresh без `APPEND` атомарно подменяет цель через `EXCHANGE`, что невозможно для `Distributed`, а `Replicated*`-цель refresh ClickHouse поддерживает только в Replicated database):
+**Топологии** (refresh без `APPEND` атомарно подменяет цель через `EXCHANGE`, что невозможно для `Distributed`):
 
-| Топология | `TO` | Движок цели | Источник | Кто выполняет refresh |
+| Топология | Объекты | Движок цели | Источник | Кто выполняет refresh |
 | --- | --- | --- | --- | --- |
-| single-node | `name` | `engine` | `source FINAL` | нода |
-| `onCluster` (Atomic) | `name_local` (даже при write-through) | **`engine` без `Replicated`** | `source_local FINAL` — каждая нода агрегирует свой шард | каждая нода независимо (uncoordinated); реплики шарда считают одно и то же из реплицированного источника |
-| `replicatedDatabase` | `name_local` | `Replicated<engine>` (без аргументов) | `Distributed` `source FINAL` (`FINAL` на каждом шарде) — глобальный результат | coordinated (Keeper-путь `default_replica_path` = `/clickhouse/tables/{uuid}/{shard}`); после refresh данные есть только на шарде refresh-реплики |
+| single-node | `name`, `viewName` | `engine` | `source FINAL` | нода |
+| `onCluster` (Atomic) | `name_local` + `Distributed` `name` (даже при write-through); MV `TO name_local` | **`engine` без `Replicated`** | `source_local FINAL` — каждая нода агрегирует свой шард | каждая нода независимо (uncoordinated); реплики шарда считают одно и то же из реплицированного источника |
+| `replicatedDatabase` | `default.name` и `default.viewName` с `ON CLUSTER` (Atomic `default`, не Replicated database; без `*_local` / `Distributed`) | **`engine` без `Replicated`** | глобальный `Distributed` `<replicatedDatabaseName>.source FINAL` | каждая нода независимо (uncoordinated), каждая хранит полный агрегат кластера |
 
-В обоих кластерных режимах `Distributed` `name` над `name_local` даёт итог по кластеру ровно один раз — читать через `sum(...) GROUP BY`.
+В `onCluster` `Distributed` `name` над `name_local` даёт итог по кластеру ровно один раз — читать через `sum(...) GROUP BY`. В `replicatedDatabase` читать локально: `SELECT … FROM default.name` (без `Distributed`, иначе итог умножится на число шардов); `ReadAggregates` — при `ReadAggregates__Database=default` (`docker-compose.cluster.replicated-db.yml`). Почему не внутри Replicated database: refresh без `APPEND` подменяет цель DDL-операцией всей базы и при реальных шардах падает с `TABLE_UUID_MISMATCH`.
 
 **Миграции.** Снапшот хранит агрегат целиком (`viewName`, `sourceTable`, `engine`, `orderBy`, `final`, `refreshMode`/`refreshEvery`, `timeBucket`, `groupBy`/`measures` с разрешёнными типами); drift-check сравнивает каждое поле, `migrate` — по полям:
 
 | Изменение | Тип | SQL |
 | --- | --- | --- |
-| новый агрегат | автоматически | `CREATE TABLE IF NOT EXISTS` (+ `Distributed`) и MV |
+| новый агрегат | автоматически | `CREATE TABLE IF NOT EXISTS` (+ `Distributed` в `onCluster`) и MV |
 | `refresh`, `viewName`, `sourceTable`, `final`, функция/колонка меры или корзины при тех же колонках цели | автоматически | `DROP VIEW IF EXISTS <старое имя>` + `CREATE MATERIALIZED VIEW` |
-| колонки цели (добавить/удалить/переименовать меру, `groupBy`, alias, тип), `engine`, `orderBy` | **manual** | закомментированный шаблон: `DROP VIEW`, `DROP TABLE` (в кластере ещё `name_local … SYNC`), полный DDL цели и MV; следующий refresh заполнит таблицу заново |
+| колонки цели (добавить/удалить/переименовать меру, `groupBy`, alias, тип), `engine`, `orderBy` | **manual** | закомментированный шаблон: `DROP VIEW`, `DROP TABLE` (`onCluster`: ещё `name_local … SYNC`; `replicatedDatabase`: `default.name`), полный DDL цели и MV; следующий refresh заполнит таблицу заново |
 | удалить агрегат | **manual** | закомментированные `DROP VIEW` / `DROP TABLE` |
 
 **Перенос из `trailingSql`.** Если `trailingSql` удалён, а новые `aggregates[]` в single-node рендерятся ровно в прежний текст `trailingSql` (тот же SHA-256), `migrate` распознаёт перенос: снапшот обновляется (`trailingSqlHash` → `aggregates`), SQL-миграция не создаётся. Init-скрипты при этом байт-в-байт прежние во всех топологиях — так демо `orders_agg_1m` переехал из `trailingSql`. Если текст отличается, остаётся manual `TrailingSqlChanged` + автоматический `AggregateAdded`.
 
 ### `trailingSql`
 
-Произвольный SQL, дописывается в конец файла — для редких объектов, которые не выражаются через `mergeTreeTables` / `materializedViews` / `aggregates` (словари, функции, нестандартные MV). Может быть многострочной строкой JSON с `\n`. В снапшоте хранится только хэш: любое изменение — manual `TrailingSqlChanged`. В кластерном режиме переписывается `ClusterTrailingSqlRewriter` (см. [`cluster`](#cluster-кластерный-clickhouse)): таблицы семейства MergeTree → `Replicated*` `t_local` + `Distributed` `t`, `FROM`/`TO` известных storage-таблиц (включая цели `aggregates[]`) → `*_local`. Refreshable MV (`CREATE MATERIALIZED VIEW v REFRESH … [APPEND] TO t AS …`) переписываются по тем же правилам топологий, что и [`aggregates[]`](#aggregates) (цель `t_local`, в `onCluster` без `Replicated`; источник `t_local` в `onCluster`, `Distributed` `t` в `replicatedDatabase`).
+Произвольный SQL, дописывается в конец файла — для редких объектов, которые не выражаются через `mergeTreeTables` / `materializedViews` / `aggregates` (словари, функции, нестандартные MV). Может быть многострочной строкой JSON с `\n`. В снапшоте хранится только хэш: любое изменение — manual `TrailingSqlChanged`. В кластерном режиме переписывается `ClusterTrailingSqlRewriter` (см. [`cluster`](#cluster-кластерный-clickhouse)): таблицы семейства MergeTree → `Replicated*` `t_local` + `Distributed` `t`, `FROM`/`TO` известных storage-таблиц → `*_local`. Refreshable MV (`CREATE MATERIALIZED VIEW v REFRESH … [APPEND] TO t AS …`) переписываются по тем же правилам топологий, что и [`aggregates[]`](#aggregates) (`onCluster`: цель `t_local` без `Replicated`, источник `t_local`; `replicatedDatabase`: `default.t` / `default.v` с `ON CLUSTER`, источник `<replicatedDatabaseName>.t`).
 
 ---
 
