@@ -1,4 +1,6 @@
+global using System.Globalization;
 global using AwesomeAssertions;
+global using FsCheck.Xunit;
 global using ClickHouseSchemaGen;
 global using ClickHouseSchemaGen.Descriptors;
 global using ClickHouseSchemaGen.Generation;
