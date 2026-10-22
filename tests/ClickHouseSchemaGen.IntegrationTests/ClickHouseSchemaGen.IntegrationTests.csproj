@@ -9,7 +9,12 @@
   <ItemGroup>
     <PackageReference Include="AwesomeAssertions" />
     <PackageReference Include="ClickHouse.Client" />
+<<<<<<< HEAD
     <PackageReference Include="Confluent.SchemaRegistry.Serdes.Protobuf" />
+=======
+    <PackageReference Include="FsCheck" />
+    <PackageReference Include="FsCheck.Xunit" />
+>>>>>>> 96ea8a3 (test(w3-6): red — FsCheck refs and failing R14 property coverage assert)
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="Testcontainers.ClickHouse" />
     <PackageReference Include="Testcontainers.Kafka" />
