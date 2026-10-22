@@ -1,6 +1,10 @@
 namespace ClickHouseSchemaGen.Migrator;
 
-public sealed class MigrationRunner(ILogger logger, TimeProvider timeProvider, ClusterConfig? cluster = null)
+public sealed class MigrationRunner(
+    ILogger logger,
+    TimeProvider timeProvider,
+    ClusterConfig? cluster = null,
+    MigrationLockOptions? lockOptions = null)
 {
     private static readonly Regex AwaitConsumersMarker = new(
         @"^\s*--\s*await:kafka_consumers_empty\s+(?<table>[A-Za-z_][A-Za-z0-9_]*)(?:\s+ON\s+CLUSTER\s+(?<cluster>[A-Za-z_][A-Za-z0-9_]*))?\s*$",
@@ -36,6 +40,8 @@ public sealed class MigrationRunner(ILogger logger, TimeProvider timeProvider, C
 
     private readonly ClusterDdl _cluster = new(cluster);
 
+    private readonly MigrationLockOptions _lockOptions = lockOptions ?? new MigrationLockOptions();
+
     private static readonly TimeSpan ConsumerWaitTimeout = TimeSpan.FromSeconds(60);
 
     private static readonly TimeSpan ReattachTimeout = TimeSpan.FromSeconds(30);
@@ -51,8 +57,22 @@ public sealed class MigrationRunner(ILogger logger, TimeProvider timeProvider, C
         await using var connection = new ClickHouseConnection(connectionString);
         await OpenWithRetryAsync(connection, cancellationToken);
         await EnsureMigrationsTableAsync(connection, cancellationToken);
+        await using var migrationLock = await MigrationLock.AcquireAsync(
+            connection,
+            _cluster,
+            _lockOptions,
+            logger,
+            timeProvider,
+            cancellationToken);
 
         var applied = await LoadAppliedAsync(connection, cancellationToken);
+        foreach (var interrupted in FindInterruptedMigrations(await LoadJournalAsync(connection, cancellationToken)))
+        {
+            logger.LogWarning(
+                "Migration {Migration} was started but never recorded as applied (interrupted run); re-applying it",
+                interrupted);
+        }
+
         var files = Directory.GetFiles(migrationsDirectory, "*.sql")
             .Select(path => new FileInfo(path))
             .OrderBy(file => file.Name, StringComparer.Ordinal)
@@ -85,8 +105,9 @@ public sealed class MigrationRunner(ILogger logger, TimeProvider timeProvider, C
             }
 
             logger.LogInformation("Applying migration {Migration}", file.Name);
+            await RecordJournalAsync(connection, version, file.Name, checksum, SchemaMigrationsTable.StartedKind, cancellationToken);
             await ApplyFileAsync(connection, file.FullName, cancellationToken);
-            await RecordAppliedAsync(connection, version, file.Name, checksum, cancellationToken);
+            await RecordJournalAsync(connection, version, file.Name, checksum, SchemaMigrationsTable.MigrationKind, cancellationToken);
             applied[version] = checksum;
         }
     }
@@ -138,6 +159,37 @@ public sealed class MigrationRunner(ILogger logger, TimeProvider timeProvider, C
         while (await reader.ReadAsync(cancellationToken))
             applied[reader.GetString(0)] = reader.GetString(1);
         return applied;
+    }
+
+    private async Task<List<(string Version, string Name, string Kind)>> LoadJournalAsync(
+        ClickHouseConnection connection,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            $"SELECT version, name, kind FROM {_cluster.HistoryTableName} "
+                + $"WHERE kind IN ('{SchemaMigrationsTable.StartedKind}', '{SchemaMigrationsTable.MigrationKind}')";
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var journal = new List<(string, string, string)>();
+        while (await reader.ReadAsync(cancellationToken))
+            journal.Add((reader.GetString(0), reader.GetString(1), reader.GetString(2)));
+        return journal;
+    }
+
+    public static IReadOnlyList<string> FindInterruptedMigrations(
+        IEnumerable<(string Version, string Name, string Kind)> journal)
+    {
+        var rows = journal.ToList();
+        var applied = rows
+            .Where(row => row.Kind == SchemaMigrationsTable.MigrationKind)
+            .Select(row => row.Version)
+            .ToHashSet(StringComparer.Ordinal);
+        return rows
+            .Where(row => row.Kind == SchemaMigrationsTable.StartedKind && !applied.Contains(row.Version))
+            .Select(row => row.Name)
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToList();
     }
 
     private async Task ApplyFileAsync(
@@ -417,11 +469,12 @@ public sealed class MigrationRunner(ILogger logger, TimeProvider timeProvider, C
         return Convert.ToString(await command.ExecuteScalarAsync(cancellationToken))!;
     }
 
-    private async Task RecordAppliedAsync(
+    private async Task RecordJournalAsync(
         ClickHouseConnection connection,
         string version,
         string name,
         string checksum,
+        string kind,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -430,7 +483,7 @@ public sealed class MigrationRunner(ILogger logger, TimeProvider timeProvider, C
             version,
             name,
             checksum,
-            SchemaMigrationsTable.MigrationKind,
+            kind,
             $"toDateTime('{EscapeLiteral(appliedAt)}')",
             _cluster.HistoryTableName);
         await command.ExecuteNonQueryAsync(cancellationToken);

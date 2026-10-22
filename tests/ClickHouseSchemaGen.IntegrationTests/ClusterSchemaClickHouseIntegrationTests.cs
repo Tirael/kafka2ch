@@ -62,8 +62,9 @@ public sealed class ClusterSchemaClickHouseIntegrationTests : IAsyncLifetime
             "SELECT toString(number), 'books', 1.5, 2, now64(3) FROM numbers(200) " +
             "SETTINGS distributed_foreground_insert = 1");
 
-        await CreateRunner().ApplyAsync(_shard2.GetConnectionString(), _migrationsDirectory, CancellationToken.None);
-        await CreateRunner().ApplyAsync(_shard1.GetConnectionString(), _migrationsDirectory, CancellationToken.None);
+        await Task.WhenAll(
+            CreateRunner().ApplyAsync(_shard2.GetConnectionString(), _migrationsDirectory, CancellationToken.None),
+            CreateRunner().ApplyAsync(_shard1.GetConnectionString(), _migrationsDirectory, CancellationToken.None));
 
         (await QueryRowsAsync(connection,
                 "SELECT getMacro('replica'), name, engine FROM clusterAllReplicas('kafka2ch', system.tables) " +
@@ -94,10 +95,19 @@ public sealed class ClusterSchemaClickHouseIntegrationTests : IAsyncLifetime
             .Should().Be(4);
 
         (await QueryRowsAsync(connection,
-                "SELECT getMacro('replica'), count(), countIf(kind = 'init'), countIf(version = '" + PersistPartitionMigrationFixture.Version + "') " +
+                "SELECT getMacro('replica'), count(), countIf(kind = 'init'), " +
+                $"countIf(kind = 'started' AND version = '{PersistPartitionMigrationFixture.Version}'), " +
+                $"countIf(kind = 'migration' AND version = '{PersistPartitionMigrationFixture.Version}') " +
                 "FROM clusterAllReplicas('kafka2ch', currentDatabase(), schema_migrations) GROUP BY 1 ORDER BY 1"))
-            .Select(row => $"{row[0]}:{row[1]}:{row[2]}:{row[3]}")
-            .Should().Equal("ch1:3:2:1", "ch2:3:2:1");
+            .Select(row => $"{row[0]}:{row[1]}:{row[2]}:{row[3]}:{row[4]}")
+            .Should().Equal("ch1:4:2:1:1", "ch2:4:2:1:1");
+
+        (await QueryRowsAsync(connection,
+                "SELECT getMacro('replica'), engine FROM clusterAllReplicas('kafka2ch', system.tables) " +
+                "WHERE database = currentDatabase() AND name = 'schema_migrations_lock' ORDER BY 1"))
+            .Select(row => $"{row[0]}:{row[1]}")
+            .Should().Equal("ch1:KeeperMap", "ch2:KeeperMap");
+        (await ScalarAsync(connection, "SELECT count() FROM schema_migrations_lock")).Should().Be(0);
     }
 
     [Fact]
@@ -213,6 +223,7 @@ public sealed class ClusterSchemaClickHouseIntegrationTests : IAsyncLifetime
                 </{ClusterName}>
             </remote_servers>
             <zookeeper><node><host>clickhouse-keeper</host><port>9181</port></node></zookeeper>
+            <keeper_map_path_prefix>/keeper_map_tables</keeper_map_path_prefix>
             <macros><shard from_env="CLICKHOUSE_SHARD"/><replica from_env="CLICKHOUSE_REPLICA"/></macros>
             <interserver_http_host from_env="CLICKHOUSE_REPLICA"/>
         </clickhouse>

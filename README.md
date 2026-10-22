@@ -132,6 +132,14 @@ dotnet exec tools/ClickHouseSchemaGen.Migrator/bin/Debug/net8.0/ClickHouseSchema
   --migrations docker/clickhouse/migrations
 ```
 
+   Параллельные Migrator'ы сериализуются локом, который берётся до чтения `schema_migrations`: при наличии Keeper
+   (`<zookeeper>` + `<keeper_map_path_prefix>` в конфиге сервера, как в `docker/clickhouse-cluster/config/cluster.xml`) —
+   строка в `KeeperMap`-таблице `schema_migrations_lock`, иначе (single-node без Keeper) — best-effort lease-строка
+   `kind = 'lock'` в `schema_migrations`. Второй Migrator ждёт `--lock-timeout` (секунды или `hh:mm:ss`, по умолчанию 300)
+   и падает с `TimeoutException`; брошенный лок перехватывается после `--lock-ttl` (по умолчанию 1800, должен превышать
+   самую долгую миграцию). Перед применением пишется `kind = 'started'`, после — `migration`; `started` без `migration`
+   при следующем запуске даёт предупреждение «interrupted run», и миграция применяется повторно (SQL должен быть идемпотентным).
+
 В сырой таблице `orders` сохраняются `kafka_key` (сырые байты protobuf-ключа) и `kafka_headers` (`Map(String, String)`). Подробности — [clickhouse.codegen.md](src/Sandbox.Contracts/clickhouse.codegen.md) и [MIGRATIONS_PLAN.md](MIGRATIONS_PLAN.md).
 
 ## Кластерный ClickHouse

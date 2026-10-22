@@ -8,6 +8,12 @@ public static class SchemaMigrationsTable
 
     public const string InitKind = "init";
 
+    public const string StartedKind = "started";
+
+    public const string LockKind = "lock";
+
+    public const string LockTableName = "schema_migrations_lock";
+
     public const string DefaultScriptFileName = "00_schema_migrations.sql";
 
     public static string CreateTableSql { get; } = string.Join(

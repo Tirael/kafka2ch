@@ -51,6 +51,8 @@
         <operation_timeout_ms>10000</operation_timeout_ms>
     </zookeeper>
 
+    <keeper_map_path_prefix>/keeper_map_tables</keeper_map_path_prefix>
+
     <macros>
         <shard from_env="CLICKHOUSE_SHARD"/>
         <replica from_env="CLICKHOUSE_REPLICA"/>

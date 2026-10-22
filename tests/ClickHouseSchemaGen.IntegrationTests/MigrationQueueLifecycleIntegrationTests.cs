@@ -42,7 +42,7 @@ public sealed class MigrationQueueLifecycleIntegrationTests : IAsyncLifetime
         Convert.ToString(await ScalarAsync("SHOW CREATE TABLE orders_queue"))
             .Should().Contain($"kafka_num_consumers = {KafkaRecreateMigrationFixture.NewNumConsumers}");
         Convert.ToInt32(await ScalarAsync(
-                $"SELECT count() FROM schema_migrations WHERE version = '{KafkaRecreateMigrationFixture.Version}'"))
+                $"SELECT count() FROM schema_migrations WHERE kind = 'migration' AND version = '{KafkaRecreateMigrationFixture.Version}'"))
             .Should().Be(1);
     }
 
@@ -60,7 +60,7 @@ public sealed class MigrationQueueLifecycleIntegrationTests : IAsyncLifetime
         Convert.ToString(await ScalarAsync("SHOW CREATE TABLE orders_mv"))
             .Should().Contain(PersistPartitionMigrationFixture.AddedColumn);
         Convert.ToInt32(await ScalarAsync(
-                $"SELECT count() FROM schema_migrations WHERE version = '{PersistPartitionMigrationFixture.Version}'"))
+                $"SELECT count() FROM schema_migrations WHERE kind = 'migration' AND version = '{PersistPartitionMigrationFixture.Version}'"))
             .Should().Be(1);
     }
 
@@ -82,7 +82,7 @@ public sealed class MigrationQueueLifecycleIntegrationTests : IAsyncLifetime
         await act.Should().ThrowAsync<Exception>();
         Convert.ToInt32(await ScalarAsync("EXISTS TABLE orders_queue"))
             .Should().Be(1, "queue must be re-attached so Kafka consumption resumes without a server restart");
-        Convert.ToInt32(await ScalarAsync($"SELECT count() FROM schema_migrations WHERE version = '{version}'"))
+        Convert.ToInt32(await ScalarAsync($"SELECT count() FROM schema_migrations WHERE kind = 'migration' AND version = '{version}'"))
             .Should().Be(0);
     }
 
@@ -108,7 +108,7 @@ public sealed class MigrationQueueLifecycleIntegrationTests : IAsyncLifetime
             .Should().Be(1, "dropped queue must be restored from its pre-migration DDL when recreate fails");
         Convert.ToInt32(await ScalarAsync("EXISTS TABLE orders_mv"))
             .Should().Be(1, "dropped materialized view must be restored when recreate fails");
-        Convert.ToInt32(await ScalarAsync($"SELECT count() FROM schema_migrations WHERE version = '{version}'"))
+        Convert.ToInt32(await ScalarAsync($"SELECT count() FROM schema_migrations WHERE kind = 'migration' AND version = '{version}'"))
             .Should().Be(0);
     }
 
