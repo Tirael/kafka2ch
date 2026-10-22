@@ -59,14 +59,7 @@ function of the config.
 | --- | --- |
 | `AutoViewMatchesAutoTable` | The auto MV writes exactly the auto table's columns, and every `SELECT` source exists in the Kafka table (`_key`, not `kafka_key`). Defect 1.1. |
 | `ExplicitViewConsistentWithTargetAndConfig` | Explicit MV: sources exist; `includeKafkaMeta: false` gives no meta mappings; `true` gives some. Defect 1.2. |
-| `ExplicitViewTargetsExistingColumns` | Every column an explicit MV writes exists in its target table. **Open.** |
-
-Open finding (`KafkaMetaResolution.open-explicit-target.cfg`): an explicit MV whose
-meta resolves to enabled (via `view.includeKafkaMeta: true`, or via queue/default flags
-when the MV has auto columns) maps `_key AS kafka_key`. The target is an explicit-columns
-table with `includeKafkaMeta` unset or `false`, so it has no `kafka_key`.
-`CodegenConfigValidator` has no rule for this. Confirmed with a `BuildPlan` probe on the
-current code.
+| `ExplicitViewTargetsExistingColumns` | Every column an explicit MV writes exists in its target table. Fixed by `CodegenConfigValidator` rejecting MV Kafka-meta mappings whose targets are missing from the MergeTree table; the model keeps only configs the validator accepts (`ConfigAcceptedByValidator`). |
 
 ### `MigrationDiffDrift.tla` — `build` drift check vs `migrate`
 
@@ -168,10 +161,9 @@ statement order inside a migration file.
 
 | Config | Distinct states | Result |
 | --- | ---: | --- |
-| `KafkaMetaResolution` | 13 608 | pass |
+| `KafkaMetaResolution` | 11 016 | pass |
 | `KafkaMetaResolution.buggy-autoview` | initial state | `AutoViewMatchesAutoTable` violated |
 | `KafkaMetaResolution.buggy-explicitview` | initial state | `ExplicitViewConsistentWithTargetAndConfig` violated |
-| `KafkaMetaResolution.open-explicit-target` | initial state | `ExplicitViewTargetsExistingColumns` violated |
 | `MigrationDiffDrift` | 1 020 | pass |
 | `MigrationDiffDrift.buggy-*` (4 configs) | initial state | the named invariant violated |
 | `TypeCompatibility` | 256 | pass |

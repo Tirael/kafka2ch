@@ -8,7 +8,9 @@
 (* PipelineColumnExpander, MaterializedViewAutoGenerator.                  *)
 (*                                                                         *)
 (* Impl = "buggy" is the code before PR #57 (defects 1.1 / 1.2),           *)
-(* Impl = "fixed" is the current code.                                     *)
+(* Impl = "fixed" is the current code, including CodegenConfigValidator    *)
+(* rejecting explicit-MV Kafka meta mappings whose targets are missing     *)
+(* from the MergeTree table (ExplicitViewTargetsExistingColumns).          *)
 (*                                                                         *)
 (* Every initial state is one configuration; the plan is a pure function   *)
 (* of it, so TLC checks the invariants on every configuration.             *)
@@ -90,6 +92,12 @@ ViewMappings ==
 
 ViewMetaTargets == {m[2] : m \in ViewMappings} \cap AllMetaCols
 
+ExplicitViewTargetsExistingColumns ==
+    hasView => \A m \in ViewMappings : m[2] \in TCols
+
+ConfigAcceptedByValidator ==
+    Impl = "buggy" \/ ExplicitViewTargetsExistingColumns
+
 Init ==
     /\ defaults \in SUBSET Flags
     /\ queueOverride \in [Flags -> Tri]
@@ -101,6 +109,7 @@ Init ==
     /\ vAutoColumns \in BOOLEAN
     /\ tAutoColumns => tHasSource
     /\ ~hasView => vInclude = "null" /\ vAutoColumns
+    /\ ConfigAcceptedByValidator
 
 Next == UNCHANGED vars
 
@@ -120,7 +129,4 @@ ExplicitViewConsistentWithTargetAndConfig ==
         /\ \A m \in ViewMappings : m[1] \in KafkaSelectable
         /\ vInclude = "false" => ViewMetaTargets = {}
         /\ vInclude = "true" => ViewMetaTargets # {}
-
-ExplicitViewTargetsExistingColumns ==
-    hasView => \A m \in ViewMappings : m[2] \in TCols
 =============================================================================

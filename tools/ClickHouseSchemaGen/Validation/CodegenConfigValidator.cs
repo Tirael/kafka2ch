@@ -64,6 +64,13 @@ public sealed class CodegenConfigValidator : AbstractValidator<CodegenConfig>
             .When(config => config.Pipeline?.MergeTreeTables.Any(table =>
                 MaterializedViewAutoGenerator.ShouldCreate(table, config.Pipeline.MaterializedViews)) == true);
 
+        RuleFor(config => config)
+            .Must(config => FindExplicitViewKafkaMetaTargetMismatch(config) is null)
+            .WithMessage(config =>
+                FindExplicitViewKafkaMetaTargetMismatch(config)
+                ?? "Explicit materialized view Kafka meta mappings must target existing MergeTree columns.")
+            .When(config => config.Pipeline?.MaterializedViews.Count > 0);
+
         When(config => config.Cluster?.Enabled == true, () =>
         {
             RuleFor(config => config.Cluster).SetValidator(new ClusterConfigValidator());
@@ -332,4 +339,120 @@ public sealed class CodegenConfigValidator : AbstractValidator<CodegenConfig>
 
         return null;
     }
+
+    private static string? FindExplicitViewKafkaMetaTargetMismatch(CodegenConfig config)
+    {
+        if (config.Pipeline is null)
+            return null;
+
+        var tablesByName = config.Pipeline.MergeTreeTables
+            .GroupBy(table => table.TableName, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
+        var queuesByName = config.KafkaTables
+            .GroupBy(table => table.TableName, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
+
+        foreach (var view in config.Pipeline.MaterializedViews)
+        {
+            if (!tablesByName.TryGetValue(view.TargetTable, out var target)
+                || !queuesByName.TryGetValue(view.SourceTable, out var queue))
+            {
+                continue;
+            }
+
+            var queueMeta = KafkaMetaColumnFactory.Resolve(
+                config.Defaults.PersistKafkaMeta,
+                queue.PersistKafkaMeta,
+                includeKafkaMeta: null);
+            var viewInclude = view.IncludeKafkaMeta ?? target.IncludeKafkaMeta;
+            var viewMeta = KafkaMetaColumnFactory.Resolve(queueMeta, tableOverride: null, viewInclude);
+            var viewAddsMeta = view.Columns.Count == 0
+                ? viewMeta.AnyEnabled
+                : view.IncludeKafkaMeta == true
+                    || (view.IncludeKafkaMeta is null && target.IncludeKafkaMeta == true);
+
+            var targetColumnNames = ResolveMergeTreeColumnNames(config, target, queuesByName);
+            var expectedMetaTargets = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            if (viewAddsMeta)
+            {
+                foreach (var mapping in KafkaMetaColumnFactory.CreateMappings(viewMeta))
+                    expectedMetaTargets.Add(mapping.Target);
+            }
+
+            foreach (var mapping in view.Columns)
+            {
+                if (IsKafkaMetaTargetName(mapping.Target))
+                    expectedMetaTargets.Add(mapping.Target);
+            }
+
+            foreach (var targetName in expectedMetaTargets)
+            {
+                if (targetColumnNames.Contains(targetName))
+                    continue;
+
+                return $"Materialized view '{view.Name}' maps Kafka meta to '{targetName}', " +
+                    $"but MergeTree table '{target.TableName}' has no column '{targetName}'. " +
+                    "Set includeKafkaMeta on the target table or disable Kafka meta on the view.";
+            }
+        }
+
+        return null;
+    }
+
+    private static HashSet<string> ResolveMergeTreeColumnNames(
+        CodegenConfig config,
+        MergeTreeTableConfig table,
+        IReadOnlyDictionary<string, KafkaTableConfig> queuesByName)
+    {
+        var names = table.Columns
+            .Select(column => column.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var sourceTable = table.SourceTable
+            ?? config.Pipeline?.MaterializedViews
+                .FirstOrDefault(view =>
+                    string.Equals(view.TargetTable, table.TableName, StringComparison.OrdinalIgnoreCase))
+                ?.SourceTable;
+
+        PersistKafkaMetaConfig? fromQueue = null;
+        if (!string.IsNullOrWhiteSpace(sourceTable)
+            && queuesByName.TryGetValue(sourceTable, out var queue))
+        {
+            fromQueue = KafkaMetaColumnFactory.Resolve(
+                config.Defaults.PersistKafkaMeta,
+                queue.PersistKafkaMeta,
+                includeKafkaMeta: null);
+        }
+
+        var tableMeta = KafkaMetaColumnFactory.Resolve(
+            config.Defaults.PersistKafkaMeta,
+            fromQueue,
+            table.IncludeKafkaMeta);
+        var effectiveMeta = KafkaMetaColumnFactory.Resolve(
+            tableMeta,
+            tableOverride: null,
+            table.IncludeKafkaMeta);
+
+        var appendMeta = table.Columns.Count == 0
+            ? effectiveMeta.AnyEnabled
+            : table.IncludeKafkaMeta == true;
+
+        if (!appendMeta)
+            return names;
+
+        foreach (var column in KafkaMetaColumnFactory.CreateMergeTreeColumns(effectiveMeta))
+            names.Add(column.Name);
+
+        return names;
+    }
+
+    private static bool IsKafkaMetaTargetName(string target) =>
+        string.Equals(target, KafkaMetaColumnFactory.KeyColumnName, StringComparison.OrdinalIgnoreCase)
+        || string.Equals(target, KafkaMetaColumnFactory.HeadersColumnName, StringComparison.OrdinalIgnoreCase)
+        || string.Equals(target, KafkaMetaColumnFactory.TopicColumnName, StringComparison.OrdinalIgnoreCase)
+        || string.Equals(target, KafkaMetaColumnFactory.PartitionColumnName, StringComparison.OrdinalIgnoreCase)
+        || string.Equals(target, KafkaMetaColumnFactory.OffsetColumnName, StringComparison.OrdinalIgnoreCase)
+        || string.Equals(target, KafkaMetaColumnFactory.TimestampColumnName, StringComparison.OrdinalIgnoreCase)
+        || target.StartsWith(KafkaMetaColumnFactory.KeyColumnName + ".", StringComparison.OrdinalIgnoreCase);
 }
