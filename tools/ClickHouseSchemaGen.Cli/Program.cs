@@ -150,7 +150,6 @@ static int RunMigrate(string[] args)
     return result.ExitCode;
 }
 
-<<<<<<< HEAD
 static (IReadOnlyList<string> ConfigPaths, string? Baseline) RequireTopologies(string[] args)
 {
     var rootIndex = Array.IndexOf(args, "--all-topologies");
@@ -170,7 +169,8 @@ static (IReadOnlyList<string> ConfigPaths, string? Baseline) RequireTopologies(s
     if (configPaths.Count == 0)
         throw new InvalidOperationException("Missing required --config or --all-topologies argument.");
     return (configPaths, null);
-=======
+}
+
 static ClickHouseSchemaGenerator CreateGenerator(string[] args)
 {
     var descriptorSetPath = OptionValue(args, "--descriptor-set");
@@ -187,7 +187,6 @@ static string? OptionValue(string[] args, string option)
 {
     var index = Array.IndexOf(args, option);
     return index < 0 || index + 1 >= args.Length ? null : args[index + 1];
->>>>>>> fad7c7f (Accept FileDescriptorSet as generator input via descriptorSetPath and --descriptor-set)
 }
 
 static void LoadMessageAssemblies(string[] args)
@@ -230,33 +229,24 @@ static void PrintUsage()
           clickhouse-schema-gen migrate init --config <path> [--assemblies <dll[;dll…]> | --descriptor-set <file>]
           clickhouse-schema-gen migrate status --config <path> [--assemblies <dll[;dll…]> | --descriptor-set <file>]
           clickhouse-schema-gen migrate versions --config <path>   (rewrite versionsOutputPath from migrations)
-<<<<<<< HEAD
-          clickhouse-schema-gen migrate snapshot-upgrade --config <path> [--assemblies <dll[;dll…]>]
+          clickhouse-schema-gen migrate snapshot-upgrade --config <path> [--assemblies <dll[;dll…]> | --descriptor-set <file>]
                                                                    (rewrite schema.snapshot.json in the current format)
           clickhouse-schema-gen migrate rebase --config <path> --name <file> [--version <yyyyMMddHHmmss>] [--parent-snapshot <path>]
                                 (rename an unapplied migration to a version after all others and rewrite versionsOutputPath)
-          clickhouse-schema-gen migrate --config <path> [--config <path> …] --name <name> [--assemblies <dll[;dll…]>] [--allow-manual]
-          clickhouse-schema-gen migrate --all-topologies <topologies.json> --name <name> [--assemblies <dll[;dll…]>] [--allow-manual]
+          clickhouse-schema-gen migrate --config <path> [--config <path> …] --name <name> [--assemblies <dll[;dll…]> | --descriptor-set <file>] [--allow-manual]
+          clickhouse-schema-gen migrate --all-topologies <topologies.json> --name <name> [--assemblies <dll[;dll…]> | --descriptor-set <file>] [--allow-manual]
                                                                    (one version for every topology; snapshots updated all or none)
           clickhouse-schema-gen migrate verify --all-topologies <topologies.json> [--baseline <version>]
           clickhouse-schema-gen migrate verify --config <path> --config <path> … [--baseline <version>]
                                                                    (fail unless migration versions after the baseline match)
-          clickhouse-schema-gen --config <path> [--assemblies <dll[;dll…]>]   (alias for generate)
+          clickhouse-schema-gen --config <path> [--assemblies <dll[;dll…]> | --descriptor-set <file>]   (alias for generate)
 
         --assemblies      Semicolon-separated paths to assemblies that define protobuf message types
                           referenced by messageType in the codegen config (required when the tool
                           package does not already reference those contracts).
+        --descriptor-set  FileDescriptorSet produced by `protoc --include_imports --descriptor_set_out=<file>`
+                          or `buf build -o <file>`, used instead of assemblies (overrides descriptorSetPath
+                          in the codegen config). messageType may be the protobuf full name or the C# type name.
         --all-topologies  Root config listing codegen configs ("topologies") and the history
                           baseline ("migrationsBaseline") accepted as divergent.
-=======
-          clickhouse-schema-gen migrate --config <path> --name <name> [--assemblies <dll[;dll…]> | --descriptor-set <file>] [--allow-manual]
-          clickhouse-schema-gen --config <path> [--assemblies <dll[;dll…]> | --descriptor-set <file>]   (alias for generate)
-
-        --assemblies  Semicolon-separated paths to assemblies that define protobuf message types
-                      referenced by messageType in the codegen config (required when the tool
-                      package does not already reference those contracts).
-        --descriptor-set  FileDescriptorSet produced by `protoc --include_imports --descriptor_set_out=<file>`
-                      or `buf build -o <file>`, used instead of assemblies (overrides descriptorSetPath
-                      in the codegen config). messageType may be the protobuf full name or the C# type name.
->>>>>>> fad7c7f (Accept FileDescriptorSet as generator input via descriptorSetPath and --descriptor-set)
         """);
