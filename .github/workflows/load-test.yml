@@ -15,8 +15,8 @@ on:
       scenarios:
         description: Comma-separated scenario names (empty = all)
         default: ""
-  push:
-    branches: [cursor/w3-5-load-test-stand-282f]
+  schedule:
+    - cron: "0 6 * * 1"
 
 concurrency:
   group: load-test-${{ github.ref }}
