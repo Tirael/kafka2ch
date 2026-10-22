@@ -2,8 +2,11 @@ if (args.Contains("--help") || args.Contains("-h") || args.Length == 0)
 {
     Console.WriteLine("""
         Usage: ClickHouseSchemaGen.Migrator --migrations <dir> [--cluster <name>] [--ddl-mode onCluster|replicatedDatabase]
-                                            [--lock-timeout <duration>] [--lock-ttl <duration>]
+                                            [--lock-timeout <duration>] [--lock-ttl <duration>] [--skip-preflight]
           --cluster <name>     ClickHouse cluster (env ClickHouse__Cluster)
+          --skip-preflight     do not verify '-- require:format_schema' markers on every replica via file()
+                               (needs format_schema_path under user_files_path) and do not dry-run
+                               Kafka queue / materialized view DDL in a temporary database before applying
           --ddl-mode <mode>    onCluster (default): schema_migrations ON CLUSTER;
                                replicatedDatabase: DDL without ON CLUSTER in a Replicated database
                                (env ClickHouse__DdlMode). History Keeper path/replica:
@@ -33,7 +36,12 @@ using var loggerFactory = LoggerFactory.Create(builder => builder.AddSimpleConso
 }));
 var logger = loggerFactory.CreateLogger("Migrator");
 var lockOptions = new MigrationLockOptions { Timeout = arguments.LockTimeout, Ttl = arguments.LockTtl };
-var runner = new MigrationRunner(logger, TimeProvider.System, options.ToClusterConfig(), lockOptions);
+var runner = new MigrationRunner(
+    logger,
+    TimeProvider.System,
+    options.ToClusterConfig(),
+    lockOptions,
+    skipPreflight: args.Contains("--skip-preflight"));
 
 try
 {

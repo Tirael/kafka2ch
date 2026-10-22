@@ -8,7 +8,11 @@ public static class KafkaRecreateMigrationFixture
 
     public const int NewNumConsumers = 2;
 
-    public static string GenerateSql(string configPath)
+    public const string FormatSchemaFile = "order_event.proto";
+
+    public static string GenerateSql(
+        string configPath,
+        IReadOnlyDictionary<string, string>? formatSchemaChecksums = null)
     {
         var generator = SchemaGeneratorFactory.Create();
         var oldPlan = generator.BuildPlan(CodegenConfigLoader.Load(configPath));
@@ -25,6 +29,12 @@ public static class KafkaRecreateMigrationFixture
             Path.GetFileNameWithoutExtension(FileName),
             parentChecksum: null,
             targetChecksum: "target",
-            new DateTimeOffset(2099, 1, 2, 0, 0, 0, TimeSpan.Zero));
+            new DateTimeOffset(2099, 1, 2, 0, 0, 0, TimeSpan.Zero),
+            formatSchemaChecksums);
     }
+
+    public static IReadOnlyDictionary<string, string> FormatSchemaChecksums(string formatSchemasDirectory) =>
+        FormatSchemaRequirement.ComputeChecksums(
+            CodegenConfigLoader.Load(TestContractsPaths.CodegenConfigPath).KafkaTables,
+            formatSchemasDirectory);
 }

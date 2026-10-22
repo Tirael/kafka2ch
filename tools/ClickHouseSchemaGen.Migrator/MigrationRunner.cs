@@ -4,7 +4,8 @@ public sealed class MigrationRunner(
     ILogger logger,
     TimeProvider timeProvider,
     ClusterConfig? cluster = null,
-    MigrationLockOptions? lockOptions = null)
+    MigrationLockOptions? lockOptions = null,
+    bool skipPreflight = false)
 {
     private static readonly Regex AwaitConsumersMarker = new(
         @"^\s*--\s*await:kafka_consumers_empty\s+(?<table>[A-Za-z_][A-Za-z0-9_]*)(?:\s+ON\s+CLUSTER\s+(?<cluster>[A-Za-z_][A-Za-z0-9_]*))?\s*$",
@@ -45,6 +46,8 @@ public sealed class MigrationRunner(
     private readonly ClusterDdl _cluster = new(cluster);
 
     private readonly MigrationLockOptions _lockOptions = lockOptions ?? new MigrationLockOptions();
+
+    private readonly MigrationPreflight? _preflight = skipPreflight ? null : new MigrationPreflight(logger, new ClusterDdl(cluster));
 
     private static readonly TimeSpan ConsumerWaitTimeout = TimeSpan.FromSeconds(60);
 
@@ -229,6 +232,10 @@ public sealed class MigrationRunner(
         CancellationToken cancellationToken)
     {
         var sql = await File.ReadAllTextAsync(path, cancellationToken);
+        var statements = SplitStatements(sql).ToList();
+        if (_preflight is not null)
+            await _preflight.RunAsync(connection, Path.GetFileName(path), statements, cancellationToken);
+
         var detachedQueues = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
         var droppedQueues = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
         var droppedViews = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
@@ -236,7 +243,7 @@ public sealed class MigrationRunner(
 
         try
         {
-            foreach (var statement in SplitStatements(sql))
+            foreach (var statement in statements)
             {
                 var awaitMatch = AwaitConsumersMarker.Match(statement);
                 if (awaitMatch.Success)
