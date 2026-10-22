@@ -74,6 +74,10 @@ public sealed class MigrationRunner(
             timeProvider,
             cancellationToken);
 
+        // Parallel migrators on other replicas can finish and release the lock before
+        // their journal rows replicate here; sync so LoadApplied sees them.
+        await SyncHistoryReplicaAsync(connection, cancellationToken);
+
         var applied = await LoadAppliedAsync(connection, cancellationToken);
         foreach (var interrupted in FindInterruptedMigrations(await LoadJournalAsync(connection, cancellationToken)))
         {
@@ -117,7 +121,29 @@ public sealed class MigrationRunner(
             await RecordJournalAsync(connection, version, file.Name, checksum, SchemaMigrationsTable.StartedKind, cancellationToken);
             await ApplyFileAsync(connection, file.FullName, cancellationToken);
             await RecordJournalAsync(connection, version, file.Name, checksum, SchemaMigrationsTable.MigrationKind, cancellationToken);
+            await SyncHistoryReplicaAsync(connection, cancellationToken);
             applied[version] = checksum;
+        }
+    }
+
+    private async Task SyncHistoryReplicaAsync(ClickHouseConnection connection, CancellationToken cancellationToken)
+    {
+        if (!_cluster.Enabled)
+            return;
+
+        try
+        {
+            await ExecuteAsync(
+                connection,
+                $"SYSTEM SYNC REPLICA {_cluster.HistoryTableName}",
+                cancellationToken);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            logger.LogDebug(
+                exception,
+                "Could not sync history replica {Table}; continuing with local view",
+                _cluster.HistoryTableName);
         }
     }
 

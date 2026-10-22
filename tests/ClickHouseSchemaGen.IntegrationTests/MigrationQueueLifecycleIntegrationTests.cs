@@ -139,7 +139,7 @@ public sealed class MigrationQueueLifecycleIntegrationTests : IAsyncLifetime
             .Which.Reason.Should().Contain("source 'orders_queue' schema changed").And.Contain("unexpected String");
         Convert.ToInt32(await ScalarAsync("EXISTS TABLE orders_mv"))
             .Should().Be(0, "an old view must not be attached to a queue whose schema no longer matches");
-        Convert.ToInt32(await ScalarAsync($"SELECT count() FROM schema_migrations WHERE version = '{version}'"))
+        Convert.ToInt32(await ScalarAsync($"SELECT count() FROM schema_migrations WHERE kind = 'migration' AND version = '{version}'"))
             .Should().Be(0);
     }
 
@@ -164,7 +164,7 @@ public sealed class MigrationQueueLifecycleIntegrationTests : IAsyncLifetime
         Convert.ToInt64(await ScalarAsync(
                 "SELECT count() FROM system.mutations WHERE database = currentDatabase() AND table = 'mutation_probe' AND is_done = 0"))
             .Should().Be(0);
-        Convert.ToInt32(await ScalarAsync($"SELECT count() FROM schema_migrations WHERE version = '{version}'"))
+        Convert.ToInt32(await ScalarAsync($"SELECT count() FROM schema_migrations WHERE kind = 'migration' AND version = '{version}'"))
             .Should().Be(1);
     }
 

@@ -221,7 +221,7 @@ public sealed class ClusterSchemaClickHouseIntegrationTests : IAsyncLifetime
         await shard1.OpenAsync();
         (await ScalarAsync(shard1,
                 $"SELECT count() FROM clusterAllReplicas('{ClusterName}', currentDatabase(), schema_migrations) "
-                    + $"WHERE version = '{version}'"))
+                    + $"WHERE kind = 'migration' AND version = '{version}'"))
             .Should().Be(0);
     }
 
