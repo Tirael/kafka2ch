@@ -461,6 +461,51 @@ public sealed class CodegenConfigValidatorTests
         result.Errors.Should().Contain(error => error.PropertyName.EndsWith("Engine", StringComparison.Ordinal));
     }
 
+    [Fact]
+    public void GivenExplicitViewEnablesKafkaMetaButTargetOmitsKafkaKey_WhenValidate_ThenFails()
+    {
+        var config = CreateValidConfig();
+        config.Defaults.PersistKafkaMeta = new PersistKafkaMetaConfig { Key = true };
+        config.Pipeline!.MaterializedViews[0].IncludeKafkaMeta = true;
+
+        var result = _sut.Validate(config);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(error =>
+            error.ErrorMessage.Contains("kafka_key", StringComparison.Ordinal)
+            && error.ErrorMessage.Contains("orders_mv", StringComparison.Ordinal)
+            && error.ErrorMessage.Contains("orders", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void GivenAutoColumnViewWithPersistKafkaMetaButExplicitTargetOmitsKafkaKey_WhenValidate_ThenFails()
+    {
+        var config = CreateValidConfig();
+        config.Defaults.PersistKafkaMeta = new PersistKafkaMetaConfig { Key = true };
+        config.Pipeline!.MaterializedViews[0].Columns = [];
+        config.Pipeline.MaterializedViews[0].IncludeKafkaMeta = null;
+        config.Pipeline.MergeTreeTables[0].IncludeKafkaMeta = null;
+
+        var result = _sut.Validate(config);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(error =>
+            error.ErrorMessage.Contains("kafka_key", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void GivenExplicitViewAndTargetBothEnableKafkaMeta_WhenValidate_ThenSucceeds()
+    {
+        var config = CreateValidConfig();
+        config.Defaults.PersistKafkaMeta = new PersistKafkaMetaConfig { Key = true };
+        config.Pipeline!.MergeTreeTables[0].IncludeKafkaMeta = true;
+        config.Pipeline.MaterializedViews[0].IncludeKafkaMeta = true;
+
+        var result = _sut.Validate(config);
+
+        result.IsValid.Should().BeTrue();
+    }
+
     private static CodegenConfig CreateValidConfig() => new()
     {
         Defaults = OrdersQueueTestConfig.Defaults,
