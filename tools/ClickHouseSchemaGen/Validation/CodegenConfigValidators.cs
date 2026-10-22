@@ -148,6 +148,9 @@ internal sealed class MergeTreeTableConfigValidator : AbstractValidator<MergeTre
             .Must(ValidationRules.IsSqlIdentifier)
             .WithMessage("Must be a valid ClickHouse identifier.");
         RuleFor(table => table.OrderBy).NotEmpty();
+        RuleFor(table => table.Engine)
+            .Must(engine => MergeTreeEngines.Validate(engine) is null)
+            .WithMessage(table => MergeTreeEngines.Validate(table.Engine)!);
         RuleFor(table => table.Ttl)
             .Must(ttl => ttl is null || !string.IsNullOrWhiteSpace(ttl))
             .WithMessage("TTL expression must not be blank when provided.");

@@ -61,6 +61,8 @@ public sealed record MergeTreeTableSnapshot
 
     public required string OrderBy { get; init; }
 
+    public string? Engine { get; init; }
+
     public string? Ttl { get; init; }
 
     public IReadOnlyList<SnapshotColumn> Columns { get; init; } = [];

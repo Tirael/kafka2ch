@@ -18,7 +18,7 @@ public static class MergeTreeTableGenerator
 
         builder
             .AppendLine(")")
-            .AppendLine($"ENGINE = {cluster.StorageEngine("MergeTree")}")
+            .AppendLine($"ENGINE = {cluster.StorageEngine(MergeTreeEngines.Normalize(config.Engine))}")
             .Append($"ORDER BY {config.OrderBy}");
 
         if (!string.IsNullOrWhiteSpace(config.Ttl))

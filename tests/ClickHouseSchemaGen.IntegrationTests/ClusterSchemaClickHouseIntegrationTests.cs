@@ -100,6 +100,50 @@ public sealed class ClusterSchemaClickHouseIntegrationTests : IAsyncLifetime
             .Should().Equal("ch1:3:2:1", "ch2:3:2:1");
     }
 
+    [Fact]
+    public async Task GivenReplacingMergeTreeEngine_WhenGeneratedOnCluster_ThenReplicatedReplacingTableDeduplicatesOnEveryNode()
+    {
+        var cluster = ClusterDdl.For(CodegenConfigLoader.Load(TestContractsPaths.ClusterCodegenConfigPath));
+        var table = new MergeTreeTableConfig
+        {
+            TableName = "orders_dedup",
+            Engine = "ReplacingMergeTree(version)",
+            OrderBy = "(order_id)",
+            ShardingKey = "cityHash64(order_id)",
+            Columns =
+            [
+                new PipelineColumnConfig { Name = "order_id", Type = "String" },
+                new PipelineColumnConfig { Name = "version", Type = "UInt64" }
+            ]
+        };
+
+        var execResult = await _shard1.ExecScriptAsync(MergeTreeTableGenerator.Generate(table, cluster: cluster));
+        execResult.ExitCode.Should().Be(0, execResult.Stderr);
+
+        await using var connection = new ClickHouseConnection(_shard2.GetConnectionString());
+        await connection.OpenAsync();
+
+        (await QueryRowsAsync(connection,
+                "SELECT getMacro('replica'), name, engine FROM clusterAllReplicas('kafka2ch', system.tables) " +
+                "WHERE database = currentDatabase() AND name IN ('orders_dedup', 'orders_dedup_local') ORDER BY 1, 2"))
+            .Select(row => $"{row[0]}:{row[1]}:{row[2]}")
+            .Should().Equal(
+                "ch1:orders_dedup:Distributed",
+                "ch1:orders_dedup_local:ReplicatedReplacingMergeTree",
+                "ch2:orders_dedup:Distributed",
+                "ch2:orders_dedup_local:ReplicatedReplacingMergeTree");
+
+        foreach (var version in new[] { 1, 2 })
+        {
+            await ExecuteAsync(connection,
+                $"INSERT INTO orders_dedup (order_id, version) SELECT toString(number), {version} FROM numbers(50) " +
+                "SETTINGS distributed_foreground_insert = 1");
+        }
+
+        (await ScalarAsync(connection, "SELECT count() FROM orders_dedup FINAL")).Should().Be(50);
+        (await ScalarAsync(connection, "SELECT min(version) FROM orders_dedup FINAL")).Should().Be(2);
+    }
+
     private ClickHouseContainer CreateNode(string host, string shard) =>
         new ClickHouseBuilder(TestContainersEnv.FullClickHouseImageName)
             .WithNetwork(_network)

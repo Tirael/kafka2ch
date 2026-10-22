@@ -417,6 +417,50 @@ public sealed class CodegenConfigValidatorTests
             && error.ErrorMessage.Contains("already used", StringComparison.Ordinal));
     }
 
+    [Theory]
+    [InlineData("MergeTree")]
+    [InlineData("MergeTree()")]
+    [InlineData("ReplacingMergeTree")]
+    [InlineData("ReplacingMergeTree(event_time)")]
+    [InlineData("SummingMergeTree")]
+    [InlineData("SummingMergeTree((amount, quantity))")]
+    [InlineData("AggregatingMergeTree")]
+    [InlineData("CollapsingMergeTree(sign)")]
+    public void GivenSupportedMergeTreeEngine_WhenValidate_ThenSucceeds(string engine)
+    {
+        var config = CreateValidConfig();
+        config.Pipeline!.MergeTreeTables[0].Engine = engine;
+
+        var result = _sut.Validate(config);
+
+        result.IsValid.Should().BeTrue(string.Join("; ", result.Errors.Select(error => error.ErrorMessage)));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("Log")]
+    [InlineData("Memory")]
+    [InlineData("GraphiteMergeTree('config')")]
+    [InlineData("ReplicatedMergeTree")]
+    [InlineData("ReplicatedReplacingMergeTree('/p', '{replica}')")]
+    [InlineData("MergeTree(order_id)")]
+    [InlineData("AggregatingMergeTree(x)")]
+    [InlineData("CollapsingMergeTree")]
+    [InlineData("CollapsingMergeTree(sign, version)")]
+    [InlineData("ReplacingMergeTree(a, b, c)")]
+    [InlineData("ReplacingMergeTree(event_time")]
+    [InlineData("ReplacingMergeTree(event_time) ORDER BY x")]
+    public void GivenUnsupportedMergeTreeEngine_WhenValidate_ThenFails(string engine)
+    {
+        var config = CreateValidConfig();
+        config.Pipeline!.MergeTreeTables[0].Engine = engine;
+
+        var result = _sut.Validate(config);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(error => error.PropertyName.EndsWith("Engine", StringComparison.Ordinal));
+    }
+
     private static CodegenConfig CreateValidConfig() => new()
     {
         Defaults = OrdersQueueTestConfig.Defaults,

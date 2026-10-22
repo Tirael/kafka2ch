@@ -137,6 +137,11 @@ public static class SchemaDiffer
                     newTable.Config.Ttl));
             }
 
+            var oldEngine = MergeTreeEngines.Normalize(oldTable.Config.Engine);
+            var newEngine = MergeTreeEngines.Normalize(newTable.Config.Engine);
+            if (!string.Equals(oldEngine, newEngine, StringComparison.Ordinal))
+                changes.Add(new EngineChanged(name, oldEngine, newEngine));
+
             DiffColumns(
                 name,
                 oldTable.Config.Columns,
