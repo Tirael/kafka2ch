@@ -116,6 +116,14 @@ public sealed class KafkaSettingsConfig
 
     public int NumConsumers { get; set; } = 1;
 
+    public int? MaxBlockSize { get; set; }
+
+    public int? FlushIntervalMs { get; set; }
+
+    public int? PollMaxBatchSize { get; set; }
+
+    public bool? ThreadPerConsumer { get; set; }
+
     public bool FlattenNested { get; set; }
 
     public bool ProtobufOneofPresence { get; set; } = true;
@@ -134,6 +142,15 @@ public sealed class KafkaSettingsConfig
     public bool UsesDefaultHandleErrorMode =>
         string.IsNullOrWhiteSpace(HandleErrorMode)
         || string.Equals(HandleErrorMode, KafkaHandleErrorModes.Default, StringComparison.OrdinalIgnoreCase);
+}
+
+public static class KafkaThroughputLimits
+{
+    public const int MaxBlockSize = 10_000_000;
+
+    public const int MinFlushIntervalMs = 100;
+
+    public const int MaxFlushIntervalMs = 600_000;
 }
 
 public static class KafkaHandleErrorModes

@@ -65,6 +65,14 @@ public sealed record KafkaSettingsSnapshot
 
     public int NumConsumers { get; init; } = 1;
 
+    public int? MaxBlockSize { get; init; }
+
+    public int? FlushIntervalMs { get; init; }
+
+    public int? PollMaxBatchSize { get; init; }
+
+    public bool? ThreadPerConsumer { get; init; }
+
     public bool FlattenNested { get; init; }
 
     public bool ProtobufOneofPresence { get; init; } = true;

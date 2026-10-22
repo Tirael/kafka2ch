@@ -242,6 +242,18 @@ public static class SnapshotDriftChecker
         if (expected.NumConsumers != actual.NumConsumers)
             differences.Add($"Kafka table '{tableName}' numConsumers changed.");
 
+        if (expected.MaxBlockSize != actual.MaxBlockSize)
+            differences.Add($"Kafka table '{tableName}' maxBlockSize changed.");
+
+        if (expected.FlushIntervalMs != actual.FlushIntervalMs)
+            differences.Add($"Kafka table '{tableName}' flushIntervalMs changed.");
+
+        if (expected.PollMaxBatchSize != actual.PollMaxBatchSize)
+            differences.Add($"Kafka table '{tableName}' pollMaxBatchSize changed.");
+
+        if (expected.ThreadPerConsumer != actual.ThreadPerConsumer)
+            differences.Add($"Kafka table '{tableName}' threadPerConsumer changed.");
+
         if (expected.FlattenNested != actual.FlattenNested)
             differences.Add($"Kafka table '{tableName}' flattenNested changed.");
 

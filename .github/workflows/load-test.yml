@@ -1,0 +1,55 @@
+name: Load test
+
+on:
+  workflow_dispatch:
+    inputs:
+      messages:
+        description: Backlog size (messages) for drain scenarios
+        default: "300000"
+      steady_rate:
+        description: Steady flow, msg/s (default flow is 2 msg/s)
+        default: "20"
+      steady_seconds:
+        description: Steady flow duration, s
+        default: "60"
+      scenarios:
+        description: Comma-separated scenario names (empty = all)
+        default: ""
+  schedule:
+    - cron: "0 6 * * 1"
+
+concurrency:
+  group: load-test-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  load-test:
+    name: load-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Run load test
+        env:
+          LOAD_MESSAGES: ${{ inputs.messages || '300000' }}
+          LOAD_STEADY_RATE: ${{ inputs.steady_rate || '20' }}
+          LOAD_STEADY_SECONDS: ${{ inputs.steady_seconds || '60' }}
+          LOAD_SCENARIOS: ${{ inputs.scenarios }}
+        run: ./scripts/load-test.sh
+
+      - name: Job summary
+        if: always()
+        run: cat artifacts/load-test/report.md >> "$GITHUB_STEP_SUMMARY" || true
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: load-test-report
+          path: artifacts/load-test
+          if-no-files-found: ignore

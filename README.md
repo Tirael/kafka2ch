@@ -243,6 +243,8 @@ docker exec clickhouse clickhouse-client --password sandbox \
 
 Kafka UI: http://localhost:8080
 
+Нагрузочный стенд (backlog ×10 steady, lag/CPU, подбор `kafka_*` settings): [docs/load-testing.md](docs/load-testing.md), `./scripts/load-test.sh`, workflow **Load test**.
+
 ### Schema Registry
 
 После первых сообщений ожидаются subjects примерно такого вида:

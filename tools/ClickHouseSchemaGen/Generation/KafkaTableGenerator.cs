@@ -40,6 +40,18 @@ public static class KafkaTableGenerator
             $"kafka_num_consumers = {config.Kafka.NumConsumers}"
         ]);
 
+        if (config.Kafka.MaxBlockSize is { } maxBlockSize)
+            settings.Add($"kafka_max_block_size = {maxBlockSize}");
+
+        if (config.Kafka.FlushIntervalMs is { } flushIntervalMs)
+            settings.Add($"kafka_flush_interval_ms = {flushIntervalMs}");
+
+        if (config.Kafka.PollMaxBatchSize is { } pollMaxBatchSize)
+            settings.Add($"kafka_poll_max_batch_size = {pollMaxBatchSize}");
+
+        if (config.Kafka.ThreadPerConsumer is { } threadPerConsumer)
+            settings.Add($"kafka_thread_per_consumer = {(threadPerConsumer ? 1 : 0)}");
+
         if (!config.Kafka.UsesDefaultHandleErrorMode)
             settings.Add($"kafka_handle_error_mode = '{config.Kafka.HandleErrorMode.ToLowerInvariant()}'");
 
