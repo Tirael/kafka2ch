@@ -1,4 +1,20 @@
+x-user-defined-replicated: &user-defined-replicated
+  volumes:
+    - ./docker/clickhouse-cluster/config/user-defined-replicated.xml:/etc/clickhouse-server/config.d/user-defined-replicated.xml:ro
+
 services:
+  clickhouse:
+    <<: *user-defined-replicated
+
+  clickhouse-02:
+    <<: *user-defined-replicated
+
+  clickhouse-03:
+    <<: *user-defined-replicated
+
+  clickhouse-04:
+    <<: *user-defined-replicated
+
   clickhouse-cluster-init:
     environment:
       CLICKHOUSE_DATABASE: kafka2ch

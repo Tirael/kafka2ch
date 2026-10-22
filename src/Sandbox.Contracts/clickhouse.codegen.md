@@ -131,6 +131,8 @@ Workflow: правка proto → build падает на drift → `Cli migrate 
 
 **`ddlMode=replicatedDatabase`:** `CREATE DATABASE … ON CLUSTER … ENGINE = Replicated('<replicatedDatabasePath>', '{shard}', '{replica}')` (топология БД совпадает с `remote_servers`: 2 шарда × 2 реплики в compose), затем `schema_migrations` в `default` с `ON CLUSTER` и общим Keeper-путём (история на всех шардах), `USE <replicatedDatabaseName>`; таблицы/MV — `Replicated*MergeTree` без аргументов (путь задаёт Replicated DB), без `ON CLUSTER`. `DETACH` очередей — `PERMANENTLY`. Migrator: `--ddl-mode replicatedDatabase` / `ClickHouse__DdlMode`, `ClickHouse__Database=<replicatedDatabaseName>`. Пример: [`clickhouse.codegen.cluster.replicated-db.json`](clickhouse.codegen.cluster.replicated-db.json); compose: `-f docker-compose.cluster.yml -f docker-compose.cluster.replicated-db.yml`.
 
+**UDF `protobufWire*` и кластер.** SQL UDF не принадлежат БД, поэтому движок Replicated database их не реплицирует. В `onCluster` функции создаются с `ON CLUSTER`. В `replicatedDatabase` они создаются без `ON CLUSTER` (только на ноде, где выполнен init/миграция), поэтому на **всех** нодах обязателен `<user_defined_zookeeper_path>` (общий Keeper-путь UDF), иначе на остальных репликах функций нет. В compose его монтирует только overlay replicated-db ([`user-defined-replicated.xml`](../../docker/clickhouse-cluster/config/user-defined-replicated.xml)). Для `onCluster` этот параметр **не** задавайте: с реплицируемым хранилищем UDF ClickHouse отклоняет `CREATE FUNCTION … ON CLUSTER` (`ON CLUSTER is not allowed because user-defined functions are replicated automatically`).
+
 Снапшот (`version: 2`) хранит секцию `cluster` (`name`, `ddlMode`, `localTableSuffix`, `shardingKey`, `materializedViewsWriteThroughDistributed`; `null` — single-node) и per-table `shardingKey` / `materializedViewsWriteThroughDistributed` у `mergeTreeTables`. Их смена — drift на build и **manual** `ClusterTopologyChanged` в `migrate`: генератор не умеет переносить данные между топологиями, миграция содержит только комментарий «нужна миграция данных/топологии». Пути Keeper и параметры Replicated database в снапшот не входят. Один проект на single-node и cluster → **отдельные** `migrations` / snapshot / `00_*.sql` на конфиг; генерация — одним `Cli migrate --all-topologies clickhouse.topologies.json --name …` (одна версия во все каталоги, snapshot'ы атомарно), apply — **отдельно для каждого** каталога.
 
 ### `extends` / `outputDirectory`
@@ -247,7 +249,8 @@ Workflow: правка proto → build падает на drift → `Cli migrate 
 
 `handleErrorMode` и `skipBrokenMessages` попадают в `SETTINGS` только при значениях не по умолчанию. Их изменение пересоздаёт queue (`KafkaTableChanged`).
 
-<<<<<<< HEAD
+`maxBlockSize`, `flushIntervalMs`, `pollMaxBatchSize`, `threadPerConsumer` попадают в `SETTINGS` только если заданы (иначе действуют дефолты ClickHouse: `max_insert_block_size`, `stream_flush_interval_ms`, `max_block_size`, `0`), сохраняются в `schema.snapshot.json` и при изменении пересоздают queue (`KafkaTableChanged`). Как их подбирать — [docs/load-testing.md](../../docs/load-testing.md).
+
 #### `namedCollection` (брокеры и секреты вне DDL)
 
 Демо-конфиг использует `"namedCollection": "kafka_orders"`. Генератор пишет:
@@ -293,9 +296,6 @@ SASL/TLS (пример для production; значения — из env/секр
 ```
 
 `kafka_security_protocol`: `PLAINTEXT` \| `SSL` \| `SASL_PLAINTEXT` \| `SASL_SSL`; `kafka_sasl_mechanism`: `PLAIN` \| `SCRAM-SHA-256` \| `SCRAM-SHA-512` \| `GSSAPI` \| `OAUTHBEARER` (для OIDC — `sasl_oauthbearer_*` во вложенном `<kafka>`). Mutual TLS без SASL: `kafka_security_protocol = SSL` + `ssl_*`. При незаданной переменной `from_env` ClickHouse лишь пишет warning `Env variable is not set` и оставляет ключ пустым (queue не подключится), поэтому compose всегда передаёт `KAFKA_BROKER_LIST`.
-=======
-`maxBlockSize`, `flushIntervalMs`, `pollMaxBatchSize`, `threadPerConsumer` попадают в `SETTINGS` только если заданы (иначе действуют дефолты ClickHouse: `max_insert_block_size`, `stream_flush_interval_ms`, `max_block_size`, `0`), сохраняются в `schema.snapshot.json` и при изменении пересоздают queue (`KafkaTableChanged`). Как их подбирать — [docs/load-testing.md](../../docs/load-testing.md).
->>>>>>> eb7a0a1 (Add Kafka throughput settings maxBlockSize, flushIntervalMs, pollMaxBatchSize, threadPerConsumer: render when set, snapshot, diff, drift, validation ranges)
 
 При `handleErrorMode: "stream"` битое сообщение не останавливает потребление: генератор добавляет в `pipeline` таблицу `{tableName}_errors` (MergeTree: `_topic`, `_partition`, `_offset`, `_raw_message`, `_error`, `received_at`; в кластере — `*_local` + `Distributed`) и view `{tableName}_errors_mv … WHERE length(_error) > 0` (в кластере пишет в `*_local`), а все остальные view этой queue получают `WHERE length(_error) = 0`. Для `stream` нужна секция `pipeline`; имена `{tableName}_errors` / `{tableName}_errors_mv` (и `{tableName}_errors_local` в кластере) не должны быть заняты.
 
@@ -670,11 +670,8 @@ TTL event_time + INTERVAL 90 DAY;
 - Автогенерируемое имя view `{tableName}_mv` уже занято другим materialized view
 - TTL ссылается на колонку, которой нет в `columns` (например `created_at`, когда в `columns` есть только `event_time`)
 - `engine` не из семейства MergeTree (`MergeTree`, `ReplacingMergeTree`, `SummingMergeTree`, `AggregatingMergeTree`, `CollapsingMergeTree`), с `Replicated`-префиксом, с неверным числом аргументов (`CollapsingMergeTree` без `sign`, `MergeTree(x)`) или с несбалансированными скобками
-<<<<<<< HEAD
 - `kafka.brokerList` вместе с `kafka.namedCollection` (взаимоисключаются); `namedCollection` не идентификатор (`[A-Za-z_][A-Za-z0-9_]*`)
-=======
 - `kafka.maxBlockSize` / `pollMaxBatchSize` вне 1…10 000 000, `flushIntervalMs` вне 100…600 000, `pollMaxBatchSize` > `maxBlockSize`
->>>>>>> eb7a0a1 (Add Kafka throughput settings maxBlockSize, flushIntervalMs, pollMaxBatchSize, threadPerConsumer: render when set, snapshot, diff, drift, validation ranges)
 - `kafka.handleErrorMode` не `default` / `stream` / `dead_letter_queue`; `skipBrokenMessages` < 0 или вместе с не-`default` режимом; `stream` без `pipeline` или с занятым именем `{tableName}_errors` / `{tableName}_errors_mv`
 - `key.format` не `string` / `protobuf`; `key.format: protobuf` без `key.messageType`; `key.messageType` / `skipBytes` / `fieldOverrides` при строковом ключе
 - MV ссылается на `_key.<поле>`, которого нет в protobuf-ключе (или ключ строковый)

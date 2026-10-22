@@ -147,8 +147,7 @@ public sealed class ClusterReplicatedDatabaseIntegrationTests : IAsyncLifetime
         }
     }
 
-
-    [Fact(Skip = "R5: protobufWire* UDFs are not replicated to other replicas in replicatedDatabase mode; un-skip in W1-4 (user_defined_zookeeper_path)")]
+    [Fact]
     public async Task GivenReplicatedDatabaseInitOnFirstReplica_WhenQueryingSecondReplica_ThenProtobufWireFunctionsAreAvailable()
     {
         var scripts = InitScriptsFixture.Generate(TestContractsPaths.ClusterReplicatedDbCodegenConfigPath);
@@ -211,6 +210,7 @@ public sealed class ClusterReplicatedDatabaseIntegrationTests : IAsyncLifetime
                 </{ClusterName}>
             </remote_servers>
             <zookeeper><node><host>clickhouse-keeper</host><port>9181</port></node></zookeeper>
+            <user_defined_zookeeper_path>/clickhouse/user_defined</user_defined_zookeeper_path>
             <macros><shard from_env="CLICKHOUSE_SHARD"/><replica from_env="CLICKHOUSE_REPLICA"/></macros>
             <interserver_http_host from_env="CLICKHOUSE_REPLICA"/>
         </clickhouse>

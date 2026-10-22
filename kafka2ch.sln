@@ -57,6 +57,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "config", "config", "{E8F9A0
 		docker\clickhouse-cluster\config\keeper-02.xml = docker\clickhouse-cluster\config\keeper-02.xml
 		docker\clickhouse-cluster\config\keeper-03.xml = docker\clickhouse-cluster\config\keeper-03.xml
 		docker\clickhouse-cluster\config\keeper-test.xml = docker\clickhouse-cluster\config\keeper-test.xml
+		docker\clickhouse-cluster\config\user-defined-replicated.xml = docker\clickhouse-cluster\config\user-defined-replicated.xml
 	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "init", "init", "{E8F9A0B1-C2D3-4E5F-6789-0ABCDEF12347}"
