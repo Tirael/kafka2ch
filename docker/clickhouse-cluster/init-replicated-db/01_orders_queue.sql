@@ -35,8 +35,9 @@ SETTINGS
     kafka_schema = 'order_event:OrderEvent',
     kafka_schema_registry_skip_bytes = 6,
     kafka_num_consumers = 1,
+    kafka_handle_error_mode = 'stream',
     flatten_nested = 0,
     input_format_protobuf_oneof_presence = 1,
     input_format_protobuf_flatten_google_wrappers = 1;
 
-INSERT INTO default.schema_migrations (version, name, checksum, applied_at, kind) VALUES ('01', '01_orders_queue.sql', '5f338bff0902b81064e907115e557c5eb839bf9c6a677e9baaf604f8f8966851', now(), 'init');
+INSERT INTO default.schema_migrations (version, name, checksum, applied_at, kind) VALUES ('01', '01_orders_queue.sql', 'cd38ee3f42969ca329f087ef8fe559c10ed63620fc20addda4281acea3dcb8e6', now(), 'init');

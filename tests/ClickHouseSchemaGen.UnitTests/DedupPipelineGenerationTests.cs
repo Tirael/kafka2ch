@@ -50,8 +50,11 @@ public sealed class DedupPipelineGenerationTests
         Single(statements, "CREATE MATERIALIZED VIEW default.orders_agg_mv ON CLUSTER kafka2ch\n").Should()
             .Contain("REFRESH EVERY 1 MINUTE\nTO default.orders_agg_1m AS")
             .And.Contain("FROM kafka2ch.orders FINAL");
+        Single(statements, "CREATE TABLE orders_queue_errors_local\n").Should()
+            .Contain("ENGINE = ReplicatedMergeTree\nORDER BY (_topic, _partition, _offset)");
         statements.Should().NotContain(statement => statement.Contains("orders_agg_1m_local"));
-        statements.Should().NotContain(statement => statement.Contains("ReplicatedMergeTree"));
+        statements.Where(statement => statement.Contains("orders_agg", StringComparison.Ordinal))
+            .Should().NotContain(statement => statement.Contains("ReplicatedMergeTree", StringComparison.Ordinal));
         statements.Should().OnlyContain(statement =>
             !statement.Contains("ON CLUSTER") || statement.Contains("default.orders_agg_"));
     }

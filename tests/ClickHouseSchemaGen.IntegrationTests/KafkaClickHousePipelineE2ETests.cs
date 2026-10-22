@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using Confluent.Kafka;
 
 namespace ClickHouseSchemaGen.IntegrationTests;
 
@@ -105,6 +106,40 @@ public sealed class KafkaClickHousePipelineE2ETests : IAsyncLifetime
             .ToHashSet(StringComparer.Ordinal);
         expected.Except(stored).Should().BeEmpty($"all {expected.Count} published orders must reach orders");
         stored.Except(expected).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task GivenBrokenPayloadInEveryPartition_WhenConsumed_ThenErrorsAreStreamedAndLaterOrdersArrive()
+    {
+        const int countPerBatch = 200;
+        byte[] brokenPayload = [0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x0A, 0x64, 0x62, 0x72, 0x6F, 0x6B, 0x65, 0x6E];
+        var published = new ConcurrentQueue<string>();
+        using var producer = _pipeline.CreateProducer();
+
+        await KafkaPipelineFixture.PublishAsync(
+            producer,
+            Enumerable.Range(0, countPerBatch).Select(E2eOrders.Create).ToList(),
+            published);
+        var brokenOffsets = new List<TopicPartitionOffset>();
+        for (var partition = 0; partition < KafkaPipelineFixture.TopicPartitions; partition++)
+            brokenOffsets.Add(await _pipeline.PublishRawAsync(brokenPayload, partition));
+        await KafkaPipelineFixture.PublishAsync(
+            producer,
+            Enumerable.Range(countPerBatch, countPerBatch).Select(E2eOrders.Create).ToList(),
+            published);
+        producer.Flush(TimeSpan.FromSeconds(30));
+
+        (await _pipeline.WaitForCountAsync("SELECT count() FROM orders", 2 * countPerBatch, ConsumeTimeout))
+            .Should().Be(2 * countPerBatch, "orders published after the broken payloads must still be consumed");
+        (await _pipeline.QueryStringsAsync("SELECT order_id FROM orders"))
+            .Should().BeEquivalentTo(published);
+        (await _pipeline.WaitForCountAsync(
+                "SELECT count() FROM orders_queue_errors", (ulong)brokenOffsets.Count, ConsumeTimeout))
+            .Should().Be((ulong)brokenOffsets.Count);
+        (await _pipeline.QueryStringsAsync(
+                "SELECT concat(_topic, ':', toString(_partition), ':', toString(_offset)) FROM orders_queue_errors WHERE length(_error) > 0"))
+            .Should().BeEquivalentTo(brokenOffsets.Select(offset =>
+                $"{offset.Topic}:{offset.Partition.Value}:{offset.Offset.Value}"));
     }
 
     private static async Task PublishContinuouslyAsync(

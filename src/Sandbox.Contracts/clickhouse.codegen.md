@@ -235,6 +235,12 @@ Workflow: правка proto → build падает на drift → `Cli migrate 
 | `flattenNested`                 | `false`               | `flatten_nested` в ClickHouse                                         |
 | `protobufOneofPresence`         | `true`                | `input_format_protobuf_oneof_presence`                                |
 | `protobufFlattenGoogleWrappers` | `true`                | Flatten google wrappers                                               |
+| `handleErrorMode`               | `"default"`           | `kafka_handle_error_mode`: `default` \| `stream` \| `dead_letter_queue` |
+| `skipBrokenMessages`            | —                     | `kafka_skip_broken_messages` (≥ 0), только при `handleErrorMode: default` |
+
+`handleErrorMode` и `skipBrokenMessages` попадают в `SETTINGS` только при значениях не по умолчанию. Их изменение пересоздаёт queue (`KafkaTableChanged`).
+
+При `handleErrorMode: "stream"` битое сообщение не останавливает потребление: генератор добавляет в `pipeline` таблицу `{tableName}_errors` (MergeTree: `_topic`, `_partition`, `_offset`, `_raw_message`, `_error`, `received_at`; в кластере — `*_local` + `Distributed`) и view `{tableName}_errors_mv … WHERE length(_error) > 0` (в кластере пишет в `*_local`), а все остальные view этой queue получают `WHERE length(_error) = 0`. Для `stream` нужна секция `pipeline`; имена `{tableName}_errors` / `{tableName}_errors_mv` (и `{tableName}_errors_local` в кластере) не должны быть заняты.
 
 
 Пример с `kafka` и overrides:
@@ -555,6 +561,7 @@ TTL event_time + INTERVAL 90 DAY;
 - Автогенерируемое имя view `{tableName}_mv` уже занято другим materialized view
 - TTL ссылается на колонку, которой нет в `columns` (например `created_at`, когда в `columns` есть только `event_time`)
 - `engine` не из семейства MergeTree (`MergeTree`, `ReplacingMergeTree`, `SummingMergeTree`, `AggregatingMergeTree`, `CollapsingMergeTree`), с `Replicated`-префиксом, с неверным числом аргументов (`CollapsingMergeTree` без `sign`, `MergeTree(x)`) или с несбалансированными скобками
+- `kafka.handleErrorMode` не `default` / `stream` / `dead_letter_queue`; `skipBrokenMessages` < 0 или вместе с не-`default` режимом; `stream` без `pipeline` или с занятым именем `{tableName}_errors` / `{tableName}_errors_mv`
 - `key.format` не `string` / `protobuf`; `key.format: protobuf` без `key.messageType`; `key.messageType` / `skipBytes` / `fieldOverrides` при строковом ключе
 - MV ссылается на `_key.<поле>`, которого нет в protobuf-ключе (или ключ строковый)
 - `repeatedMessageStrategy` не из списка `nested`  `arraytuple`  `flatten`

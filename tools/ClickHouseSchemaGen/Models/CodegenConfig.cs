@@ -108,6 +108,30 @@ public sealed class KafkaSettingsConfig
     public bool ProtobufOneofPresence { get; set; } = true;
 
     public bool ProtobufFlattenGoogleWrappers { get; set; } = true;
+
+    public string HandleErrorMode { get; set; } = KafkaHandleErrorModes.Default;
+
+    public int? SkipBrokenMessages { get; set; }
+
+    [JsonIgnore]
+    public bool StreamsErrors =>
+        string.Equals(HandleErrorMode, KafkaHandleErrorModes.Stream, StringComparison.OrdinalIgnoreCase);
+
+    [JsonIgnore]
+    public bool UsesDefaultHandleErrorMode =>
+        string.IsNullOrWhiteSpace(HandleErrorMode)
+        || string.Equals(HandleErrorMode, KafkaHandleErrorModes.Default, StringComparison.OrdinalIgnoreCase);
+}
+
+public static class KafkaHandleErrorModes
+{
+    public const string Default = "default";
+
+    public const string Stream = "stream";
+
+    public const string DeadLetterQueue = "dead_letter_queue";
+
+    public static readonly string[] All = [Default, Stream, DeadLetterQueue];
 }
 
 public sealed class FieldOverrideConfig
@@ -166,6 +190,9 @@ public sealed class MaterializedViewConfig
     public bool? IncludeKafkaMeta { get; set; }
 
     public List<PipelineColumnMapping> Columns { get; set; } = [];
+
+    [JsonIgnore]
+    public string? Where { get; set; }
 }
 
 public sealed class PipelineColumnConfig

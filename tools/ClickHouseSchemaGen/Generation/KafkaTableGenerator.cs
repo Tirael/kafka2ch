@@ -34,6 +34,12 @@ public static class KafkaTableGenerator
             $"kafka_num_consumers = {config.Kafka.NumConsumers}"
         ];
 
+        if (!config.Kafka.UsesDefaultHandleErrorMode)
+            settings.Add($"kafka_handle_error_mode = '{config.Kafka.HandleErrorMode.ToLowerInvariant()}'");
+
+        if (config.Kafka.SkipBrokenMessages is { } skipBrokenMessages)
+            settings.Add($"kafka_skip_broken_messages = {skipBrokenMessages}");
+
         if (RequiresFlattenNested(columns, config))
             settings.Add("flatten_nested = 0");
 

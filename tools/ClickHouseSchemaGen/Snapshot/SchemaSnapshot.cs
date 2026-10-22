@@ -49,6 +49,10 @@ public sealed record KafkaSettingsSnapshot
     public bool ProtobufOneofPresence { get; init; } = true;
 
     public bool ProtobufFlattenGoogleWrappers { get; init; } = true;
+
+    public string? HandleErrorMode { get; init; }
+
+    public int? SkipBrokenMessages { get; init; }
 }
 
 public sealed record MergeTreeTableSnapshot
@@ -77,6 +81,8 @@ public sealed record MaterializedViewSnapshot
     public required string SourceTable { get; init; }
 
     public required string TargetTable { get; init; }
+
+    public string? Where { get; init; }
 
     public IReadOnlyList<SnapshotColumnMapping> Columns { get; init; } = [];
 }

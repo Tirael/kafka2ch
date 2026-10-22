@@ -143,6 +143,9 @@ public static class SnapshotDriftChecker
             if (!string.Equals(expectedView.TargetTable, actualView.TargetTable, StringComparison.OrdinalIgnoreCase))
                 differences.Add($"Materialized view '{name}' targetTable changed.");
 
+            if (!string.Equals(expectedView.Where, actualView.Where, StringComparison.Ordinal))
+                differences.Add($"Materialized view '{name}' WHERE changed.");
+
             CompareViewMappings(name, expectedView.Columns, actualView.Columns, differences);
         }
     }
@@ -176,6 +179,12 @@ public static class SnapshotDriftChecker
 
         if (expected.ProtobufFlattenGoogleWrappers != actual.ProtobufFlattenGoogleWrappers)
             differences.Add($"Kafka table '{tableName}' protobufFlattenGoogleWrappers changed.");
+
+        if (!string.Equals(expected.HandleErrorMode, actual.HandleErrorMode, StringComparison.OrdinalIgnoreCase))
+            differences.Add($"Kafka table '{tableName}' handleErrorMode changed.");
+
+        if (expected.SkipBrokenMessages != actual.SkipBrokenMessages)
+            differences.Add($"Kafka table '{tableName}' skipBrokenMessages changed.");
     }
 
     private static void ComparePersistKafkaMeta(
