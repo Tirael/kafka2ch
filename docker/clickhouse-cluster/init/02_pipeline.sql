@@ -10,10 +10,12 @@ CREATE TABLE orders_local ON CLUSTER kafka2ch
     event_time           DateTime64(3),
     kafka_key            String,
     `kafka_key.order_id` String,
-    kafka_headers        Map(String, String)
+    kafka_headers        Map(String, String),
+    kafka_partition      UInt64,
+    kafka_offset         UInt64
 )
-ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/{database}/{table}', '{replica}')
-ORDER BY (event_time, order_id);
+ENGINE = ReplicatedReplacingMergeTree('/clickhouse/tables/{shard}/{database}/{table}', '{replica}')
+ORDER BY (event_time, order_id, kafka_partition, kafka_offset);
 
 CREATE TABLE orders ON CLUSTER kafka2ch AS orders_local
 ENGINE = Distributed('kafka2ch', currentDatabase(), orders_local, rand());
@@ -96,7 +98,9 @@ SELECT
     toDateTime64(event_time.seconds + event_time.nanos / 1000000000.0, 3) AS event_time,
     _key                         AS kafka_key,
     CAST(protobufWireBytes(substring(_key, 7), 1) AS String) AS `kafka_key.order_id`,
-    mapFromArrays(`_headers.name`, `_headers.value`) AS kafka_headers
+    mapFromArrays(`_headers.name`, `_headers.value`) AS kafka_headers,
+    _partition                   AS kafka_partition,
+    _offset                      AS kafka_offset
 FROM orders_queue;
 
 CREATE TABLE orders_agg_1m_local ON CLUSTER kafka2ch
@@ -107,20 +111,22 @@ CREATE TABLE orders_agg_1m_local ON CLUSTER kafka2ch
     total_amount  Float64,
     total_qty     UInt64
 )
-ENGINE = ReplicatedSummingMergeTree('/clickhouse/tables/{shard}/{database}/{table}', '{replica}')
+ENGINE = MergeTree
 ORDER BY (minute, category);
 
 CREATE TABLE orders_agg_1m ON CLUSTER kafka2ch AS orders_agg_1m_local
 ENGINE = Distributed('kafka2ch', currentDatabase(), orders_agg_1m_local, rand());
 
-CREATE MATERIALIZED VIEW orders_agg_mv ON CLUSTER kafka2ch TO orders_agg_1m_local AS
+CREATE MATERIALIZED VIEW orders_agg_mv ON CLUSTER kafka2ch
+REFRESH EVERY 1 MINUTE
+TO orders_agg_1m_local AS
 SELECT
     toStartOfMinute(event_time) AS minute,
     category,
     count()                     AS orders_count,
     sum(amount)                 AS total_amount,
     sum(quantity)               AS total_qty
-FROM orders_local
+FROM orders_local FINAL
 GROUP BY minute, category;
 
-INSERT INTO schema_migrations (version, name, checksum, applied_at, kind) VALUES ('02', '02_pipeline.sql', '0c091e0ef0300700b15c993585f0d7800a232df2bd8d0f772a046d9e31de4018', now(), 'init');
+INSERT INTO schema_migrations (version, name, checksum, applied_at, kind) VALUES ('02', '02_pipeline.sql', '631236eef885ba4f45c388e0d7392ebebf4548790bc4778471de99454c52e07f', now(), 'init');

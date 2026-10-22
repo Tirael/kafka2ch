@@ -8,16 +8,16 @@
     "replicatedDatabasePath": "/clickhouse/databases/{uuid}",
     "replicatedDatabaseShardName": "{shard}",
     "replicatedDatabaseReplicaName": "{replica}",
-    "materializedViewsWriteThroughDistributed": true
+    "materializedViewsWriteThroughDistributed": false
   },
   "pipeline": {
     "mergeTreeTables": [
       {
         "tableName": "orders",
-        "orderBy": "(event_time, order_id)",
+        "engine": "ReplacingMergeTree",
+        "orderBy": "(event_time, order_id, kafka_partition, kafka_offset)",
         "includeKafkaMeta": true,
         "shardingKey": "cityHash64(order_id)",
-        "materializedViewsWriteThroughDistributed": true,
         "columns": [
           { "name": "order_id", "type": "String" },
           { "name": "category", "type": "LowCardinality(String)" },

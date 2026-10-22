@@ -101,6 +101,52 @@ public sealed class ClusterSchemaClickHouseIntegrationTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task GivenDedupPipelineOnCluster_WhenMessagesStoredTwice_ThenFinalAndRefreshedAggregatesCountEachOnce()
+    {
+        foreach (var (fileName, sql) in InitScriptsFixture.Generate(TestContractsPaths.ClusterDedupCodegenConfigPath))
+        {
+            var execResult = await _shard1.ExecScriptAsync(sql);
+            execResult.ExitCode.Should().Be(0, $"{fileName}: {execResult.Stderr}");
+        }
+
+        await using var node1 = new ClickHouseConnection(_shard1.GetConnectionString());
+        await using var node2 = new ClickHouseConnection(_shard2.GetConnectionString());
+        await Task.WhenAll(node1.OpenAsync(), node2.OpenAsync());
+
+        (await QueryRowsAsync(node2,
+                "SELECT getMacro('replica'), name, engine FROM clusterAllReplicas('kafka2ch', system.tables) " +
+                "WHERE database = currentDatabase() AND name IN ('orders_local', 'orders_agg_1m_local') ORDER BY 1, 2"))
+            .Select(row => $"{row[0]}:{row[1]}:{row[2]}")
+            .Should().Equal(
+                "ch1:orders_agg_1m_local:MergeTree",
+                "ch1:orders_local:ReplicatedReplacingMergeTree",
+                "ch2:orders_agg_1m_local:MergeTree",
+                "ch2:orders_local:ReplicatedReplacingMergeTree");
+
+        foreach (var node in new[] { node1, node2 })
+            await ExecuteAsync(node, "SYSTEM STOP MERGES orders_local");
+
+        await ExecuteAsync(node2,
+            "INSERT INTO orders (order_id, category, amount, quantity, event_time, kafka_partition, kafka_offset) " +
+            "SELECT toString(number), 'books', 1.5, 2, now64(3), number % 2, intDiv(number, 2) FROM numbers(200) " +
+            "SETTINGS distributed_foreground_insert = 1");
+        foreach (var node in new[] { node1, node2 })
+            await ExecuteAsync(node, "INSERT INTO orders_local SELECT * FROM orders_local SETTINGS insert_deduplicate = 0");
+
+        (await ScalarAsync(node2, "SELECT count() FROM orders")).Should().Be(400);
+        (await ScalarAsync(node2, "SELECT count() FROM orders FINAL")).Should().Be(200);
+
+        foreach (var node in new[] { node1, node2 })
+        {
+            await ExecuteAsync(node, "SYSTEM REFRESH VIEW orders_agg_mv");
+            await ExecuteAsync(node, "SYSTEM WAIT VIEW orders_agg_mv");
+        }
+
+        (await ScalarAsync(node2, "SELECT sum(orders_count) FROM orders_agg_1m")).Should().Be(200);
+        (await ScalarAsync(node2, "SELECT sum(total_qty) FROM orders_agg_1m")).Should().Be(400);
+    }
+
+    [Fact]
     public async Task GivenReplacingMergeTreeEngine_WhenGeneratedOnCluster_ThenReplicatedReplacingTableDeduplicatesOnEveryNode()
     {
         var cluster = ClusterDdl.For(CodegenConfigLoader.Load(TestContractsPaths.ClusterCodegenConfigPath));

@@ -139,6 +139,21 @@ public sealed class KafkaPipelineFixture : IAsyncLifetime
         }
     }
 
+    public async Task ExecuteAsync(string sql)
+    {
+        await using var connection = new ClickHouseConnection(_clickHouse.GetConnectionString());
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        await command.ExecuteNonQueryAsync();
+    }
+
+    public async Task RefreshAggregatesAsync()
+    {
+        await ExecuteAsync("SYSTEM REFRESH VIEW orders_agg_mv");
+        await ExecuteAsync("SYSTEM WAIT VIEW orders_agg_mv");
+    }
+
     public async Task<object?> ScalarAsync(string sql)
     {
         await using var connection = new ClickHouseConnection(_clickHouse.GetConnectionString());
@@ -165,9 +180,13 @@ public sealed class KafkaPipelineFixture : IAsyncLifetime
 
     private void WriteConfig()
     {
-        var config = JsonNode.Parse(File.ReadAllText(TestContractsPaths.CodegenConfigPath))!;
-        foreach (var table in config["kafkaTables"]!.AsArray())
+        var config = JsonNode.Parse(File.ReadAllText(TestContractsPaths.DedupCodegenConfigPath))!;
+        config["extends"] = Path.Combine(TestContractsPaths.RootDirectory, config["extends"]!.GetValue<string>());
+
+        var kafkaTables = JsonNode.Parse(File.ReadAllText(TestContractsPaths.CodegenConfigPath))!["kafkaTables"]!.AsArray();
+        foreach (var table in kafkaTables)
             table!["kafka"]!["brokerList"] = KafkaListener;
+        config["kafkaTables"] = kafkaTables.DeepClone();
 
         File.WriteAllText(ConfigPath, config.ToJsonString());
     }

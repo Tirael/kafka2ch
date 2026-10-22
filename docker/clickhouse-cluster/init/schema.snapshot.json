@@ -1,7 +1,7 @@
 {
   "version": 1,
-  "parentChecksum": "7e74b8b7bcdce3fdc795c3e9108fb2bfa0ef506252aa38630cea163e5e0d8f6d",
-  "trailingSqlHash": "96a513268308a899d300ed515c2c5ee2bdfae24998b566a46159e17c136cae83",
+  "parentChecksum": "c3958834e94c3f077eec29b9abd11eca80b9ab8d158fd065008ae85694f8f5cf",
+  "trailingSqlHash": "0cb8bde0a48a4fd3d746a12db0ed2f8e94dde1e04a9705963f96436df3be3a8a",
   "kafkaTables": [
     {
       "tableName": "orders_queue",
@@ -21,8 +21,8 @@
         "key": true,
         "headers": true,
         "topic": false,
-        "partition": false,
-        "offset": false,
+        "partition": true,
+        "offset": true,
         "timestampMs": false,
         "anyEnabled": true
       },
@@ -149,7 +149,8 @@
     {
       "tableName": "orders",
       "origin": "explicit",
-      "orderBy": "(event_time, order_id)",
+      "orderBy": "(event_time, order_id, kafka_partition, kafka_offset)",
+      "engine": "ReplacingMergeTree",
       "columns": [
         {
           "name": "amount",
@@ -185,6 +186,16 @@
           "name": "kafka_key.order_id",
           "type": "String",
           "fieldNumberPath": "kafka:_key:1"
+        },
+        {
+          "name": "kafka_offset",
+          "type": "UInt64",
+          "fieldNumberPath": "kafka:_offset"
+        },
+        {
+          "name": "kafka_partition",
+          "type": "UInt64",
+          "fieldNumberPath": "kafka:_partition"
         },
         {
           "name": "order_id",
@@ -246,6 +257,14 @@
           "source": "_key.order_id",
           "target": "kafka_key.order_id",
           "expression": "CAST(protobufWireBytes(substring(_key, 7), 1) AS String)"
+        },
+        {
+          "source": "_offset",
+          "target": "kafka_offset"
+        },
+        {
+          "source": "_partition",
+          "target": "kafka_partition"
         },
         {
           "source": "order_id",

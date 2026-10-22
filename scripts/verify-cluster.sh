@@ -31,10 +31,13 @@ mismatched=$(ch "SELECT count() FROM (
 [ "${mismatched}" = "0" ] || echo "WARN: replica row counts differ (replication lag or failure)"
 
 echo
-echo "==> Distributed totals (no duplicates expected)"
-ch "SELECT count() AS orders, uniqExact(order_id) AS unique_orders FROM orders"
-total=$(ch "SELECT count() FROM orders")
+echo "==> Distributed totals (no duplicates expected after FINAL)"
+ch "SELECT count() AS stored_rows, uniqExact(kafka_partition, kafka_offset) AS kafka_messages FROM orders"
+totals=$(ch "SELECT count(), uniqExact(order_id) FROM orders FINAL FORMAT TSV")
+read -r total unique <<< "${totals}"
+echo "rows after FINAL: ${total}, unique order_id: ${unique}"
 [ "${total}" -gt 0 ] || fail "no rows in orders"
+[ "${total}" = "${unique}" ] || fail "orders FINAL has ${total} rows for ${unique} unique order_id (duplicates survived deduplication)"
 
 echo
 echo "==> Aggregates through Distributed table"

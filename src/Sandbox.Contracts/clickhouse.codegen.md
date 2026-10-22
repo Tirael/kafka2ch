@@ -69,6 +69,22 @@ dotnet build src/Sandbox.Contracts
 
 Включается в `defaults.persistKafkaMeta` и/или `includeKafkaMeta: true` на MergeTree / MV. Опционально: `topic`, `partition`, `offset`, `timestampMs`.
 
+### Дедуп `orders` (at-least-once Kafka engine)
+
+Kafka engine доставляет at-least-once: при сбое между INSERT и commit offset тот же блок вставится повторно. Демо-конфиг сохраняет `partition` / `offset` (`kafka_partition`, `kafka_offset UInt64`) и хранит `orders` в `ReplacingMergeTree` с
+
+```
+ORDER BY (event_time, order_id, kafka_partition, kafka_offset)
+```
+
+- **Ключ дедупа — идентичность сообщения `(kafka_partition, kafka_offset)`** (топик один). `ReplacingMergeTree` схлопывает строки с одинаковым **полным** ключом сортировки; повторная доставка того же сообщения даёт идентичные `event_time` / `order_id`, поэтому префикс `(event_time, order_id)` дедупу не мешает и сохраняет индекс для запросов по времени. Повторная **публикация** продьюсером (новый offset) — другое сообщение и не схлопывается; дедуп по бизнес-ключу требует версии события и `ORDER BY order_id`.
+- Схлопывание происходит при слияниях, поэтому точные чтения — `SELECT … FROM orders FINAL`; `count() FROM orders FINAL = uniqExact(kafka_partition, kafka_offset)`.
+- Строки, перенесённые миграцией из старой `MergeTree`, получают `kafka_partition = kafka_offset = 0` и схлопываются по `(event_time, order_id)`.
+
+**Агрегаты `orders_agg_1m`** — refreshable MV `REFRESH EVERY 1 MINUTE` с **полным пересчётом** `FROM orders FINAL` в обычную `MergeTree` (каждый refresh атомарно подменяет содержимое). Insert-триггерный `SummingMergeTree` суммировал бы каждую повторную вставку, а дедуп `orders` случается позже, при слиянии. Скользящее окно не выбрано: refresh без `APPEND` заменяет всю таблицу, поэтому окно стёрло бы старые минуты, а `APPEND` + окно снова требует дедупа цели. Цена: агрегаты отстают до минуты, каждый refresh читает весь `orders` (для демо приемлемо; для больших объёмов — партиционирование и пересчёт только свежих партиций). `ReadAggregates` читает `sum(...) GROUP BY minute, category` (в кластере строки шардов складываются) и логирует `system.view_refreshes.last_success_time`. Принудительно: `SYSTEM REFRESH VIEW orders_agg_mv; SYSTEM WAIT VIEW orders_agg_mv`.
+
+Смена движка/ключа — manual-миграция `*_dedup_orders_by_kafka_offset.sql` (по одной на топологию): DETACH очереди → копия `orders` в новую `ReplacingMergeTree`-таблицу (в кластере через временную `Distributed`) → `EXCHANGE TABLES` → пересоздание `orders_agg_1m` / `orders_agg_mv` → ATTACH очереди и новый `orders_mv` с `_partition` / `_offset`.
+
 ## Миграции схемы
 
 Секция `migrations` (пути по умолчанию относительно codegen.json):
@@ -106,6 +122,10 @@ Workflow: правка proto → build падает на drift → `Cli migrate 
 Макросы `{shard}` / `{replica}` — в `<macros>` каждой ноды. Для production Keeper — ансамбль из **не менее 3** узлов (в compose-демо так и сделано).
 
 **Цель MV (default = `_local`):** Kafka→raw MV на каждой ноде пишет в свой шард (`TO t_local`). Опция `materializedViewsWriteThroughDistributed` переключает `TO t`, чтобы строки перешардировались по `shardingKey` (дороже; нужно, если ключ шардирования важнее привязки к партиции Kafka). Agg-MV из `trailingSql` всегда читают `FROM *_local`, даже при write-through.
+
+**Trade-off размещения (R15 / TP-8).** Write-through пишет в `Distributed` асинхронно: Kafka engine коммитит offset, когда блок принят в очередь `Distributed`, а не доставлен на шард, — сбой ноды между этими моментами теряет строки. Поэтому демо-конфиги (включая `replicatedDatabase`) пишут в `*_local`: offset коммитится только после записи в локальную реплицированную таблицу. Цена — шард строки определяется тем, какая нода получила партицию Kafka, а не `shardingKey`: `Distributed` `orders` с `cityHash64(order_id)` в этом режиме только читает. Следствие для дедупа: повторная доставка после ребаланса consumer group может попасть на другой шард, а `ReplacingMergeTree`/`FINAL` схлопывает дубли только внутри шарда — такие дубли ловит `scripts/verify-cluster.sh` (`count() FROM orders FINAL` ≠ `uniqExact(order_id)` → fail). Если важнее перешардирование по ключу, включите write-through **и** `distributed_foreground_insert = 1` в профиле пользователя Kafka-MV (синхронная доставка, медленнее consume).
+
+**Refreshable-агрегаты в `replicatedDatabase` (R15 / TP-8).** Refreshable MV и её цель создаются не в Replicated database, а в Atomic `default` с `ON CLUSTER`: `default.orders_agg_1m` — обычная `MergeTree`, `default.orders_agg_mv` читает глобальный `Distributed` `kafka2ch.orders FINAL`, каждая нода обновляется независимо и хранит полный агрегат кластера. Цена: каждый refresh — полный `orders FINAL` через `Distributed` на **каждой** из N нод (N× нагрузка на чтение; в compose N = 4) и N копий агрегата. Почему не внутри Replicated database: там refresh координируется по шардам (`default_replica_path` = `/clickhouse/tables/{uuid}/{shard}`), а refresh без `APPEND` подменяет цель DDL-операцией, которая реплицируется на **всю** базу. При реальных шардах (`replicatedDatabaseShardName = {shard}`) refresh каждого шарда заменяет цель и на чужих шардах: UUID таблиц расходятся, `SYSTEM WAIT VIEW` падает с `TABLE_UUID_MISMATCH` ([run 39680979057](https://github.com/Tirael/kafka2ch/actions/runs/39680979057), [run 39681723018](https://github.com/Tirael/kafka2ch/actions/runs/39681723018)); с одним именем шарда та же подмена оставляла данные только на шарде refresh-реплики. Для больших объёмов — заменить полный пересчёт на пересчёт свежих партиций или вынести агрегат в отдельный сервис.
 
 **`ddlMode=replicatedDatabase`:** `CREATE DATABASE … ON CLUSTER … ENGINE = Replicated('<replicatedDatabasePath>', '{shard}', '{replica}')` (топология БД совпадает с `remote_servers`: 2 шарда × 2 реплики в compose), затем `schema_migrations` в `default` с `ON CLUSTER` и общим Keeper-путём (история на всех шардах), `USE <replicatedDatabaseName>`; таблицы/MV — `Replicated*MergeTree` без аргументов (путь задаёт Replicated DB), без `ON CLUSTER`. `DETACH` очередей — `PERMANENTLY`. Migrator: `--ddl-mode replicatedDatabase` / `ClickHouse__DdlMode`, `ClickHouse__Database=<replicatedDatabaseName>`. Пример: [`clickhouse.codegen.cluster.replicated-db.json`](clickhouse.codegen.cluster.replicated-db.json); compose: `-f docker-compose.cluster.yml -f docker-compose.cluster.replicated-db.yml`.
 
@@ -492,6 +512,16 @@ TTL event_time + INTERVAL 90 DAY;
 ### `trailingSql`
 
 Произвольный SQL, дописывается в конец файла (агрегаты, дополнительные MV и т.п.). Может быть многострочной строкой JSON с `\n`. В кластерном режиме переписывается (см. [`cluster`](#cluster-кластерный-clickhouse)).
+
+**Refreshable MV** (`CREATE MATERIALIZED VIEW v REFRESH … [APPEND] TO t AS …`) в кластере переписываются особо — refresh без `APPEND` атомарно подменяет содержимое цели через `EXCHANGE`, что невозможно для `Distributed`:
+
+| Топология | Объекты | Движок цели | Кто выполняет refresh |
+| --- | --- | --- | --- |
+| single-node | `t` | как в SQL | нода |
+| `onCluster` (Atomic) | всегда `t_local` (даже при write-through) | **как в SQL, без `Replicated`** | каждая нода независимо (uncoordinated); реплики шарда считают одно и то же из реплицированного источника |
+| `replicatedDatabase` | `default.t` и `default.v` с `ON CLUSTER` (Atomic `default`, не Replicated database; без `t_local` / `Distributed`) | **как в SQL, без `Replicated`** | каждая нода независимо (uncoordinated), каждая хранит полный агрегат кластера |
+
+Источник: в `onCluster` `FROM t FINAL` для известных storage-таблиц переписывается в `FROM t_local FINAL` (каждая нода агрегирует свой шард); в `onCluster` `Distributed` над `t_local` даёт итог по кластеру ровно один раз — читать через `sum(...) GROUP BY`. В `replicatedDatabase` источники-storage-таблицы квалифицируются в глобальный `Distributed` `<replicatedDatabaseName>.t` (`FROM kafka2ch.orders FINAL`, `FINAL` применяется на каждом шарде), а ссылки на refresh-цели — в `default.t`; все имена полные, поэтому statement'ы работают и без `USE`, и под `USE kafka2ch`, а Replicated database их не создаёт. Читать локально на ноде подключения: `SELECT … FROM default.t` (без `Distributed`, иначе итог умножится на число шардов); `ReadAggregates` делает это при `ReadAggregates__Database=default` (`docker-compose.cluster.replicated-db.yml`). Цена и причина выбора — [R15 / TP-8](#cluster-кластерный-clickhouse).
 
 ---
 

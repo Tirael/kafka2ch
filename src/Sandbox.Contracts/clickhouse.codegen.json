@@ -9,8 +9,8 @@
       "key": true,
       "headers": true,
       "topic": false,
-      "partition": false,
-      "offset": false,
+      "partition": true,
+      "offset": true,
       "timestampMs": false
     }
   },
@@ -53,7 +53,8 @@
     "mergeTreeTables": [
       {
         "tableName": "orders",
-        "orderBy": "(event_time, order_id)",
+        "engine": "ReplacingMergeTree",
+        "orderBy": "(event_time, order_id, kafka_partition, kafka_offset)",
         "includeKafkaMeta": true,
         "columns": [
           { "name": "order_id", "type": "String" },
@@ -89,6 +90,6 @@
         ]
       }
     ],
-    "trailingSql": "CREATE TABLE orders_agg_1m\n(\n    minute        DateTime,\n    category      LowCardinality(String),\n    orders_count  UInt64,\n    total_amount  Float64,\n    total_qty     UInt64\n)\nENGINE = SummingMergeTree\nORDER BY (minute, category);\n\nCREATE MATERIALIZED VIEW orders_agg_mv TO orders_agg_1m AS\nSELECT\n    toStartOfMinute(event_time) AS minute,\n    category,\n    count()                     AS orders_count,\n    sum(amount)                 AS total_amount,\n    sum(quantity)               AS total_qty\nFROM orders\nGROUP BY minute, category;\n"
+    "trailingSql": "CREATE TABLE orders_agg_1m\n(\n    minute        DateTime,\n    category      LowCardinality(String),\n    orders_count  UInt64,\n    total_amount  Float64,\n    total_qty     UInt64\n)\nENGINE = MergeTree\nORDER BY (minute, category);\n\nCREATE MATERIALIZED VIEW orders_agg_mv\nREFRESH EVERY 1 MINUTE\nTO orders_agg_1m AS\nSELECT\n    toStartOfMinute(event_time) AS minute,\n    category,\n    count()                     AS orders_count,\n    sum(amount)                 AS total_amount,\n    sum(quantity)               AS total_qty\nFROM orders FINAL\nGROUP BY minute, category;\n"
   }
 }

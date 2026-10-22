@@ -95,6 +95,58 @@ public sealed class ClusterReplicatedDatabaseIntegrationTests : IAsyncLifetime
             .Should().Equal("ch1:2:1", "ch2:2:1");
     }
 
+    [Fact]
+    public async Task GivenDedupPipelineInReplicatedDatabase_WhenMessagesStoredTwice_ThenEveryNodeRefreshCountsEachOnce()
+    {
+        foreach (var (fileName, sql) in InitScriptsFixture.Generate(TestContractsPaths.ClusterReplicatedDbDedupCodegenConfigPath))
+        {
+            var execResult = await _shard1.ExecScriptAsync(sql);
+            execResult.ExitCode.Should().Be(0, $"{fileName}: {execResult.Stderr}");
+        }
+
+        await using var node1 = new ClickHouseConnection(ConnectionString(_shard1));
+        await using var node2 = new ClickHouseConnection(ConnectionString(_shard2));
+        await Task.WhenAll(node1.OpenAsync(), node2.OpenAsync());
+
+        (await QueryRowsAsync(node2,
+                "SELECT getMacro('replica'), database, name, engine FROM clusterAllReplicas('kafka2ch', system.tables) " +
+                $"WHERE database IN ('{DatabaseName}', 'default') " +
+                "AND (name = 'orders_local' OR name LIKE 'orders_agg%') ORDER BY 1, 2, 3"))
+            .Select(row => $"{row[0]}:{row[1]}.{row[2]}:{row[3]}")
+            .Should().Equal(
+                "ch1:default.orders_agg_1m:MergeTree",
+                "ch1:default.orders_agg_mv:MaterializedView",
+                "ch1:kafka2ch.orders_local:ReplicatedReplacingMergeTree",
+                "ch2:default.orders_agg_1m:MergeTree",
+                "ch2:default.orders_agg_mv:MaterializedView",
+                "ch2:kafka2ch.orders_local:ReplicatedReplacingMergeTree");
+
+        foreach (var node in new[] { node1, node2 })
+            await ExecuteAsync(node, "SYSTEM STOP MERGES orders_local");
+
+        await ExecuteAsync(node2,
+            "INSERT INTO orders (order_id, category, amount, quantity, event_time, kafka_partition, kafka_offset) " +
+            "SELECT toString(number), 'books', 1.5, 2, now64(3), number % 2, intDiv(number, 2) FROM numbers(200) " +
+            "SETTINGS distributed_foreground_insert = 1");
+        foreach (var node in new[] { node1, node2 })
+            await ExecuteAsync(node, "INSERT INTO orders_local SELECT * FROM orders_local SETTINGS insert_deduplicate = 0");
+
+        (await ScalarAsync(node2, "SELECT count() FROM orders")).Should().Be(400);
+        (await ScalarAsync(node2, "SELECT count() FROM orders FINAL")).Should().Be(200);
+
+        foreach (var node in new[] { node1, node2 })
+        {
+            await ExecuteAsync(node, "SYSTEM REFRESH VIEW default.orders_agg_mv");
+            await ExecuteAsync(node, "SYSTEM WAIT VIEW default.orders_agg_mv");
+        }
+
+        foreach (var node in new[] { node1, node2 })
+        {
+            (await ScalarAsync(node, "SELECT sum(orders_count) FROM default.orders_agg_1m")).Should().Be(200);
+            (await ScalarAsync(node, "SELECT sum(total_qty) FROM default.orders_agg_1m")).Should().Be(400);
+        }
+    }
+
     private ClickHouseContainer CreateNode(string host, string shard) =>
         new ClickHouseBuilder(TestContainersEnv.FullClickHouseImageName)
             .WithNetwork(_network)

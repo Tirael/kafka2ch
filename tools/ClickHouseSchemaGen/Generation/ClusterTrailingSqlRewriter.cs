@@ -11,8 +11,10 @@ public static partial class ClusterTrailingSqlRewriter
             return sql;
 
         var localTables = new HashSet<string>(storageTables, StringComparer.OrdinalIgnoreCase);
+        var statements = SqlStatementSplitter.Split(sql);
+        var refreshTargets = CollectRefreshTargets(statements);
         var builder = new StringBuilder();
-        foreach (var statement in SqlStatementSplitter.Split(sql))
+        foreach (var statement in statements)
         {
             if (statement.StartsWith("--", StringComparison.Ordinal))
             {
@@ -20,21 +22,42 @@ public static partial class ClusterTrailingSqlRewriter
                 continue;
             }
 
-            builder.Append(RewriteStatement(statement, cluster, localTables)).AppendLine();
+            builder.Append(RewriteStatement(statement, cluster, localTables, refreshTargets)).AppendLine();
         }
 
         return SqlText.Normalize(builder.ToString());
     }
 
-    private static string RewriteStatement(string statement, ClusterDdl cluster, HashSet<string> localTables)
+    private static HashSet<string> CollectRefreshTargets(IEnumerable<string> statements)
+    {
+        var targets = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var statement in statements)
+        {
+            var view = CreateMaterializedViewRegex().Match(statement);
+            if (!view.Success)
+                continue;
+
+            var refresh = RefreshToClauseRegex().Match(view.Groups["rest"].Value);
+            if (refresh.Success)
+                targets.Add(refresh.Groups["table"].Value);
+        }
+
+        return targets;
+    }
+
+    private static string RewriteStatement(
+        string statement,
+        ClusterDdl cluster,
+        HashSet<string> localTables,
+        HashSet<string> refreshTargets)
     {
         var table = CreateTableRegex().Match(statement);
         if (table.Success)
-            return RewriteCreateTable(table, cluster, localTables);
+            return RewriteCreateTable(table, cluster, localTables, refreshTargets);
 
         var view = CreateMaterializedViewRegex().Match(statement);
         if (view.Success)
-            return RewriteCreateMaterializedView(view, cluster, localTables);
+            return RewriteCreateMaterializedView(view, cluster, localTables, refreshTargets);
 
         var other = CreateOtherRegex().Match(statement);
         if (other.Success)
@@ -48,15 +71,25 @@ public static partial class ClusterTrailingSqlRewriter
             $"FUNCTION / DICTIONARY and INSERT are rewritten): '{FirstLine(statement)}'. Use a migration instead.");
     }
 
-    private static string RewriteCreateTable(Match match, ClusterDdl cluster, HashSet<string> localTables)
+    private static string RewriteCreateTable(
+        Match match,
+        ClusterDdl cluster,
+        HashSet<string> localTables,
+        HashSet<string> refreshTargets)
     {
         var ifNotExists = match.Groups["ifne"].Success;
         var name = match.Groups["name"].Value;
         var rest = match.Groups["rest"].Value;
         var create = ifNotExists ? "CREATE TABLE IF NOT EXISTS" : "CREATE TABLE";
 
+        if (cluster.UsesReplicatedDatabase && refreshTargets.Contains(name))
+            return $"{create} {NodeLocal(name)}{cluster.HistoryOnCluster}{rest};" + SqlText.NewLine;
+
         if (!TryReplaceMergeTreeEngine(rest, cluster, out var replicatedRest))
             return $"{create} {name}{cluster.OnCluster}{rest};" + SqlText.NewLine;
+
+        if (cluster.UsesOnCluster && refreshTargets.Contains(name))
+            replicatedRest = rest;
 
         localTables.Add(name);
         return $"{create} {cluster.StorageTable(name)}{cluster.OnCluster}{replicatedRest};" + SqlText.NewLine +
@@ -64,16 +97,34 @@ public static partial class ClusterTrailingSqlRewriter
                cluster.DistributedTableStatement(name, shardingKey: null, ifNotExists);
     }
 
-    private static string RewriteCreateMaterializedView(Match match, ClusterDdl cluster, HashSet<string> localTables)
+    private static string RewriteCreateMaterializedView(
+        Match match,
+        ClusterDdl cluster,
+        HashSet<string> localTables,
+        HashSet<string> refreshTargets)
     {
         var head = match.Groups["head"].Value;
+        var name = match.Groups["name"].Value;
         var rest = match.Groups["rest"].Value;
 
-        rest = ToClauseRegex().Replace(rest, to =>
-            localTables.Contains(to.Groups["table"].Value)
-                ? $"{to.Groups["prefix"].Value}{cluster.MaterializedViewTarget(to.Groups["table"].Value)}"
-                : to.Value,
-            count: 1);
+        var refreshable = RefreshToClauseRegex().IsMatch(rest);
+        if (refreshable && cluster.UsesReplicatedDatabase)
+            return RewriteNodeLocalRefreshableView(head, name, rest, cluster, localTables, refreshTargets);
+
+        if (cluster.UsesReplicatedDatabase)
+            rest = QualifyRefreshTargetSources(rest, refreshTargets);
+
+        rest = refreshable
+            ? RefreshToClauseRegex().Replace(rest, to =>
+                    localTables.Contains(to.Groups["table"].Value)
+                        ? $"{to.Groups["prefix"].Value}{cluster.StorageTable(to.Groups["table"].Value)}"
+                        : to.Value,
+                count: 1)
+            : ToClauseRegex().Replace(rest, to =>
+                    localTables.Contains(to.Groups["table"].Value)
+                        ? $"{to.Groups["prefix"].Value}{cluster.MaterializedViewTarget(to.Groups["table"].Value)}"
+                        : to.Value,
+                count: 1);
 
         rest = SourceTableRegex().Replace(rest, source =>
             localTables.Contains(source.Groups["table"].Value)
@@ -83,8 +134,36 @@ public static partial class ClusterTrailingSqlRewriter
         if (TryReplaceMergeTreeEngine(rest, cluster, out var replicatedRest))
             rest = replicatedRest;
 
-        return $"{head}{cluster.OnCluster}{rest};" + SqlText.NewLine;
+        return $"{head}{name}{cluster.OnCluster}{rest};" + SqlText.NewLine;
     }
+
+    private static string RewriteNodeLocalRefreshableView(
+        string head,
+        string name,
+        string rest,
+        ClusterDdl cluster,
+        HashSet<string> localTables,
+        HashSet<string> refreshTargets)
+    {
+        rest = RefreshToClauseRegex().Replace(rest, to => $"{to.Groups["prefix"].Value}{NodeLocal(to.Groups["table"].Value)}", count: 1);
+        rest = QualifyRefreshTargetSources(rest, refreshTargets);
+        rest = SourceTableRegex().Replace(rest, source =>
+            localTables.Contains(source.Groups["table"].Value)
+                ? $"{source.Groups["keyword"].Value}{cluster.ReplicatedDatabaseName}.{source.Groups["table"].Value}"
+                : source.Value);
+
+        return $"{head}{NodeLocal(name)}{cluster.HistoryOnCluster}{rest};" + SqlText.NewLine;
+    }
+
+    private static string QualifyRefreshTargetSources(string sql, HashSet<string> refreshTargets) =>
+        SourceTableRegex().Replace(sql, source =>
+            refreshTargets.Contains(source.Groups["table"].Value)
+                ? $"{source.Groups["keyword"].Value}{NodeLocal(source.Groups["table"].Value)}"
+                : source.Value);
+
+    private static string NodeLocal(string name) => $"{NodeLocalDatabase}.{name}";
+
+    private const string NodeLocalDatabase = "default";
 
     private static bool TryReplaceMergeTreeEngine(string sql, ClusterDdl cluster, out string rewritten)
     {
@@ -139,7 +218,7 @@ public static partial class ClusterTrailingSqlRewriter
     private static partial Regex CreateTableRegex();
 
     [GeneratedRegex(
-        $@"^(?<head>CREATE\s+MATERIALIZED\s+VIEW\s+(?:IF\s+NOT\s+EXISTS\s+)?{Identifier})(?<rest>[\s\S]*)$",
+        $@"^(?<head>CREATE\s+MATERIALIZED\s+VIEW\s+(?:IF\s+NOT\s+EXISTS\s+)?)(?<name>{Identifier})(?<rest>[\s\S]*)$",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex CreateMaterializedViewRegex();
 
@@ -153,6 +232,11 @@ public static partial class ClusterTrailingSqlRewriter
 
     [GeneratedRegex($@"^(?<prefix>\s+TO\s+)(?<table>{Identifier})\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex ToClauseRegex();
+
+    [GeneratedRegex(
+        $@"^(?<prefix>\s+REFRESH\s(?:(?!\sAS\s)[\s\S])*?\sTO\s+)(?<table>{Identifier})\b",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex RefreshToClauseRegex();
 
     [GeneratedRegex($@"(?<keyword>\b(?:FROM|JOIN)\s+)(?<table>{Identifier})\b(?!\s*\()", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex SourceTableRegex();

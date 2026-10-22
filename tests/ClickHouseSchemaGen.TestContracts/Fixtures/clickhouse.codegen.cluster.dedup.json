@@ -1,0 +1,13 @@
+{
+  "extends": "clickhouse.codegen.dedup.json",
+  "outputDirectory": "clickhouse-cluster/init",
+  "cluster": {
+    "name": "kafka2ch",
+    "replicatedPath": "/clickhouse/tables/{shard}/{database}/{table}",
+    "replicaName": "{replica}",
+    "historyReplicatedPath": "/clickhouse/tables/all/{database}/{table}",
+    "historyReplicaName": "{shard}-{replica}",
+    "localTableSuffix": "_local",
+    "shardingKey": "rand()"
+  }
+}
