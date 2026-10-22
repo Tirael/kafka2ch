@@ -11,6 +11,7 @@ x-clickhouse-node: &clickhouse-node
     - ./docker/clickhouse/format_schemas:/var/lib/clickhouse/format_schemas
     - ./docker/clickhouse/config/kafka.xml:/etc/clickhouse-server/config.d/kafka.xml:ro
     - ./docker/clickhouse/config/named-collections-users.xml:/etc/clickhouse-server/users.d/named-collections.xml:ro
+    - ./docker/clickhouse/config/prometheus.xml:/etc/clickhouse-server/config.d/prometheus.xml:ro
     - ./docker/clickhouse-cluster/config/cluster.xml:/etc/clickhouse-server/config.d/cluster.xml:ro
   healthcheck:
     test: ["CMD-SHELL", "clickhouse-client --password \"$${CLICKHOUSE_PASSWORD}\" --query 'SELECT 1'"]
@@ -66,6 +67,7 @@ services:
       - ./docker/clickhouse/format_schemas:/var/lib/clickhouse/format_schemas
       - ./docker/clickhouse/config/kafka.xml:/etc/clickhouse-server/config.d/kafka.xml:ro
       - ./docker/clickhouse/config/named-collections-users.xml:/etc/clickhouse-server/users.d/named-collections.xml:ro
+      - ./docker/clickhouse/config/prometheus.xml:/etc/clickhouse-server/config.d/prometheus.xml:ro
       - ./docker/clickhouse-cluster/config/cluster.xml:/etc/clickhouse-server/config.d/cluster.xml:ro
 
   clickhouse-02:
@@ -142,6 +144,7 @@ services:
   sandbox-app:
     environment:
       ClickHouse__Database: ${CLICKHOUSE_CLUSTER_DATABASE:-default}
+      ConsumerHealth__Cluster: kafka2ch
 
   kafka-init:
     command:
@@ -149,3 +152,8 @@ services:
         kafka-topics --bootstrap-server kafka:9092 \
           --create --if-not-exists \
           --topic orders --partitions 4 --replication-factor 1
+
+  prometheus:
+    volumes: !override
+      - ./docker/prometheus/prometheus.cluster.yml:/etc/prometheus/prometheus.yml:ro
+      - ./docker/prometheus/alerts:/etc/prometheus/alerts:ro

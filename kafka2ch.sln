@@ -107,6 +107,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ClickHouseSchemaGen.Migrato
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ClickHouseSchemaGen.TestContracts", "tests\ClickHouseSchemaGen.TestContracts\ClickHouseSchemaGen.TestContracts.csproj", "{9C02BEB0-F742-4F31-97D0-2A4302E098BD}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Sandbox.Observability", "src\Sandbox.Observability\Sandbox.Observability.csproj", "{94AA56AC-3297-4C83-95FE-35035220DA36}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -237,6 +239,18 @@ Global
 		{9C02BEB0-F742-4F31-97D0-2A4302E098BD}.Release|x64.Build.0 = Release|Any CPU
 		{9C02BEB0-F742-4F31-97D0-2A4302E098BD}.Release|x86.ActiveCfg = Release|Any CPU
 		{9C02BEB0-F742-4F31-97D0-2A4302E098BD}.Release|x86.Build.0 = Release|Any CPU
+		{94AA56AC-3297-4C83-95FE-35035220DA36}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{94AA56AC-3297-4C83-95FE-35035220DA36}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{94AA56AC-3297-4C83-95FE-35035220DA36}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{94AA56AC-3297-4C83-95FE-35035220DA36}.Debug|x64.Build.0 = Debug|Any CPU
+		{94AA56AC-3297-4C83-95FE-35035220DA36}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{94AA56AC-3297-4C83-95FE-35035220DA36}.Debug|x86.Build.0 = Debug|Any CPU
+		{94AA56AC-3297-4C83-95FE-35035220DA36}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{94AA56AC-3297-4C83-95FE-35035220DA36}.Release|Any CPU.Build.0 = Release|Any CPU
+		{94AA56AC-3297-4C83-95FE-35035220DA36}.Release|x64.ActiveCfg = Release|Any CPU
+		{94AA56AC-3297-4C83-95FE-35035220DA36}.Release|x64.Build.0 = Release|Any CPU
+		{94AA56AC-3297-4C83-95FE-35035220DA36}.Release|x86.ActiveCfg = Release|Any CPU
+		{94AA56AC-3297-4C83-95FE-35035220DA36}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -261,5 +275,6 @@ Global
 		{CAAFE3B9-BAB6-43AC-BB03-EBCBCA2A480C} = {07C2787E-EAC7-C090-1BA3-A61EC2A24D84}
 		{5EE5898E-68C4-4B2A-92F3-1788A1370AD5} = {07C2787E-EAC7-C090-1BA3-A61EC2A24D84}
 		{9C02BEB0-F742-4F31-97D0-2A4302E098BD} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
+		{94AA56AC-3297-4C83-95FE-35035220DA36} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 	EndGlobalSection
 EndGlobal

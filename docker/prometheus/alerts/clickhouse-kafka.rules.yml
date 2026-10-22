@@ -1,0 +1,38 @@
+groups:
+  - name: clickhouse-kafka
+    rules:
+      - alert: ClickHouseKafkaNoCommits
+        expr: |
+          sum by (job) (increase(ClickHouseProfileEvents_KafkaCommits[10m])) == 0
+          and
+          sum by (job) (increase(ClickHouseProfileEvents_KafkaMessagesPolled[10m])) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: Kafka engine polls messages but has not committed offsets for 10 minutes
+          description: >-
+            Messages are polled but no offsets were committed: the block insert into the
+            materialized views keeps failing (poison message without kafka_handle_error_mode,
+            target table errors). Check system.kafka_consumers.exceptions and the ClickHouse log.
+
+      - alert: ClickHouseKafkaParseErrors
+        expr: sum by (job, instance) (increase(ClickHouseProfileEvents_KafkaMessagesFailed[5m])) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: Kafka engine failed to parse messages in the last 5 minutes
+          description: >-
+            With kafka_handle_error_mode = 'stream' broken messages land in {queue}_errors
+            (orders_queue_errors); inspect _topic/_partition/_offset/_error there.
+
+      - alert: ClickHouseKafkaNoAssignments
+        expr: sum by (job) (ClickHouseMetrics_KafkaAssignedPartitions) == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: No Kafka partitions are assigned to ClickHouse consumers
+          description: >-
+            Consumers of every Kafka engine table hold no partition assignments: broker
+            unavailable, consumer group rebalancing, or the queue table / its materialized views
+            were dropped. Check system.kafka_consumers and kafka-consumer-groups --describe.

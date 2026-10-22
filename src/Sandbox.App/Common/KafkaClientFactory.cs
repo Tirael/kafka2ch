@@ -7,6 +7,9 @@ public sealed class KafkaClientFactory(IOptions<KafkaOptions> options)
     public CachedSchemaRegistryClient CreateSchemaRegistryClient() =>
         new(new SchemaRegistryConfig { Url = _options.SchemaRegistryUrl });
 
+    public IAdminClient CreateAdminClient() =>
+        new AdminClientBuilder(new AdminClientConfig { BootstrapServers = _options.BootstrapServers }).Build();
+
     public IProducer<TKey, TValue> CreateProducer<TKey, TValue>(ISchemaRegistryClient schemaRegistry)
         where TKey : class, IMessage<TKey>, new()
         where TValue : class, IMessage<TValue>, new()

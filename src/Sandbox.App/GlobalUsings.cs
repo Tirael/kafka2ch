@@ -10,3 +10,5 @@ global using Sandbox.Contracts;
 global using Sandbox.Contracts.Common;
 global using Sandbox.App.Features.PublishOrders;
 global using Sandbox.App.Features.ReadAggregates;
+global using Sandbox.App.Features.ConsumerHealth;
+global using Sandbox.Observability;
