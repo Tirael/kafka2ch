@@ -43,7 +43,7 @@ static int RunMigrate(string[] args)
 {
     if (args.Length == 0)
     {
-        Console.Error.WriteLine("Missing migrate subcommand (init|status|versions|--name).");
+        Console.Error.WriteLine("Missing migrate subcommand (init|status|versions|snapshot-upgrade|--name).");
         return 1;
     }
 
@@ -62,6 +62,17 @@ static int RunMigrate(string[] args)
         var configPath = RequireConfig(args.AsSpan(1).ToArray());
         var versionsPath = orchestrator.WriteVersionsScript(configPath);
         Console.WriteLine($"Regenerated migration baseline '{versionsPath}'.");
+        return 0;
+    }
+
+    if (args[0] == "snapshot-upgrade")
+    {
+        LoadMessageAssemblies(args.AsSpan(1).ToArray());
+        var configPath = RequireConfig(args.AsSpan(1).ToArray());
+        var upgrade = orchestrator.UpgradeSnapshot(configPath);
+        Console.WriteLine(upgrade.FromVersion == upgrade.ToVersion
+            ? $"Snapshot '{upgrade.SnapshotPath}' is already version {upgrade.ToVersion}; rewritten without changes."
+            : $"Upgraded snapshot '{upgrade.SnapshotPath}' from version {upgrade.FromVersion} to {upgrade.ToVersion}.");
         return 0;
     }
 
@@ -145,6 +156,8 @@ static void PrintUsage()
           clickhouse-schema-gen migrate init --config <path> [--assemblies <dll[;dll…]>]
           clickhouse-schema-gen migrate status --config <path> [--assemblies <dll[;dll…]>]
           clickhouse-schema-gen migrate versions --config <path>   (rewrite versionsOutputPath from migrations)
+          clickhouse-schema-gen migrate snapshot-upgrade --config <path> [--assemblies <dll[;dll…]>]
+                                                                   (rewrite schema.snapshot.json in the current format)
           clickhouse-schema-gen migrate --config <path> --name <name> [--assemblies <dll[;dll…]>] [--allow-manual]
           clickhouse-schema-gen --config <path> [--assemblies <dll[;dll…]>]   (alias for generate)
 

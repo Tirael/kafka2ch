@@ -77,6 +77,7 @@ public static class MigrationPolicy
             OrderByOrTtlChanged => true,
             EngineChanged => true,
             OriginChanged => true,
+            ClusterTopologyChanged => true,
             TrailingSqlChanged => true,
             TableRemoved => true,
             ColumnAdded added when manualTables.Contains(added.TableName) => true,

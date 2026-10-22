@@ -19,6 +19,7 @@ public static class SnapshotDriftChecker
         List<string> differences = [];
 
         CompareTrailingSql(expected.TrailingSqlHash, actual.TrailingSqlHash, differences);
+        CompareCluster(expected.Cluster, actual.Cluster, differences);
         CompareKafkaTables(expected.KafkaTables, actual.KafkaTables, differences);
         CompareMergeTreeTables(expected.MergeTreeTables, actual.MergeTreeTables, differences);
         CompareMaterializedViews(expected.MaterializedViews, actual.MaterializedViews, differences);
@@ -34,6 +35,12 @@ public static class SnapshotDriftChecker
                 $"trailingSql hash changed (expected {expectedHash ?? "<empty>"}, "
                     + $"actual {actualHash ?? "<empty>"}).");
         }
+    }
+
+    private static void CompareCluster(ClusterSnapshot? expected, ClusterSnapshot? actual, List<string> differences)
+    {
+        foreach (var reason in ClusterTopology.Compare(actual, expected))
+            differences.Add($"cluster {reason}.");
     }
 
     private static void CompareKafkaTables(
@@ -62,6 +69,7 @@ public static class SnapshotDriftChecker
                 differences.Add($"Kafka table '{name}' messageName changed.");
 
             CompareKafkaSettings(name, expectedTable.Kafka, actualTable.Kafka, differences);
+            CompareKafkaKey(name, expectedTable.Key, actualTable.Key, differences);
             ComparePersistKafkaMeta(name, expectedTable.PersistKafkaMeta, actualTable.PersistKafkaMeta, differences);
             CompareColumns($"Kafka table '{name}'", expectedTable.Columns, actualTable.Columns, differences);
         }
@@ -110,6 +118,15 @@ public static class SnapshotDriftChecker
 
             if (!string.Equals(expectedTable.Ttl?.Trim(), actualTable.Ttl?.Trim(), StringComparison.Ordinal))
                 differences.Add($"MergeTree table '{name}' TTL changed.");
+
+            foreach (var reason in ClusterTopology.CompareTable(
+                         actualTable.ShardingKey,
+                         expectedTable.ShardingKey,
+                         actualTable.MaterializedViewsWriteThroughDistributed,
+                         expectedTable.MaterializedViewsWriteThroughDistributed))
+            {
+                differences.Add($"MergeTree table '{name}' {reason}.");
+            }
 
             CompareColumns($"MergeTree table '{name}'", expectedTable.Columns, actualTable.Columns, differences);
         }
@@ -185,6 +202,16 @@ public static class SnapshotDriftChecker
 
         if (expected.SkipBrokenMessages != actual.SkipBrokenMessages)
             differences.Add($"Kafka table '{tableName}' skipBrokenMessages changed.");
+    }
+
+    private static void CompareKafkaKey(
+        string tableName,
+        KafkaKeySnapshot? expected,
+        KafkaKeySnapshot? actual,
+        List<string> differences)
+    {
+        foreach (var reason in KafkaKeyComparison.Compare(actual, expected))
+            differences.Add($"Kafka table '{tableName}' {reason}.");
     }
 
     private static void ComparePersistKafkaMeta(

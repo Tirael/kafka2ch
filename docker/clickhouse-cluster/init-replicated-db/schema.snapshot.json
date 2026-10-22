@@ -1,7 +1,14 @@
 {
-  "version": 1,
+  "version": 2,
   "parentChecksum": "c9cc13aad4ec106d5b2d7432100059108e6ee533ca74e03cf17638e34f2fc647",
   "trailingSqlHash": "0cb8bde0a48a4fd3d746a12db0ed2f8e94dde1e04a9705963f96436df3be3a8a",
+  "cluster": {
+    "name": "kafka2ch",
+    "ddlMode": "replicatedDatabase",
+    "localTableSuffix": "_local",
+    "shardingKey": "rand()",
+    "materializedViewsWriteThroughDistributed": false
+  },
   "kafkaTables": [
     {
       "tableName": "orders_queue",
@@ -17,6 +24,10 @@
         "protobufOneofPresence": true,
         "protobufFlattenGoogleWrappers": true,
         "handleErrorMode": "stream"
+      },
+      "key": {
+        "format": "protobuf",
+        "messageType": "Sandbox.Contracts.OrderKey, Sandbox.Contracts"
       },
       "persistKafkaMeta": {
         "key": true,
@@ -152,6 +163,7 @@
       "origin": "explicit",
       "orderBy": "(event_time, order_id, kafka_partition, kafka_offset)",
       "engine": "ReplacingMergeTree",
+      "shardingKey": "cityHash64(order_id)",
       "columns": [
         {
           "name": "amount",
@@ -225,6 +237,7 @@
       "origin": "auto",
       "sourceTable": "orders_queue",
       "orderBy": "(_topic, _partition, _offset)",
+      "materializedViewsWriteThroughDistributed": false,
       "columns": [
         {
           "name": "_error",

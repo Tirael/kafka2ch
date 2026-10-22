@@ -2,7 +2,7 @@ namespace ClickHouseSchemaGen.Snapshot;
 
 public sealed record SchemaSnapshot
 {
-    public const int CurrentVersion = 1;
+    public const int CurrentVersion = 2;
 
     public int Version { get; init; } = CurrentVersion;
 
@@ -10,11 +10,26 @@ public sealed record SchemaSnapshot
 
     public string? TrailingSqlHash { get; init; }
 
+    public ClusterSnapshot? Cluster { get; init; }
+
     public IReadOnlyList<KafkaTableSnapshot> KafkaTables { get; init; } = [];
 
     public IReadOnlyList<MergeTreeTableSnapshot> MergeTreeTables { get; init; } = [];
 
     public IReadOnlyList<MaterializedViewSnapshot> MaterializedViews { get; init; } = [];
+}
+
+public sealed record ClusterSnapshot
+{
+    public required string Name { get; init; }
+
+    public required string DdlMode { get; init; }
+
+    public required string LocalTableSuffix { get; init; }
+
+    public required string ShardingKey { get; init; }
+
+    public bool MaterializedViewsWriteThroughDistributed { get; init; }
 }
 
 public sealed record KafkaTableSnapshot
@@ -26,6 +41,8 @@ public sealed record KafkaTableSnapshot
     public required string MessageName { get; init; }
 
     public required KafkaSettingsSnapshot Kafka { get; init; }
+
+    public KafkaKeySnapshot? Key { get; init; }
 
     public required PersistKafkaMetaConfig PersistKafkaMeta { get; init; }
 
@@ -55,6 +72,15 @@ public sealed record KafkaSettingsSnapshot
     public int? SkipBrokenMessages { get; init; }
 }
 
+public sealed record KafkaKeySnapshot
+{
+    public string Format { get; init; } = KafkaKeyFormats.String;
+
+    public string? MessageType { get; init; }
+
+    public int? SkipBytes { get; init; }
+}
+
 public sealed record MergeTreeTableSnapshot
 {
     public required string TableName { get; init; }
@@ -68,6 +94,10 @@ public sealed record MergeTreeTableSnapshot
     public string? Engine { get; init; }
 
     public string? Ttl { get; init; }
+
+    public string? ShardingKey { get; init; }
+
+    public bool? MaterializedViewsWriteThroughDistributed { get; init; }
 
     public IReadOnlyList<SnapshotColumn> Columns { get; init; } = [];
 }

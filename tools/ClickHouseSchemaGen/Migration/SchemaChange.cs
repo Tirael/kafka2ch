@@ -51,6 +51,8 @@ public sealed record OriginChanged(string TableName, PlanOrigin OldOrigin, PlanO
 
 public sealed record SourceTableChanged(string TableName, string? OldSourceTable, string? NewSourceTable) : SchemaChange;
 
+public sealed record ClusterTopologyChanged(string Scope, string Reason) : SchemaChange;
+
 public sealed record SchemaDiff
 {
     public IReadOnlyList<SchemaChange> Changes { get; init; } = [];
@@ -78,6 +80,7 @@ public sealed record MigrationPlan
             OrderByOrTtlChanged => true,
             EngineChanged => true,
             OriginChanged => true,
+            ClusterTopologyChanged => true,
             TrailingSqlChanged => true,
             TableRemoved => true,
             _ => false

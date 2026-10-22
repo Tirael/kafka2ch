@@ -163,7 +163,7 @@ public sealed class ClickHouseSchemaGenerator(
             return;
         }
 
-        SnapshotDriftChecker.Check(plan, SchemaSnapshotSerializer.Load(snapshotPath), configPath);
+        SnapshotDriftChecker.Check(plan, SchemaSnapshotSerializer.Load(snapshotPath, plan), configPath);
     }
 
     private static IReadOnlyList<ClickHouseColumn> KeyColumnsFor(
