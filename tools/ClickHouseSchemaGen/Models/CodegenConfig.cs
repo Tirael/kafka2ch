@@ -6,6 +6,8 @@ public sealed class CodegenConfig
 
     public string? OutputDirectory { get; set; }
 
+    public string? DescriptorSetPath { get; set; }
+
     public ClusterConfig Cluster { get; set; } = new();
 
     public CodegenDefaults Defaults { get; set; } = new();

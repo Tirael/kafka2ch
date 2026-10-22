@@ -48,6 +48,8 @@ public static class CodegenConfigLoader
         if (JsonNode.Parse(File.ReadAllText(fullPath), NodeOptions, DocumentOptions) is not JsonObject node)
             throw new InvalidOperationException($"Config file '{fullPath}' is empty or invalid.");
 
+        ResolveDescriptorSetPath(fullPath, node);
+
         if (!node.TryGetPropertyValue("extends", out var extendsNode) || extendsNode is null)
             return node;
 
@@ -56,6 +58,13 @@ public static class CodegenConfigLoader
         node.Remove("extends");
         Merge(merged, node);
         return merged;
+    }
+
+    private static void ResolveDescriptorSetPath(string configPath, JsonObject node)
+    {
+        const string key = "descriptorSetPath";
+        if (node[key] is JsonValue value && value.TryGetValue<string>(out var path) && !string.IsNullOrWhiteSpace(path))
+            node[key] = ResolvePath(configPath, path);
     }
 
     private static void Merge(JsonObject target, JsonObject overlay)

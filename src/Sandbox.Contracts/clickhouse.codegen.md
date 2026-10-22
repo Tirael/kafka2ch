@@ -12,7 +12,7 @@ dotnet build src/Sandbox.Contracts
 Результат - файлы в `docker/clickhouse/init/` (пути задаются в конфиге).  
 Пропуск codegen: `dotnet build -p:SkipClickHouseCodegen=true`.
 
-Вне этого репозитория подключайте пакет `ClickHouseSchemaGen.Tasks` (MSBuild) и/или tools `ClickHouseSchemaGen.Cli` / `ClickHouseSchemaGen.Migrator` — см. раздел **NuGet-пакеты** в [README](../../README.md). Для CLI передайте `--assemblies` с DLL, где лежат типы из `messageType`.
+Вне этого репозитория подключайте пакет `ClickHouseSchemaGen.Tasks` (MSBuild) и/или tools `ClickHouseSchemaGen.Cli` / `ClickHouseSchemaGen.Migrator` — см. раздел **NuGet-пакеты** в [README](../../README.md). Для CLI передайте `--assemblies` с DLL, где лежат типы из `messageType`, либо `--descriptor-set` с `FileDescriptorSet` (см. [Вход из descriptor set](#вход-из-descriptor-set-без-c-сборок)).
 
 ---
 
@@ -53,6 +53,7 @@ dotnet build src/Sandbox.Contracts
 | `cluster`        | нет                | кластерный ClickHouse (выключен, пока нет `name`)  |
 | `extends`        | нет                | базовый конфиг, поверх которого применяется этот   |
 | `outputDirectory`| нет                | каталог для всех init-скриптов (имя файла из `outputPath`) |
+| `descriptorSetPath`| нет              | `FileDescriptorSet` вместо скомпилированных сборок (см. ниже) |
 
 
 Имена `tableName` и пути `outputPath` в `kafkaTables` должны быть уникальны.
@@ -169,6 +170,22 @@ Workflow: правка proto → build падает на drift → `Cli migrate 
 
 
 
+### Вход из descriptor set (без C#-сборок)
+
+По умолчанию генератор берёт `MessageDescriptor` из скомпилированных C#-типов (`--assemblies` / `ClickHouseCodegenAssemblies`). Альтернатива — `FileDescriptorSet`, собранный без .NET:
+
+```bash
+protoc -I protos --include_imports --descriptor_set_out=contracts.binpb $(cd protos && find . -name '*.proto')
+# или
+buf build -o contracts.binpb
+```
+
+Укажите его в конфиге (`"descriptorSetPath": "contracts.binpb"`, путь относительно файла, где поле объявлено; наследуется через `extends`) или в CLI: `--descriptor-set contracts.binpb` (перекрывает конфиг; вместе с `--assemblies` нельзя).
+
+- `messageType` ищется по proto full name (`testcontracts.orders.v1.OrderEvent`, ведущая точка допустима) или по C#-имени, которое сгенерировал бы `protoc --csharp_out` (`csharp_namespace` либо PascalCase `package`, вложенные — `Outer+Types+Inner`; суффикс `, Assembly` игнорируется). Поэтому существующие конфиги работают без изменений, а DDL и `schema.snapshot.json` совпадают побайтно с путём через сборки.
+- Импорты должны быть в наборе (`--include_imports`); отсутствующие `google/protobuf/*.proto` (Timestamp, wrappers, Duration, Struct, Any…) подставляются встроенными. Иначе — ошибка с именем недостающего импорта.
+- MSBuild-путь (`ClickHouseSchemaGen.Tasks`) не меняется и остаётся основным.
+
 ## `defaults`
 
 
@@ -226,7 +243,7 @@ Workflow: правка proto → build падает на drift → `Cli migrate 
 
 | Поле          | Пример                                               | Правила                                            |
 | ------------- | ---------------------------------------------------- | -------------------------------------------------- |
-| `messageType` | `"Sandbox.Contracts.OrderEvent, Sandbox.Contracts"`  | CLR-тип: `FullName, Assembly`                      |
+| `messageType` | `"Sandbox.Contracts.OrderEvent, Sandbox.Contracts"`  | CLR-тип: `FullName, Assembly`; с descriptor set — также proto full name (`package.Message`) |
 | `tableName`   | `"orders_queue"`                                     | Идентификатор ClickHouse: `[a-zA-Z_][a-zA-Z0-9_]*` |
 | `protoFile`   | `"order_event"`                                      | Имя `.proto` **без** пути и расширения             |
 | `messageName` | `"OrderEvent"`                                       | Имя message в proto                                |
@@ -344,7 +361,7 @@ SASL/TLS (пример для production; значения — из env/секр
 | Поле             | По умолчанию        | Описание                                                                                 |
 | ---------------- | ------------------- | ---------------------------------------------------------------------------------------- |
 | `format`         | `"string"`          | `string` \| `protobuf`                                                                   |
-| `messageType`    | —                   | CLR-тип ключа `FullName, Assembly`. Обязателен для `protobuf`                            |
+| `messageType`    | —                   | CLR-тип ключа `FullName, Assembly` (с descriptor set — также proto full name). Обязателен для `protobuf` |
 | `skipBytes`      | `kafka.skipBytes`   | Сколько байт пропустить перед payload ключа (Confluent envelope: `6`, «голый» protobuf: `0`) |
 | `fieldOverrides` | `{}`                | Overrides полей ключа (те же свойства, что у value; пути — без префикса `_key.`)          |
 

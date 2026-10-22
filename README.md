@@ -388,8 +388,14 @@ clickhouse-schema-gen generate \
 
 clickhouse-schema-gen migrate --config … --name <change> --assemblies path/to/Your.Contracts.dll
 
+# без C#-сборок: FileDescriptorSet из protoc / buf
+protoc -I protos --include_imports --descriptor_set_out=contracts.binpb $(cd protos && find . -name '*.proto')
+clickhouse-schema-gen generate --config path/to/clickhouse.codegen.json --descriptor-set contracts.binpb
+
 clickhouse-schema-migrator --migrations path/to/migrations
 ```
+
+`--descriptor-set` (или `descriptorSetPath` в конфиге) — альтернатива `--assemblies`: `messageType` разрешается по proto full name или по C#-имени из `csharp_namespace`, результат побайтно совпадает с путём через сборки. Подробности — [`clickhouse.codegen.md`](src/Sandbox.Contracts/clickhouse.codegen.md#вход-из-descriptor-set-без-c-сборок).
 
 Пример consumer: [`samples/NuGetCodegenSmoke`](samples/NuGetCodegenSmoke). В этом репозитории `Sandbox.Contracts` по-прежнему вызывает локальный `tools/ClickHouseSchemaGen.Tasks` через `MSBuild` (без NuGet), чтобы не требовать `pack` при обычной разработке.
 

@@ -7,3 +7,6 @@
 
 # Schema snapshots are generated with LF and feed snapshot parent checksums.
 *.snapshot.json text eol=lf
+
+# FileDescriptorSet fixtures are binary protobuf.
+*.binpb binary
