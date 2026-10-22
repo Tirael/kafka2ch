@@ -69,10 +69,16 @@ public sealed class MigrationOrchestrator(ClickHouseSchemaGenerator generator, T
 
         if (topologies.All(topology => topology.Diff.Changes.Count == 0))
         {
+            var adoptionMessages = topologies
+                .Select(topology => topology.AdoptionMessage)
+                .Where(message => !string.IsNullOrEmpty(message))
+                .ToList();
             return new MigrationRunResult(
                 ExitCode: 0,
                 MigrationPaths: [],
-                Message: "No schema changes detected.");
+                Message: adoptionMessages.Count > 0
+                    ? string.Join("; ", adoptionMessages)
+                    : "No schema changes detected.");
         }
 
         var generatedAt = clock.GetUtcNow();
@@ -168,18 +174,27 @@ public sealed class MigrationOrchestrator(ClickHouseSchemaGenerator generator, T
         var parentChecksum = SchemaSnapshotSerializer.ComputeChecksum(
             SchemaSnapshotSerializer.SerializeToString(oldSnapshot));
         var newSnapshot = SchemaSnapshotMapper.FromPlan(newPlan, parentChecksum);
-        if (diff.Changes.All(change => change is AggregatesAdoptedFromTrailingSql))
+        if (diff.Changes.Count > 0 && diff.Changes.All(change => change is AggregatesAdoptedFromTrailingSql))
         {
             SchemaSnapshotSerializer.Save(paths.SnapshotPath, newSnapshot);
             var names = diff.Changes.OfType<AggregatesAdoptedFromTrailingSql>().SelectMany(change => change.Names);
-            return new MigrationRunResult(
-                ExitCode: 0,
-                MigrationPath: null,
-                Message: $"trailingSql adopted as aggregates {string.Join(", ", names)} with identical DDL; "
+            var targetChecksum = SchemaSnapshotSerializer.ComputeChecksum(
+                SchemaSnapshotSerializer.SerializeToString(newSnapshot));
+            return new TopologyMigration(
+                config,
+                paths,
+                oldPlan,
+                newPlan,
+                Diff: new SchemaDiff(),
+                MigrationPlan: MigrationPolicy.Apply(new SchemaDiff(), oldPlan, newPlan),
+                newSnapshot,
+                parentChecksum,
+                targetChecksum,
+                AdoptionMessage: $"trailingSql adopted as aggregates {string.Join(", ", names)} with identical DDL; "
                     + "snapshot updated, no migration needed.");
         }
 
-        var targetChecksum = SchemaSnapshotSerializer.ComputeChecksum(
+        var targetChecksumAfterDiff = SchemaSnapshotSerializer.ComputeChecksum(
             SchemaSnapshotSerializer.SerializeToString(newSnapshot));
 
         return new TopologyMigration(
@@ -191,7 +206,7 @@ public sealed class MigrationOrchestrator(ClickHouseSchemaGenerator generator, T
             migrationPlan,
             newSnapshot,
             parentChecksum,
-            targetChecksum);
+            targetChecksumAfterDiff);
     }
 
     private static void EnsureDistinctTargets(IReadOnlyList<TopologyMigration> topologies)
@@ -292,4 +307,5 @@ internal sealed record TopologyMigration(
     MigrationPlan MigrationPlan,
     SchemaSnapshot NewSnapshot,
     string ParentChecksum,
-    string TargetChecksum);
+    string TargetChecksum,
+    string? AdoptionMessage = null);
