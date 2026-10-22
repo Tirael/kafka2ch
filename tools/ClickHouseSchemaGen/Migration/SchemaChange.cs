@@ -53,6 +53,14 @@ public sealed record SourceTableChanged(string TableName, string? OldSourceTable
 
 public sealed record ClusterTopologyChanged(string Scope, string Reason) : SchemaChange;
 
+public sealed record AggregateAdded(string Name) : SchemaChange;
+
+public sealed record AggregateRemoved(string Name, string ViewName) : SchemaChange;
+
+public sealed record AggregateChanged(string Name, string OldViewName, string Reason, bool RecreatesTarget) : SchemaChange;
+
+public sealed record AggregatesAdoptedFromTrailingSql(IReadOnlyList<string> Names, string TrailingSqlHash) : SchemaChange;
+
 public sealed record SchemaDiff
 {
     public IReadOnlyList<SchemaChange> Changes { get; init; } = [];
@@ -83,6 +91,8 @@ public sealed record MigrationPlan
             ClusterTopologyChanged => true,
             TrailingSqlChanged => true,
             TableRemoved => true,
+            AggregateRemoved => true,
+            AggregateChanged { RecreatesTarget: true } => true,
             _ => false
         };
 }

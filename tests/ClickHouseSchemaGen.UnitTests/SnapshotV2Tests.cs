@@ -14,6 +14,16 @@ public sealed class SnapshotV2Tests
         TestContractsPaths.ClusterReplicatedDbCodegenConfigPath
     };
 
+    public static TheoryData<string> AllConfigs => new()
+    {
+        TestContractsPaths.CodegenConfigPath,
+        TestContractsPaths.ClusterCodegenConfigPath,
+        TestContractsPaths.ClusterReplicatedDbCodegenConfigPath,
+        TestContractsPaths.DedupCodegenConfigPath,
+        TestContractsPaths.ClusterDedupCodegenConfigPath,
+        TestContractsPaths.ClusterReplicatedDbDedupCodegenConfigPath
+    };
+
     [Theory]
     [MemberData(nameof(TopologyConfigs))]
     public void GivenV1Snapshot_WhenLoadedWithCurrentPlan_ThenUpgradesToV2WithoutDriftOrDiff(string configPath)
@@ -155,7 +165,7 @@ public sealed class SnapshotV2Tests
     }
 
     [Theory]
-    [MemberData(nameof(TopologyConfigs))]
+    [MemberData(nameof(AllConfigs))]
     public void GivenAnySnapshotField_WhenOnlyItDrifts_ThenDifferReportsChange(string configPath) =>
         AssertDriftImpliesDiff(CodegenConfigLoader.Load(configPath));
 
@@ -182,6 +192,8 @@ public sealed class SnapshotV2Tests
         List<string> missingInDiff = [];
         var mutations = SnapshotMutations.Enumerate(baseline).ToList();
         mutations.Should().NotBeEmpty();
+        if (config.Pipeline?.Aggregates.Count > 0)
+            mutations.Should().Contain(mutation => mutation.Path.StartsWith("Aggregates[0].Measures[0].", StringComparison.Ordinal));
 
         foreach (var (path, mutated) in mutations)
         {
@@ -375,7 +387,8 @@ public sealed class SnapshotV2Tests
                 {
                     KafkaTables = clone.KafkaTables.ToList(),
                     MergeTreeTables = clone.MergeTreeTables.ToList(),
-                    MaterializedViews = clone.MaterializedViews.ToList()
+                    MaterializedViews = clone.MaterializedViews.ToList(),
+                    Aggregates = clone.Aggregates?.ToList()
                 };
             }
             finally

@@ -23,7 +23,8 @@ public static class SchemaSnapshotMapper
                 .Select(kafka => ToKafkaSnapshot(kafka, metaByQueue[kafka.Config.TableName]))
                 .ToList(),
             MergeTreeTables = plan.MergeTreeTables.Select(ToMergeTreeSnapshot).ToList(),
-            MaterializedViews = plan.MaterializedViews.Select(ToMaterializedViewSnapshot).ToList()
+            MaterializedViews = plan.MaterializedViews.Select(ToMaterializedViewSnapshot).ToList(),
+            Aggregates = plan.Aggregates.Count == 0 ? null : plan.Aggregates.Select(ToAggregateSnapshot).ToList()
         };
     }
 
@@ -56,9 +57,14 @@ public static class SchemaSnapshotMapper
             .Select(ToMaterializedViewPlan)
             .ToList();
 
+        var aggregatePlans = (snapshot.Aggregates ?? [])
+            .Select(ToAggregatePlan)
+            .ToList();
+
         var pipeline = configForMessageTypes.Pipeline is null
             && mergeTreePlans.Count == 0
             && viewPlans.Count == 0
+            && aggregatePlans.Count == 0
             ? null
             : new PipelineConfig
             {
@@ -86,6 +92,7 @@ public static class SchemaSnapshotMapper
             KafkaTables = kafkaPlans,
             MergeTreeTables = mergeTreePlans,
             MaterializedViews = viewPlans,
+            Aggregates = aggregatePlans,
             TrailingSql = pipeline?.TrailingSql,
             TrailingSqlHash = snapshot.TrailingSqlHash
         };
@@ -188,6 +195,64 @@ public static class SchemaSnapshotMapper
                     Target = c.Target,
                     Expression = c.Expression
                 })
+                .ToList()
+        };
+
+    private static AggregateSnapshot ToAggregateSnapshot(AggregatePlan plan) =>
+        new()
+        {
+            Name = plan.Name,
+            ViewName = plan.ViewName,
+            SourceTable = plan.SourceTable,
+            Engine = MergeTreeEngines.ToSnapshot(plan.Engine),
+            OrderBy = plan.OrderBy,
+            Final = plan.Final,
+            RefreshMode = plan.RefreshMode,
+            RefreshEvery = plan.RefreshEvery,
+            TimeBucket = plan.TimeBucket is null
+                ? null
+                : new AggregateTimeBucketSnapshot
+                {
+                    Column = plan.TimeBucket.Column,
+                    Function = plan.TimeBucket.Function,
+                    Alias = plan.TimeBucket.Alias,
+                    Type = plan.TimeBucket.Type
+                },
+            GroupBy = plan.GroupBy
+                .Select(column => new AggregateColumnSnapshot { Name = column.Name, Type = column.Type })
+                .ToList(),
+            Measures = plan.Measures
+                .Select(measure => new AggregateMeasureSnapshot
+                {
+                    Function = measure.Function,
+                    Column = measure.Column,
+                    Alias = measure.Alias,
+                    Type = measure.Type
+                })
+                .ToList()
+        };
+
+    private static AggregatePlan ToAggregatePlan(AggregateSnapshot snapshot) =>
+        new()
+        {
+            Name = snapshot.Name,
+            ViewName = snapshot.ViewName,
+            SourceTable = snapshot.SourceTable,
+            Engine = MergeTreeEngines.Normalize(snapshot.Engine),
+            OrderBy = snapshot.OrderBy,
+            Final = snapshot.Final,
+            RefreshMode = snapshot.RefreshMode,
+            RefreshEvery = snapshot.RefreshEvery,
+            TimeBucket = snapshot.TimeBucket is null
+                ? null
+                : new AggregateTimeBucketPlan(
+                    snapshot.TimeBucket.Column,
+                    snapshot.TimeBucket.Function,
+                    snapshot.TimeBucket.Alias,
+                    snapshot.TimeBucket.Type),
+            GroupBy = snapshot.GroupBy.Select(column => new AggregateColumnPlan(column.Name, column.Type)).ToList(),
+            Measures = snapshot.Measures
+                .Select(measure => new AggregateMeasurePlan(measure.Function, measure.Column, measure.Alias, measure.Type))
                 .ToList()
         };
 

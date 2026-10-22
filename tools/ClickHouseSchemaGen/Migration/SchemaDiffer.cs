@@ -10,26 +10,135 @@ public static class SchemaDiffer
         List<SchemaChange> changes = [];
         List<string> warnings = [];
 
-        DiffTrailingSql(oldPlan, newPlan, changes);
+        var adopted = DiffTrailingSql(oldPlan, newPlan, changes);
         DiffCluster(oldPlan, newPlan, changes);
         DiffKafkaTables(oldPlan, newPlan, changes, warnings);
         DiffMergeTreeTables(oldPlan, newPlan, changes);
         DiffMaterializedViews(oldPlan, newPlan, changes);
         DiffKafkaDependentViews(oldPlan, newPlan, changes);
+        DiffAggregates(oldPlan, newPlan, adopted, changes);
 
         return new SchemaDiff { Changes = changes, Warnings = warnings };
     }
 
-    private static void DiffTrailingSql(
+    private static HashSet<string> DiffTrailingSql(
         ResolvedSchemaPlan oldPlan,
         ResolvedSchemaPlan newPlan,
         List<SchemaChange> changes)
     {
+        HashSet<string> adopted = new(StringComparer.OrdinalIgnoreCase);
         var oldHash = oldPlan.TrailingSqlHash ?? SchemaSnapshotMapper.ComputeTrailingSqlHash(oldPlan.TrailingSql);
         var newHash = newPlan.TrailingSqlHash ?? SchemaSnapshotMapper.ComputeTrailingSqlHash(newPlan.TrailingSql);
-        if (!string.Equals(oldHash, newHash, StringComparison.OrdinalIgnoreCase))
-            changes.Add(new TrailingSqlChanged(oldHash, newHash));
+        if (string.Equals(oldHash, newHash, StringComparison.OrdinalIgnoreCase))
+            return adopted;
+
+        var oldAggregates = oldPlan.Aggregates.Select(aggregate => aggregate.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var added = newPlan.Aggregates.Where(aggregate => !oldAggregates.Contains(aggregate.Name)).ToList();
+        if (oldHash is not null
+            && newHash is null
+            && added.Count > 0
+            && string.Equals(
+                oldHash,
+                SchemaSnapshotMapper.ComputeTrailingSqlHash(AggregateGenerator.Generate(added, ClusterDdl.SingleNode)),
+                StringComparison.OrdinalIgnoreCase))
+        {
+            adopted.UnionWith(added.Select(aggregate => aggregate.Name));
+            changes.Add(new AggregatesAdoptedFromTrailingSql(added.Select(aggregate => aggregate.Name).ToList(), oldHash));
+            return adopted;
+        }
+
+        changes.Add(new TrailingSqlChanged(oldHash, newHash));
+        return adopted;
     }
+
+    private static void DiffAggregates(
+        ResolvedSchemaPlan oldPlan,
+        ResolvedSchemaPlan newPlan,
+        HashSet<string> adopted,
+        List<SchemaChange> changes)
+    {
+        var oldByName = oldPlan.Aggregates.ToDictionary(aggregate => aggregate.Name, StringComparer.OrdinalIgnoreCase);
+        var newByName = newPlan.Aggregates.ToDictionary(aggregate => aggregate.Name, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var aggregate in newPlan.Aggregates.Where(a => !oldByName.ContainsKey(a.Name) && !adopted.Contains(a.Name)))
+            changes.Add(new AggregateAdded(aggregate.Name));
+
+        foreach (var aggregate in oldPlan.Aggregates.Where(a => !newByName.ContainsKey(a.Name)))
+            changes.Add(new AggregateRemoved(aggregate.Name, aggregate.ViewName));
+
+        foreach (var (name, oldAggregate) in oldByName)
+        {
+            if (!newByName.TryGetValue(name, out var newAggregate))
+                continue;
+
+            var targetReasons = CollectAggregateTargetReasons(oldAggregate, newAggregate);
+            var reasons = targetReasons.Concat(CollectAggregateViewReasons(oldAggregate, newAggregate)).ToList();
+            if (reasons.Count > 0)
+            {
+                changes.Add(new AggregateChanged(
+                    newAggregate.Name,
+                    oldAggregate.ViewName,
+                    string.Join("; ", reasons),
+                    RecreatesTarget: targetReasons.Count > 0));
+            }
+        }
+    }
+
+    private static List<string> CollectAggregateTargetReasons(AggregatePlan oldAggregate, AggregatePlan newAggregate)
+    {
+        List<string> reasons = [];
+        if (!string.Equals(oldAggregate.Engine, newAggregate.Engine, StringComparison.Ordinal))
+            reasons.Add($"engine changed ('{oldAggregate.Engine}' -> '{newAggregate.Engine}')");
+
+        if (!string.Equals(oldAggregate.OrderBy, newAggregate.OrderBy, StringComparison.Ordinal))
+            reasons.Add($"ORDER BY changed ('{oldAggregate.OrderBy}' -> '{newAggregate.OrderBy}')");
+
+        if (!AggregateColumns(oldAggregate).SequenceEqual(AggregateColumns(newAggregate), StringComparer.Ordinal))
+        {
+            reasons.Add(
+                $"target columns changed ({string.Join(", ", AggregateColumns(oldAggregate))} -> "
+                    + $"{string.Join(", ", AggregateColumns(newAggregate))})");
+        }
+
+        return reasons;
+    }
+
+    private static List<string> CollectAggregateViewReasons(AggregatePlan oldAggregate, AggregatePlan newAggregate)
+    {
+        List<string> reasons = [];
+        if (!string.Equals(oldAggregate.ViewName, newAggregate.ViewName, StringComparison.Ordinal))
+            reasons.Add($"viewName changed ('{oldAggregate.ViewName}' -> '{newAggregate.ViewName}')");
+
+        if (!string.Equals(oldAggregate.SourceTable, newAggregate.SourceTable, StringComparison.Ordinal))
+            reasons.Add($"sourceTable changed ('{oldAggregate.SourceTable}' -> '{newAggregate.SourceTable}')");
+
+        if (oldAggregate.Final != newAggregate.Final)
+            reasons.Add($"FINAL changed ({oldAggregate.Final} -> {newAggregate.Final})");
+
+        if (!string.Equals(oldAggregate.RefreshMode, newAggregate.RefreshMode, StringComparison.Ordinal)
+            || !string.Equals(oldAggregate.RefreshEvery, newAggregate.RefreshEvery, StringComparison.Ordinal))
+        {
+            reasons.Add(
+                $"refresh changed ('{oldAggregate.RefreshMode} EVERY {oldAggregate.RefreshEvery}' -> "
+                    + $"'{newAggregate.RefreshMode} EVERY {newAggregate.RefreshEvery}')");
+        }
+
+        if (!AggregateExpressions(oldAggregate).SequenceEqual(AggregateExpressions(newAggregate), StringComparer.Ordinal))
+        {
+            reasons.Add(
+                $"select expressions changed ({string.Join(", ", AggregateExpressions(oldAggregate))} -> "
+                    + $"{string.Join(", ", AggregateExpressions(newAggregate))})");
+        }
+
+        return reasons;
+    }
+
+    private static IEnumerable<string> AggregateColumns(AggregatePlan aggregate) =>
+        aggregate.TargetColumns.Select(column => $"{column.Name} {column.Type}");
+
+    private static IEnumerable<string> AggregateExpressions(AggregatePlan aggregate) =>
+        (aggregate.TimeBucket is null ? [] : new[] { aggregate.TimeBucket.Expression })
+            .Concat(aggregate.Measures.Select(measure => measure.Expression));
 
     private static void DiffCluster(
         ResolvedSchemaPlan oldPlan,

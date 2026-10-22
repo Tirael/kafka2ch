@@ -51,6 +51,26 @@ public sealed partial class ClusterDdl
                 ? BareReplicated(engine)
                 : Replicated(engine, _config!.ReplicatedPath, _config.ReplicaName);
 
+    public string RefreshTargetTable(string tableName) =>
+        UsesReplicatedDatabase ? $"{NodeLocalDatabase}.{tableName}" : StorageTable(tableName);
+
+    public string RefreshViewName(string viewName) =>
+        UsesReplicatedDatabase ? $"{NodeLocalDatabase}.{viewName}" : viewName;
+
+    public string RefreshTargetOnCluster =>
+        UsesReplicatedDatabase ? HistoryOnCluster : OnCluster;
+
+    public string RefreshTargetEngine(string engine) => engine;
+
+    public string RefreshSourceTable(string tableName) =>
+        UsesReplicatedDatabase
+            ? $"{ReplicatedDatabaseName}.{tableName}"
+            : StorageTable(tableName);
+
+    public bool EmitsRefreshTargetDistributed => UsesOnCluster;
+
+    private const string NodeLocalDatabase = "default";
+
     public string HistoryEngine(string engine) =>
         !Enabled
             ? engine

@@ -45,8 +45,9 @@ public sealed class DedupPipelineGenerationTests
         Single(statements, "CREATE TABLE orders_local\n").Should()
             .Contain("ENGINE = ReplicatedReplacingMergeTree\nORDER BY (event_time, order_id, kafka_partition, kafka_offset)");
         Single(statements, "CREATE MATERIALIZED VIEW orders_mv TO orders_local AS");
-        Single(statements, "CREATE TABLE default.orders_agg_1m ON CLUSTER kafka2ch\n").Should()
-            .Contain("ENGINE = MergeTree\nORDER BY (minute, category)");
+        var aggregateTable = Single(statements, "CREATE TABLE default.orders_agg_1m ON CLUSTER kafka2ch\n");
+        aggregateTable.Should().Contain("ENGINE = MergeTree\nORDER BY (minute, category)");
+        aggregateTable.Should().NotContain("Replicated");
         Single(statements, "CREATE MATERIALIZED VIEW default.orders_agg_mv ON CLUSTER kafka2ch\n").Should()
             .Contain("REFRESH EVERY 1 MINUTE\nTO default.orders_agg_1m AS")
             .And.Contain("FROM kafka2ch.orders FINAL");

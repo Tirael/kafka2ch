@@ -124,12 +124,17 @@ public sealed class ClickHouseSchemaGenerator(
                 Origin = PlanOrigin.Auto
             });
 
+        var aggregates = config.Pipeline.Aggregates
+            .Select(aggregate => AggregatePlanner.Resolve(aggregate, expandedByName[aggregate.SourceTable.Trim()].Expanded))
+            .ToList();
+
         return KafkaErrorStream.Apply(new ResolvedSchemaPlan
         {
             Config = config,
             KafkaTables = kafkaTables,
             MergeTreeTables = mergeTreePlans,
             MaterializedViews = explicitViews.Concat(autoViews).ToList(),
+            Aggregates = aggregates,
             TrailingSql = config.Pipeline.TrailingSql
         });
     }
