@@ -10,3 +10,7 @@
 
 # FileDescriptorSet fixtures are binary protobuf.
 *.binpb binary
+
+# TLA+ specs and TLC configs; scripts/check-tla.sh reads the cfg header line.
+*.tla text eol=lf
+*.cfg text eol=lf
