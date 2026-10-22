@@ -23,5 +23,6 @@ global using ClickHouseSchemaGen.TestContracts.Fixtures;
 global using System.Net.Http.Headers;
 global using System.Text;
 global using System.Text.Json;
+global using System.Text.RegularExpressions;
 global using Testcontainers.ClickHouse;
 global using Xunit;
