@@ -140,6 +140,13 @@ dotnet exec tools/ClickHouseSchemaGen.Migrator/bin/Debug/net8.0/ClickHouseSchema
    самую долгую миграцию). Перед применением пишется `kind = 'started'`, после — `migration`; `started` без `migration`
    при следующем запуске даёт предупреждение «interrupted run», и миграция применяется повторно (SQL должен быть идемпотентным).
 
+Контроль мутаций и распределённого DDL:
+
+- смена типа `Rewrite` (`DateTime -> DateTime64`, `Enum8 -> Enum16`) переписывает все парты, поэтому по умолчанию она manual (`--allow-manual`); автоматически — только с `"migrations": { "autoRewrite": true }`;
+- автоматический `MODIFY COLUMN` пишется как `ALTER TABLE … MODIFY COLUMN … SETTINGS mutations_sync = 2;` + маркер `-- await:mutations_done <table>[ ON CLUSTER <name>]`: Migrator ждёт, пока в `system.mutations` (в кластере — `clusterAllReplicas`) не останется `is_done = 0`, падает сразу при `latest_fail_reason` и по таймауту 10 минут;
+- каждый statement с `ON CLUSTER` исполняется с `distributed_ddl_output_mode = 'never_throw'`, Migrator читает статус по всем хостам и при частичном успехе или таймауте падает с `DistributedDdlException` (список упавших и успешных хостов), миграция не записывается в `schema_migrations`;
+- при сбое миграции Migrator восстанавливает удалённые/отсоединённые очереди и MV и логирует отчёт «restored / not restored» (он же в `MigrationFailedException`); MV восстанавливается, только если схема источника (очереди) совпадает со схемой до миграции, иначе пропускается с причиной в отчёте.
+
 В сырой таблице `orders` сохраняются `kafka_key` (сырые байты protobuf-ключа) и `kafka_headers` (`Map(String, String)`). Подробности — [clickhouse.codegen.md](src/Sandbox.Contracts/clickhouse.codegen.md) и [MIGRATIONS_PLAN.md](MIGRATIONS_PLAN.md).
 
 ### Миграции в параллельных ветках
@@ -334,7 +341,7 @@ dotnet test tests/ClickHouseSchemaGen.IntegrationTests
 | `ClickHouseSchemaGen.Cli` | `dotnet tool` (`clickhouse-schema-gen`) | `generate` / `migrate` |
 | `ClickHouseSchemaGen.Migrator` | `dotnet tool` (`clickhouse-schema-migrator`) | apply SQL-миграций |
 
-Версия задаётся через `VersionPrefix` в [`Directory.Build.props`](Directory.Build.props) (сейчас `0.1.0`). Локальная сборка пакетов:
+Версия задаётся через `VersionPrefix` в [`Directory.Build.props`](Directory.Build.props) (сейчас `0.2.0`). Локальная сборка пакетов:
 
 ```bash
 ./scripts/pack-verify.sh
@@ -347,10 +354,14 @@ dotnet pack tools/ClickHouseSchemaGen.Migrator -o artifacts/nuget
 
 `nuget.config` в корне уже добавляет source `artifacts/nuget` (для smoke-теста).
 
+**Изменения поведения:**
+
+- `0.2.0`: смена типа колонки класса `Rewrite` (`DateTime -> DateTime64`, `Enum8 -> Enum16`) по умолчанию попадает в manual-блок и требует `--allow-manual`; прежнее автоматическое поведение — `migrations.autoRewrite = true`. Автоматические `MODIFY COLUMN` генерируются с `SETTINGS mutations_sync = 2` и маркером `-- await:mutations_done <table>`. Migrator проверяет результат `ON CLUSTER` DDL по каждому хосту и при сбое миграции бросает `MigrationFailedException` с отчётом о восстановлении.
+
 **MSBuild (рекомендуемый путь, как у Sandbox.Contracts):**
 
 ```xml
-<PackageReference Include="ClickHouseSchemaGen.Tasks" Version="0.1.0" PrivateAssets="all" />
+<PackageReference Include="ClickHouseSchemaGen.Tasks" Version="0.2.0" PrivateAssets="all" />
 ```
 
 ```xml

@@ -71,11 +71,7 @@ public static partial class MigrationSqlGenerator
                             + $"TO {SqlColumnFormatter.FormatColumnName(renamed.NewName)}");
                     break;
                 case ColumnTypeChanged { Kind: TypeChangeKind.Safe or TypeChangeKind.Rewrite } typeChanged:
-                    AppendAlter(
-                        builder,
-                        cluster,
-                        typeChanged.TableName,
-                        $"MODIFY COLUMN {SqlColumnFormatter.FormatColumnName(typeChanged.ColumnName)} {typeChanged.NewType}");
+                    AppendModifyColumn(builder, cluster, typeChanged);
                     break;
                 case SourceTableChanged sourceChanged:
                     builder.AppendLine(
@@ -93,6 +89,23 @@ public static partial class MigrationSqlGenerator
     {
         foreach (var target in AlterTargets(cluster, tableName))
             builder.AppendLine($"ALTER TABLE {target}{cluster.OnCluster} {clause};");
+    }
+
+    private static void AppendModifyColumn(StringBuilder builder, ClusterDdl cluster, ColumnTypeChanged typeChanged)
+    {
+        var clause = $"MODIFY COLUMN {SqlColumnFormatter.FormatColumnName(typeChanged.ColumnName)} {typeChanged.NewType}";
+        var storageTable = cluster.StorageTable(typeChanged.TableName);
+        foreach (var target in AlterTargets(cluster, typeChanged.TableName))
+        {
+            if (!string.Equals(target, storageTable, StringComparison.Ordinal))
+            {
+                builder.AppendLine($"ALTER TABLE {target}{cluster.OnCluster} {clause};");
+                continue;
+            }
+
+            builder.AppendLine($"ALTER TABLE {target}{cluster.OnCluster} {clause} SETTINGS mutations_sync = 2;");
+            builder.AppendLine(cluster.AwaitMutationsDone(target));
+        }
     }
 
     private static IEnumerable<string> AlterTargets(ClusterDdl cluster, string tableName) =>

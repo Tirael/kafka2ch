@@ -10,6 +10,10 @@ public sealed class MigrationRunner(
         @"^\s*--\s*await:kafka_consumers_empty\s+(?<table>[A-Za-z_][A-Za-z0-9_]*)(?:\s+ON\s+CLUSTER\s+(?<cluster>[A-Za-z_][A-Za-z0-9_]*))?\s*$",
         RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
 
+    private static readonly Regex AwaitMutationsMarker = new(
+        @"^\s*--\s*await:mutations_done\s+(?<table>[A-Za-z_][A-Za-z0-9_]*)(?:\s+ON\s+CLUSTER\s+(?<cluster>[A-Za-z_][A-Za-z0-9_]*))?\s*$",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+
     private static readonly Regex DetachTableStatement = new(
         @"^\s*DETACH\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?<table>[A-Za-z_][A-Za-z0-9_]*)(?:\s+ON\s+CLUSTER\s+(?<cluster>[A-Za-z_][A-Za-z0-9_]*))?(?:\s+PERMANENTLY)?\s*;?\s*$",
         RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
@@ -46,6 +50,11 @@ public sealed class MigrationRunner(
 
     private static readonly TimeSpan ReattachTimeout = TimeSpan.FromSeconds(30);
 
+    private static readonly TimeSpan MutationWaitTimeout = TimeSpan.FromMinutes(10);
+
+    private static readonly IReadOnlyDictionary<string, object> RestoreDdlSettings =
+        new Dictionary<string, object> { ["flatten_nested"] = 0 };
+
     public async Task ApplyAsync(
         string connectionString,
         string migrationsDirectory,
@@ -64,6 +73,10 @@ public sealed class MigrationRunner(
             logger,
             timeProvider,
             cancellationToken);
+
+        // Parallel migrators on other replicas can finish and release the lock before
+        // their journal rows replicate here; sync so LoadApplied sees them.
+        await SyncHistoryReplicaAsync(connection, cancellationToken);
 
         var applied = await LoadAppliedAsync(connection, cancellationToken);
         foreach (var interrupted in FindInterruptedMigrations(await LoadJournalAsync(connection, cancellationToken)))
@@ -108,7 +121,29 @@ public sealed class MigrationRunner(
             await RecordJournalAsync(connection, version, file.Name, checksum, SchemaMigrationsTable.StartedKind, cancellationToken);
             await ApplyFileAsync(connection, file.FullName, cancellationToken);
             await RecordJournalAsync(connection, version, file.Name, checksum, SchemaMigrationsTable.MigrationKind, cancellationToken);
+            await SyncHistoryReplicaAsync(connection, cancellationToken);
             applied[version] = checksum;
+        }
+    }
+
+    private async Task SyncHistoryReplicaAsync(ClickHouseConnection connection, CancellationToken cancellationToken)
+    {
+        if (!_cluster.Enabled)
+            return;
+
+        try
+        {
+            await ExecuteAsync(
+                connection,
+                $"SYSTEM SYNC REPLICA {_cluster.HistoryTableName}",
+                cancellationToken);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            logger.LogDebug(
+                exception,
+                "Could not sync history replica {Table}; continuing with local view",
+                _cluster.HistoryTableName);
         }
     }
 
@@ -139,11 +174,7 @@ public sealed class MigrationRunner(
         var statements = SchemaMigrationsTable.UpgradeStatementsFor(_cluster)
             .Prepend(SchemaMigrationsTable.CreateTableSqlFor(_cluster));
         foreach (var statement in statements)
-        {
-            await using var command = connection.CreateCommand();
-            command.CommandText = statement;
-            await command.ExecuteNonQueryAsync(cancellationToken);
-        }
+            await ExecuteAsync(connection, statement, cancellationToken);
     }
 
     private async Task<Dictionary<string, string>> LoadAppliedAsync(
@@ -201,9 +232,8 @@ public sealed class MigrationRunner(
         var detachedQueues = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
         var droppedQueues = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
         var droppedViews = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
-        var savedObjectDdl = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var snapshots = new ObjectSnapshots();
 
-        var completed = false;
         try
         {
             foreach (var statement in SplitStatements(sql))
@@ -222,35 +252,59 @@ public sealed class MigrationRunner(
                     continue;
                 }
 
+                if (TryParseAwaitMutationsMarker(statement, out var mutatedTable, out var mutationsCluster))
+                {
+                    await WaitForMutationsDoneAsync(connection, mutatedTable, mutationsCluster, cancellationToken);
+                    continue;
+                }
+
                 if (string.IsNullOrWhiteSpace(statement)
                     || statement.TrimStart().StartsWith("--", StringComparison.Ordinal))
                     continue;
 
-                await SnapshotObjectDdlBeforeChangeAsync(connection, statement, savedObjectDdl, cancellationToken);
-
-                await using var command = connection.CreateCommand();
-                command.CommandText = statement;
-                await command.ExecuteNonQueryAsync(cancellationToken);
+                await SnapshotObjectDdlBeforeChangeAsync(connection, statement, snapshots, cancellationToken);
+                await ExecuteAsync(connection, statement, cancellationToken);
                 TrackQueueLifecycle(statement, detachedQueues, droppedQueues);
                 TrackViewLifecycle(statement, droppedViews);
             }
-
-            completed = true;
         }
-        finally
+        catch (Exception exception)
         {
-            if (!completed)
-            {
-                if (droppedQueues.Count > 0)
-                    await RestoreDroppedObjectsAsync(connection, droppedQueues, savedObjectDdl);
+            var report = new RestoreReport();
+            if (droppedQueues.Count > 0)
+                await RestoreDroppedObjectsAsync(connection, droppedQueues, snapshots, report);
 
-                if (detachedQueues.Count > 0)
-                    await ReattachDetachedQueuesAsync(connection, detachedQueues);
+            if (detachedQueues.Count > 0)
+                await ReattachDetachedQueuesAsync(connection, detachedQueues, report);
 
-                if (droppedViews.Count > 0)
-                    await RestoreDroppedObjectsAsync(connection, droppedViews, savedObjectDdl);
-            }
+            if (droppedViews.Count > 0)
+                await RestoreDroppedObjectsAsync(connection, droppedViews, snapshots, report);
+
+            if (report.IsEmpty)
+                throw;
+
+            var migrationName = Path.GetFileName(path);
+            if (report.NotRestored.Count > 0)
+                logger.LogError("Recovery after failed migration {Migration}: {Report}", migrationName, report.Summary);
+            else
+                logger.LogWarning("Recovery after failed migration {Migration}: {Report}", migrationName, report.Summary);
+
+            if (exception is OperationCanceledException)
+                throw;
+
+            throw new MigrationFailedException(migrationName, report, exception);
         }
+    }
+
+    public static bool TryParseAwaitMutationsMarker(
+        string statement,
+        [NotNullWhen(true)] out string? tableName,
+        out string? clusterName)
+    {
+        var match = AwaitMutationsMarker.Match(statement);
+        tableName = match.Success ? match.Groups["table"].Value : null;
+        clusterName = match.Groups["cluster"] is { Success: true, Value: var value } ? value : null;
+        return match.Success;
     }
 
     public static void TrackQueueLifecycle(
@@ -310,27 +364,80 @@ public sealed class MigrationRunner(
             droppedViews.Remove(create.Groups["view"].Value);
     }
 
-    private static async Task SnapshotObjectDdlBeforeChangeAsync(
+    private async Task SnapshotObjectDdlBeforeChangeAsync(
         ClickHouseConnection connection,
         string statement,
-        IDictionary<string, string> savedObjectDdl,
+        ObjectSnapshots snapshots,
         CancellationToken cancellationToken)
     {
         var objectName = ExtractTargetObjectForBackup(statement);
-        if (objectName is null || savedObjectDdl.ContainsKey(objectName))
+        if (objectName is null || snapshots.Ddl.ContainsKey(objectName))
             return;
 
         try
         {
-            await using var command = connection.CreateCommand();
-            command.CommandText = $"SHOW CREATE TABLE {objectName}";
-            var createSql = Convert.ToString(await command.ExecuteScalarAsync(cancellationToken));
-            if (!string.IsNullOrWhiteSpace(createSql))
-                savedObjectDdl[objectName] = createSql;
+            if (Convert.ToInt32(await ScalarAsync(connection, $"EXISTS TABLE {objectName}", cancellationToken)) == 0)
+                return;
+
+            var createSql = Convert.ToString(
+                await ScalarAsync(connection, $"SHOW CREATE TABLE {objectName}", cancellationToken));
+            if (string.IsNullOrWhiteSpace(createSql))
+            {
+                logger.LogWarning(
+                    "SHOW CREATE TABLE {Object} returned no DDL; it cannot be restored if this migration fails",
+                    objectName);
+                return;
+            }
+
+            snapshots.Ddl[objectName] = createSql;
+            if (DropViewStatement.IsMatch(statement))
+            {
+                await SnapshotViewSourceAsync(connection, objectName, snapshots, cancellationToken);
+                return;
+            }
+
+            snapshots.Columns[objectName] = await QueryColumnsSignatureAsync(connection, objectName, cancellationToken);
+            foreach (var dependent in await QueryStringsAsync(
+                         connection,
+                         "SELECT arrayJoin(dependencies_table) FROM system.tables "
+                             + $"WHERE database = currentDatabase() AND name = '{EscapeLiteral(objectName)}'",
+                         cancellationToken))
+            {
+                snapshots.ViewSources.TryAdd(dependent, objectName);
+            }
         }
-        catch (Exception)
+        catch (Exception exception) when (exception is not OperationCanceledException)
         {
+            logger.LogWarning(
+                exception,
+                "Could not snapshot {Object} before executing '{Statement}'; it cannot be restored if this migration fails",
+                objectName,
+                statement.Trim());
         }
+    }
+
+    private static async Task SnapshotViewSourceAsync(
+        ClickHouseConnection connection,
+        string viewName,
+        ObjectSnapshots snapshots,
+        CancellationToken cancellationToken)
+    {
+        if (!snapshots.ViewSources.ContainsKey(viewName))
+        {
+            var sources = await QueryStringsAsync(
+                connection,
+                "SELECT name FROM system.tables WHERE database = currentDatabase() "
+                    + $"AND has(dependencies_table, '{EscapeLiteral(viewName)}') ORDER BY name",
+                cancellationToken);
+            if (sources.Count == 0)
+                return;
+
+            snapshots.ViewSources[viewName] = sources[0];
+        }
+
+        var source = snapshots.ViewSources[viewName];
+        if (!snapshots.Columns.ContainsKey(source))
+            snapshots.Columns[source] = await QueryColumnsSignatureAsync(connection, source, cancellationToken);
     }
 
     public static string? ExtractTargetObjectForBackup(string statement)
@@ -350,38 +457,68 @@ public sealed class MigrationRunner(
     private async Task RestoreDroppedObjectsAsync(
         ClickHouseConnection connection,
         IReadOnlyDictionary<string, string?> droppedObjects,
-        IReadOnlyDictionary<string, string> savedObjectDdl)
+        ObjectSnapshots snapshots,
+        RestoreReport report)
     {
         using var timeout = new CancellationTokenSource(ReattachTimeout, timeProvider);
         foreach (var (objectName, clusterName) in droppedObjects)
         {
-            if (!savedObjectDdl.TryGetValue(objectName, out var createSql))
+            if (!snapshots.Ddl.TryGetValue(objectName, out var createSql))
+            {
+                logger.LogWarning(
+                    "Migration failed after DROP of {Object}, but no DDL snapshot was taken; it is not restored",
+                    objectName);
+                report.AddNotRestored(objectName, "no DDL snapshot was taken before it was dropped");
                 continue;
+            }
 
             var onCluster = clusterName is null ? string.Empty : $" ON CLUSTER {clusterName}";
             var restoreSql = WithClusterClause(createSql, clusterName);
             try
             {
+                if (IsMaterializedView(createSql))
+                {
+                    var skipReason = await VerifyViewSourceAsync(connection, objectName, snapshots, timeout.Token);
+                    if (skipReason is not null)
+                    {
+                        logger.LogWarning(
+                            "Migration failed after DROP of {Object}; not restoring it because {Reason}",
+                            objectName,
+                            skipReason);
+                        report.AddNotRestored(objectName, skipReason);
+                        continue;
+                    }
+                }
+
                 logger.LogWarning(
                     "Migration failed after DROP of {Object}; restoring previous definition",
                     objectName);
                 try
                 {
-                    await using var attachCommand = connection.CreateCommand();
-                    attachCommand.CommandText = $"ATTACH TABLE IF NOT EXISTS {objectName}{onCluster}";
-                    await attachCommand.ExecuteNonQueryAsync(timeout.Token);
-
-                    await using var dropCommand = connection.CreateCommand();
-                    dropCommand.CommandText = $"DROP TABLE IF EXISTS {objectName}{onCluster}";
-                    await dropCommand.ExecuteNonQueryAsync(timeout.Token);
+                    await ExecuteAsync(connection, $"ATTACH TABLE IF NOT EXISTS {objectName}{onCluster}", timeout.Token);
                 }
-                catch (Exception)
+                catch (Exception attachException) when (attachException is not OperationCanceledException)
                 {
+                    logger.LogDebug(
+                        "{Object} is not detached, nothing to re-attach before restoring it: {Error}",
+                        objectName,
+                        attachException.Message.Trim());
                 }
 
-                await using var command = connection.CreateCommand();
-                command.CommandText = restoreSql;
-                await command.ExecuteNonQueryAsync(timeout.Token);
+                try
+                {
+                    await ExecuteAsync(connection, $"DROP TABLE IF EXISTS {objectName}{onCluster}", timeout.Token);
+                }
+                catch (Exception cleanupException) when (cleanupException is not OperationCanceledException)
+                {
+                    logger.LogWarning(
+                        cleanupException,
+                        "Could not drop leftovers of {Object} before restoring it; trying to recreate anyway",
+                        objectName);
+                }
+
+                await ExecuteAsync(connection, restoreSql, timeout.Token, RestoreDdlSettings);
+                report.AddRestored(objectName);
             }
             catch (Exception restoreException)
             {
@@ -389,9 +526,33 @@ public sealed class MigrationRunner(
                     restoreException,
                     "Failed to restore {Object} after migration failure",
                     objectName);
+                report.AddNotRestored(objectName, restoreException.Message.Trim());
             }
         }
     }
+
+    private static async Task<string?> VerifyViewSourceAsync(
+        ClickHouseConnection connection,
+        string viewName,
+        ObjectSnapshots snapshots,
+        CancellationToken cancellationToken)
+    {
+        if (!snapshots.ViewSources.TryGetValue(viewName, out var source)
+            || !snapshots.Columns.TryGetValue(source, out var expected))
+            return "its source table and expected source schema are unknown";
+
+        var actual = await QueryColumnsSignatureAsync(connection, source, cancellationToken);
+        if (actual.Length == 0)
+            return $"source '{source}' does not exist";
+
+        return string.Equals(actual, expected, StringComparison.Ordinal)
+            ? null
+            : $"source '{source}' schema changed: expected ({expected}), found ({actual})";
+    }
+
+    private static bool IsMaterializedView(string createSql) =>
+        CreateObjectHeader.Match(createSql) is { Success: true } header
+        && header.Value.Contains("MATERIALIZED", StringComparison.OrdinalIgnoreCase);
 
     public static string WithClusterClause(string createSql, string? clusterName) =>
         string.IsNullOrWhiteSpace(clusterName)
@@ -401,7 +562,8 @@ public sealed class MigrationRunner(
 
     private async Task ReattachDetachedQueuesAsync(
         ClickHouseConnection connection,
-        IReadOnlyDictionary<string, string?> detachedQueues)
+        IReadOnlyDictionary<string, string?> detachedQueues,
+        RestoreReport report)
     {
         using var timeout = new CancellationTokenSource(ReattachTimeout, timeProvider);
         foreach (var (tableName, clusterName) in detachedQueues)
@@ -413,9 +575,8 @@ public sealed class MigrationRunner(
                 logger.LogWarning(
                     "Migration failed after DETACH of {Table}; re-attaching to resume Kafka consumption",
                     tableName);
-                await using var command = connection.CreateCommand();
-                command.CommandText = attachSql;
-                await command.ExecuteNonQueryAsync(timeout.Token);
+                await ExecuteAsync(connection, attachSql, timeout.Token);
+                report.AddRestored(tableName);
             }
             catch (Exception attachException)
             {
@@ -424,6 +585,7 @@ public sealed class MigrationRunner(
                     "Failed to re-attach {Table} after migration failure; "
                         + "Kafka consumption may stay stopped until ATTACH or server restart",
                     tableName);
+                report.AddNotRestored(tableName, attachException.Message.Trim());
             }
         }
     }
@@ -460,6 +622,114 @@ public sealed class MigrationRunner(
         }
     }
 
+    private async Task WaitForMutationsDoneAsync(
+        ClickHouseConnection connection,
+        string tableName,
+        string? clusterName,
+        CancellationToken cancellationToken)
+    {
+        var database = await QueryCurrentDatabaseAsync(connection, cancellationToken);
+        var source = clusterName is null
+            ? "system.mutations"
+            : $"clusterAllReplicas('{EscapeLiteral(clusterName)}', system.mutations)";
+        var deadline = timeProvider.GetUtcNow() + MutationWaitTimeout;
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            await using var command = connection.CreateCommand();
+            command.CommandText =
+                $"SELECT count(), anyIf(latest_fail_reason, latest_fail_reason != '') FROM {source} "
+                + $"WHERE database = '{EscapeLiteral(database)}' AND table = '{EscapeLiteral(tableName)}' AND is_done = 0";
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            await reader.ReadAsync(cancellationToken);
+            var pending = Convert.ToInt64(reader.GetValue(0), CultureInfo.InvariantCulture);
+            var failReason = Convert.ToString(reader.GetValue(1), CultureInfo.InvariantCulture);
+            if (pending == 0)
+                return;
+
+            if (!string.IsNullOrEmpty(failReason))
+            {
+                throw new InvalidOperationException(
+                    $"Mutation on '{tableName}' failed ({pending} not done in system.mutations): {failReason}");
+            }
+
+            if (timeProvider.GetUtcNow() >= deadline)
+            {
+                throw new TimeoutException(
+                    $"Timed out after {MutationWaitTimeout} waiting for {pending} mutation(s) on '{tableName}' "
+                        + "to finish (system.mutations is_done = 0).");
+            }
+
+            logger.LogInformation("Waiting for {Count} mutation(s) on {Table} to finish", pending, tableName);
+            await Task.Delay(TimeSpan.FromSeconds(1), timeProvider, cancellationToken);
+        }
+    }
+
+    private static async Task ExecuteAsync(
+        ClickHouseConnection connection,
+        string statement,
+        CancellationToken cancellationToken,
+        IReadOnlyDictionary<string, object>? settings = null)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = statement;
+        foreach (var (name, value) in settings ?? new Dictionary<string, object>())
+            command.CustomSettings[name] = value;
+
+        if (!DistributedDdlResult.IsDistributedDdl(statement))
+        {
+            await command.ExecuteNonQueryAsync(cancellationToken);
+            return;
+        }
+
+        command.CustomSettings[DistributedDdlResult.OutputModeSetting] = DistributedDdlResult.OutputMode;
+        var hosts = new List<DistributedDdlHostStatus>();
+        await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
+        {
+            while (await reader.ReadAsync(cancellationToken))
+                hosts.Add(DistributedDdlResult.ReadHost(reader));
+        }
+
+        DistributedDdlResult.EnsureSucceeded(statement, hosts);
+    }
+
+    private static async Task<object?> ScalarAsync(
+        ClickHouseConnection connection,
+        string sql,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        return await command.ExecuteScalarAsync(cancellationToken);
+    }
+
+    private static async Task<List<string>> QueryStringsAsync(
+        ClickHouseConnection connection,
+        string sql,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var values = new List<string>();
+        while (await reader.ReadAsync(cancellationToken))
+            values.Add(Convert.ToString(reader.GetValue(0), CultureInfo.InvariantCulture)!);
+        return values;
+    }
+
+    private static async Task<string> QueryColumnsSignatureAsync(
+        ClickHouseConnection connection,
+        string tableName,
+        CancellationToken cancellationToken) =>
+        Convert.ToString(
+            await ScalarAsync(
+                connection,
+                "SELECT arrayStringConcat(groupArray(concat(name, ' ', type)), ', ') FROM ("
+                    + "SELECT name, type FROM system.columns WHERE database = currentDatabase() "
+                    + $"AND table = '{EscapeLiteral(tableName)}' ORDER BY position)",
+                cancellationToken),
+            CultureInfo.InvariantCulture) ?? string.Empty;
+
     private static async Task<string> QueryCurrentDatabaseAsync(
         ClickHouseConnection connection,
         CancellationToken cancellationToken)
@@ -490,6 +760,15 @@ public sealed class MigrationRunner(
     }
 
     private static string EscapeLiteral(string value) => value.Replace("'", "''", StringComparison.Ordinal);
+
+    private sealed class ObjectSnapshots
+    {
+        public Dictionary<string, string> Ddl { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+        public Dictionary<string, string> Columns { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+        public Dictionary<string, string> ViewSources { get; } = new(StringComparer.OrdinalIgnoreCase);
+    }
 
     public static IEnumerable<string> SplitStatements(string sql) => SqlStatementSplitter.Split(sql);
 

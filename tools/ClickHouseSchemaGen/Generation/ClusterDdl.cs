@@ -127,6 +127,12 @@ public sealed partial class ClusterDdl
         return $"-- await:kafka_consumers_empty {queueName}{clusterSuffix}";
     }
 
+    public string AwaitMutationsDone(string tableName)
+    {
+        var clusterSuffix = Enabled && Name is not null ? $" ON CLUSTER {Name}" : string.Empty;
+        return $"-- await:mutations_done {tableName}{clusterSuffix}";
+    }
+
     public string ProtobufWireFunctionDefinitions() =>
         UsesOnCluster
             ? CreateFunctionRegex().Replace(ProtobufWireSqlFunctions.Definitions, match => match.Value + OnCluster)

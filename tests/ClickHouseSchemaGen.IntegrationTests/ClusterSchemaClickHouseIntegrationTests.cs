@@ -200,6 +200,31 @@ public sealed class ClusterSchemaClickHouseIntegrationTests : IAsyncLifetime
         (await ScalarAsync(connection, "SELECT min(version) FROM orders_dedup FINAL")).Should().Be(2);
     }
 
+    [Fact]
+    public async Task GivenOnClusterDdlFailsOnSecondNode_WhenApplied_ThenFailsNamingThatHostAndMigrationNotRecorded()
+    {
+        const string version = "20990201000000";
+        await using var shard2 = new ClickHouseConnection(_shard2.GetConnectionString());
+        await shard2.OpenAsync();
+        await ExecuteAsync(shard2, "CREATE TABLE ddl_probe (conflict String) ENGINE = MergeTree ORDER BY conflict");
+        await File.WriteAllTextAsync(
+            Path.Combine(_migrationsDirectory, $"{version}_ddl_probe.sql"),
+            $"CREATE TABLE ddl_probe ON CLUSTER {ClusterName} (x UInt8) ENGINE = MergeTree ORDER BY x;");
+
+        var act = () => CreateRunner().ApplyAsync(_shard1.GetConnectionString(), _migrationsDirectory, CancellationToken.None);
+
+        var failure = (await act.Should().ThrowAsync<DistributedDdlException>()).Which;
+        failure.FailedHosts.Should().Equal("ch2:9000");
+        failure.Message.Should().Contain("Failed: ch2:9000 (code 57:").And.Contain("Succeeded: ch1:9000");
+
+        await using var shard1 = new ClickHouseConnection(_shard1.GetConnectionString());
+        await shard1.OpenAsync();
+        (await ScalarAsync(shard1,
+                $"SELECT count() FROM clusterAllReplicas('{ClusterName}', currentDatabase(), schema_migrations) "
+                    + $"WHERE kind = 'migration' AND version = '{version}'"))
+            .Should().Be(0);
+    }
+
     private ClickHouseContainer CreateNode(string host, string shard) =>
         new ClickHouseBuilder(TestContainersEnv.FullClickHouseImageName)
             .WithNetwork(_network)
