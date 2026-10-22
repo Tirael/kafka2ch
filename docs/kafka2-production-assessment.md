@@ -38,7 +38,7 @@
 | Контекст | Версия |
 | --- | --- |
 | docker-compose / `.env.example` | `clickhouse/clickhouse-server:26.6.3.62` (README: ≥ **26.6**) |
-| Integration tests | `clickhouse/clickhouse-server:25.11` |
+| Integration tests (`TestContainersEnv`, override `CLICKHOUSE_IMAGE`) | `clickhouse/clickhouse-server:26.6.3.62` |
 | Минимальная фича для SR envelope | `kafka_schema_registry_skip_bytes` с **25.11+** |
 
 Обе линейки (25.11 и 26.6) **уже содержат** Kafka2 (появился в **24.8**). Версия стенда **не** делает Kafka2 «готовым к prod» — статус experimental не снят.
