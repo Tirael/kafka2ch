@@ -27,6 +27,8 @@ public sealed class ClusterConfig
 
     public const string DefaultReplicatedDatabasePath = "/clickhouse/databases/{uuid}";
 
+    public const string DefaultReplicatedDatabaseShardName = "{shard}";
+
     public string? Name { get; set; }
 
     public string DdlMode { get; set; } = ClusterDdlModes.OnCluster;
@@ -48,6 +50,8 @@ public sealed class ClusterConfig
     public string ReplicatedDatabaseName { get; set; } = DefaultReplicatedDatabaseName;
 
     public string ReplicatedDatabasePath { get; set; } = DefaultReplicatedDatabasePath;
+
+    public string ReplicatedDatabaseShardName { get; set; } = DefaultReplicatedDatabaseShardName;
 
     public string ReplicatedDatabaseReplicaName { get; set; } = DefaultReplicaName;
 

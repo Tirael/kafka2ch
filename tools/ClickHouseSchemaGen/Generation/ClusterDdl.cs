@@ -80,9 +80,11 @@ public sealed partial class ClusterDdl
 
         var database = _config!.ReplicatedDatabaseName.Trim();
         var path = _config.ReplicatedDatabasePath.Trim();
+        var shard = _config.ReplicatedDatabaseShardName.Trim();
         var replica = _config.ReplicatedDatabaseReplicaName.Trim();
         return $"CREATE DATABASE IF NOT EXISTS {database} ON CLUSTER {Name}" + SqlText.NewLine +
-               $"ENGINE = Replicated('{EscapeLiteral(path)}', '{EscapeLiteral(replica)}');" + SqlText.NewLine;
+               $"ENGINE = Replicated('{EscapeLiteral(path)}', '{EscapeLiteral(shard)}', '{EscapeLiteral(replica)}');" +
+               SqlText.NewLine;
     }
 
     public string UseReplicatedDatabaseSql() =>

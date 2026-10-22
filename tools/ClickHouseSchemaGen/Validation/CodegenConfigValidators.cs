@@ -225,6 +225,7 @@ internal sealed class ClusterConfigValidator : AbstractValidator<ClusterConfig>
                 .Must(ValidationRules.IsSqlIdentifier)
                 .WithMessage("replicatedDatabaseName must be a valid ClickHouse identifier.");
             RuleFor(cluster => cluster.ReplicatedDatabasePath).NotEmpty();
+            RuleFor(cluster => cluster.ReplicatedDatabaseShardName).NotEmpty();
             RuleFor(cluster => cluster.ReplicatedDatabaseReplicaName).NotEmpty();
         });
     }

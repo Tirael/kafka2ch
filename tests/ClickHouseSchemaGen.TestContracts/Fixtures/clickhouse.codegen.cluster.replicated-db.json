@@ -6,6 +6,7 @@
     "ddlMode": "replicatedDatabase",
     "replicatedDatabaseName": "kafka2ch",
     "replicatedDatabasePath": "/clickhouse/databases/{uuid}",
+    "replicatedDatabaseShardName": "{shard}",
     "replicatedDatabaseReplicaName": "{replica}",
     "materializedViewsWriteThroughDistributed": true
   },
