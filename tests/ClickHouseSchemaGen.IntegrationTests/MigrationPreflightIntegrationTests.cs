@@ -163,7 +163,7 @@ public sealed class MigrationPreflightIntegrationTests : IAsyncLifetime
         Convert.ToInt32(await ScalarAsync("EXISTS TABLE orders_mv")).Should().Be(1);
         (await ScalarAsync("SHOW CREATE TABLE orders_queue")).Should().Be(queueBefore);
         Convert.ToInt32(await ScalarAsync(
-                "SELECT count() FROM schema_migrations WHERE version LIKE '2099%'"))
+                "SELECT count() FROM schema_migrations WHERE kind = 'migration' AND version LIKE '2099%'"))
             .Should().Be(0);
 
         await ScalarAsync("SYSTEM FLUSH LOGS");
