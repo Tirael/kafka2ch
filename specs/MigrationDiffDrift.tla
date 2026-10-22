@@ -103,8 +103,11 @@ RetypeKindManual ==
       THEN Old.colName \in OrderByColumns \/ New.colName \in OrderByColumns
       ELSE Old.colName \in OrderByColumns
 
+\* DiffKafkaDependentViews (#73): persistKafkaMeta-only change → ViewChanged when
+\* an MV sources the queue (this model always has one MV into t).
 ViewChanged ==
     \/ Impl = "fixed" /\ Old.vAuto # New.vAuto
+    \/ Impl = "fixed" /\ Old.meta # New.meta
     \/ Old.vSource # New.vSource
     \/ Old.mappings # New.mappings
 

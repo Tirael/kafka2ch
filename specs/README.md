@@ -172,9 +172,8 @@ statement order inside a migration file.
 | `KafkaMetaResolution.buggy-autoview` | initial state | `AutoViewMatchesAutoTable` violated |
 | `KafkaMetaResolution.buggy-explicitview` | initial state | `ExplicitViewConsistentWithTargetAndConfig` violated |
 | `KafkaMetaResolution.open-explicit-target` | initial state | `ExplicitViewTargetsExistingColumns` violated |
-| `MigrationDiffDrift` | 774 | pass |
+| `MigrationDiffDrift` | 1 020 | pass |
 | `MigrationDiffDrift.buggy-*` (4 configs) | initial state | the named invariant violated |
-| `MigrationDiffDrift.open-persist-meta` | initial state | `DriftImpliesDiff` violated |
 | `TypeCompatibility` | 256 | pass |
 | `TypeCompatibility.buggy-*` (2 configs) | initial state | the named invariant violated |
 | `MigratorLock` | 225 811 | pass |
