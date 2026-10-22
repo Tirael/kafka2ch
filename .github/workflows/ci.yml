@@ -67,6 +67,15 @@ jobs:
         with:
           dotnet-version: 8.0.x
 
+      - name: Cache NuGet packages
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.nuget/packages
+            !~/.nuget/packages/clickhouseschemagen.*
+          key: nuget-${{ runner.os }}-${{ hashFiles('Directory.Packages.props', '**/*.csproj', 'nuget.config') }}
+          restore-keys: nuget-${{ runner.os }}-
+
       # nuget.config points at ./artifacts/nuget for local packs. The folder is
       # gitignored, and NuGet fails restore when a local source is missing.
       - name: Prepare local NuGet source
@@ -78,6 +87,23 @@ jobs:
 
       - name: Build
         run: dotnet build kafka2ch.sln --configuration Release --no-restore
+
+      - name: Codegen up-to-date
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          cli=tools/ClickHouseSchemaGen.Cli/bin/Release/net8.0/ClickHouseSchemaGen.Cli.dll
+          contracts=src/Sandbox.Contracts/bin/Release/net8.0/Sandbox.Contracts.dll
+          for config in clickhouse.codegen.json clickhouse.codegen.cluster.json clickhouse.codegen.cluster.replicated-db.json; do
+            dotnet exec "$cli" generate --config "src/Sandbox.Contracts/$config" --assemblies "$contracts"
+            dotnet exec "$cli" migrate versions --config "src/Sandbox.Contracts/$config"
+            dotnet exec "$cli" migrate status --config "src/Sandbox.Contracts/$config" --assemblies "$contracts"
+          done
+          if ! git diff --exit-code -- docker/ || [ -n "$(git status --porcelain --untracked-files=all -- docker/)" ]; then
+            git status --short -- docker/
+            echo "::error::Generated artifacts under docker/ are stale. Rebuild src/Sandbox.Contracts (or run the CLI for all three configs) and commit the result."
+            exit 1
+          fi
 
       - name: Migration versions match across topologies
         run: dotnet exec tools/ClickHouseSchemaGen.Cli/bin/Release/net8.0/ClickHouseSchemaGen.Cli.dll migrate verify --all-topologies src/Sandbox.Contracts/clickhouse.topologies.json
@@ -99,3 +125,100 @@ jobs:
           name: test-results-${{ matrix.name }}
           path: TestResults
           if-no-files-found: ignore
+
+  package:
+    name: Package
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.nuget/packages
+            !~/.nuget/packages/clickhouseschemagen.*
+          key: nuget-${{ runner.os }}-${{ hashFiles('Directory.Packages.props', '**/*.csproj', 'nuget.config') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      - name: Pack and verify
+        run: ./scripts/pack-verify.sh
+
+      - name: Upload packages
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: nuget-packages
+          path: artifacts/nuget/ClickHouseSchemaGen*.nupkg
+          if-no-files-found: ignore
+
+  migrations-apply:
+    name: Migrations apply (${{ matrix.topology }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - topology: single-node
+            compose-files: docker-compose.yml
+            migrations: docker/clickhouse/migrations
+          - topology: cluster
+            compose-files: docker-compose.yml:docker-compose.cluster.yml
+            migrations: docker/clickhouse-cluster/migrations
+          - topology: cluster-replicated-db
+            compose-files: docker-compose.yml:docker-compose.cluster.yml:docker-compose.cluster.replicated-db.yml
+            migrations: docker/clickhouse-cluster/migrations-replicated-db
+    env:
+      COMPOSE_FILE: ${{ matrix.compose-files }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Prepare environment
+        run: cp .env.example .env
+
+      - name: Build migrator image
+        run: docker compose build clickhouse-migrate
+
+      # Init records every committed migration in schema_migrations, so the
+      # first run only checks checksums. Dropping those rows makes the second
+      # run execute each migration file against the initialized topology.
+      - name: Init and migrate
+        run: docker compose run --rm clickhouse-migrate
+
+      - name: Replay committed migrations
+        run: |
+          docker exec clickhouse clickhouse-client --password sandbox \
+            --query "ALTER TABLE default.schema_migrations DELETE WHERE kind = 'migration' SETTINGS mutations_sync = 2"
+          docker compose run --rm clickhouse-migrate
+
+      - name: Migrate is idempotent
+        run: |
+          docker compose run --rm clickhouse-migrate
+          expected=$(find "${{ matrix.migrations }}" -maxdepth 1 -name '*.sql' | wc -l)
+          applied=$(docker exec clickhouse clickhouse-client --password sandbox \
+            --query "SELECT count() FROM default.schema_migrations WHERE kind = 'migration'")
+          docker exec clickhouse clickhouse-client --password sandbox --format PrettyCompact \
+            --query "SELECT version, name, kind, applied_at FROM default.schema_migrations ORDER BY kind, version"
+          if [ "$applied" != "$expected" ]; then
+            echo "::error::Expected $expected applied migrations, found $applied."
+            exit 1
+          fi
+
+      - name: Compose logs
+        if: failure()
+        run: docker compose logs --no-color --tail 200
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v --remove-orphans
