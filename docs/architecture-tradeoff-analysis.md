@@ -386,7 +386,7 @@ NR-1 recreate очереди без потерь (DETACH → await → recreate)
 
 | # | Рекомендация | Когда |
 | --- | --- | --- |
-| P2-1 | Оценить **внешний consumer** (Kafka Connect ClickHouse Sink с exactly-once или свой .NET consumer с `insert_deduplication_token`) при требованиях «без дублей» и изоляции ресурсов; генератор переиспользуется для MergeTree/MV-части (Kafka-DDL становится опциональным выходом) | Если P0-1 не хватает или ingestion мешает запросам |
+| P2-1 | Оценить **внешний consumer** (Kafka Connect ClickHouse Sink с exactly-once или свой .NET consumer с `insert_deduplication_token`) при требованиях «без дублей» и изоляции ресурсов; генератор переиспользуется для MergeTree/MV-части (Kafka-DDL становится опциональным выходом). Разбор и триггеры — [ADR-0001](./adr/0001-ingestion-path.md) | Если P0-1 не хватает или ingestion мешает запросам |
 | P2-2 | ClickPipes — при переезде в ClickHouse Cloud (нативный SR, ключ без UDF) | Cloud |
 | P2-3 | Вход генератора из `.proto`/descriptor set (protoc/buf) параллельно с C#-сборками — для не-.NET продьюсеров | Внешние потребители пакета |
 | P2-4 | Перенести TLA+-модели в репозиторий и гонять TLC в CI (nightly), добавить модель деплоя (Migrator ∥ Migrator, partial `ON CLUSTER`) | Поддержание инвариантов при развитии |
