@@ -187,6 +187,10 @@ public sealed class KafkaNamedCollectionTests
         xml.Should().Contain("from_env=\"KAFKA_SASL_USERNAME\"");
         xml.Should().Contain("from_env=\"KAFKA_SASL_PASSWORD\"");
         xml.Should().Contain("from_env=\"KAFKA_BROKER_LIST\"");
+        xml.Should().Contain("ssl_endpoint_identification_algorithm>https");
+        xml.Should().NotContain(
+            "<ssl_endpoint_identification_algorithm></ssl_endpoint_identification_algorithm>",
+            "empty ssl_endpoint_identification_algorithm is rejected by cppkafka/librdkafka");
         ForbidPlaintextPasswordLiterals(xml);
     }
 

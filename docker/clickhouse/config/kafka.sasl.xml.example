@@ -15,6 +15,12 @@
   Do NOT put plaintext passwords in this file or commit a filled copy.
   Credential rotation: update the secret store → restart ClickHouse (or detach/attach
   the Kafka queue) — no schema migration.
+
+  ssl_endpoint_identification_algorithm: keep "https" when the broker cert SAN/CN
+  matches the bootstrap host (usual staging/prod). Do NOT set an empty value —
+  cppkafka/librdkafka reject it (ConfigException: cannot be set to empty value).
+  To disable hostname verification in a throwaway lab only, omit the key or use a
+  non-empty algorithm librdkafka accepts for that build — never <…></…> empty.
 -->
 <clickhouse>
     <named_collections>
