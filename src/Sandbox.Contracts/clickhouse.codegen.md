@@ -82,6 +82,16 @@ ORDER BY (event_time, order_id, kafka_partition, kafka_offset)
 - Схлопывание происходит при слияниях, поэтому точные чтения — `SELECT … FROM orders FINAL`; `count() FROM orders FINAL = uniqExact(kafka_partition, kafka_offset)`.
 - Строки, перенесённые миграцией из старой `MergeTree`, получают `kafka_partition = kafka_offset = 0` и схлопываются по `(event_time, order_id)`.
 
+### Контракт чтения (FINAL / агрегаты)
+
+Канон для потребителей данных (BI, API, `Sandbox.App`):
+
+1. **Предпочтительно** — refreshable-агрегаты `orders_agg_*` (уже построены из `orders FINAL`).
+2. **Точные чтения raw** — только `SELECT … FROM orders FINAL` (или `orders_local FINAL` на шарде).
+3. **`orders` без `FINAL`** — только отладка «есть ли строки»; метрики по такому запросу **завышены** до merge и **запрещены** в prod-пути.
+
+`ReadAggregates` в `Sandbox.App` использует только `OrderAggregateQueries` (`Sandbox.Observability`): `FROM orders_agg_1m` + `system.view_refreshes` для `orders_agg_mv`. Unit-тесты (`OrderAggregateQueriesTests`) запрещают появление `FROM orders` без `FINAL` на этом пути. Опциональные SQL-views вида `orders_deduped AS SELECT * FROM orders FINAL` и отдельные BI-роли с запретом raw **не** входят в демо-схему (вводятся ops при необходимости).
+
 **Агрегаты `orders_agg_1m`** (объявлены в [`pipeline.aggregates[]`](#aggregates)) — refreshable MV `REFRESH EVERY 1 MINUTE` с **полным пересчётом** `FROM orders FINAL` в обычную `MergeTree` (каждый refresh атомарно подменяет содержимое). Insert-триггерный `SummingMergeTree` суммировал бы каждую повторную вставку, а дедуп `orders` случается позже, при слиянии. Скользящее окно не выбрано: refresh без `APPEND` заменяет всю таблицу, поэтому окно стёрло бы старые минуты, а `APPEND` + окно снова требует дедупа цели. Цена: агрегаты отстают до минуты, каждый refresh читает весь `orders` (для демо приемлемо; для больших объёмов — партиционирование и пересчёт только свежих партиций). `ReadAggregates` читает `sum(...) GROUP BY minute, category` (в кластере строки шардов складываются) и логирует `system.view_refreshes.last_success_time`. Принудительно: `SYSTEM REFRESH VIEW orders_agg_mv; SYSTEM WAIT VIEW orders_agg_mv`.
 
 Смена движка/ключа — manual-миграция `*_dedup_orders_by_kafka_offset.sql` (по одной на топологию): DETACH очереди → копия `orders` в новую `ReplacingMergeTree`-таблицу (в кластере через временную `Distributed`) → `EXCHANGE TABLES` → пересоздание `orders_agg_1m` / `orders_agg_mv` → ATTACH очереди и новый `orders_mv` с `_partition` / `_offset`.
