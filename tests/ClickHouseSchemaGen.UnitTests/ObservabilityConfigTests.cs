@@ -51,6 +51,9 @@ public sealed class ObservabilityConfigTests
         runbook.Should().Contain("DETACH");
         runbook.Should().Contain("Staging drill");
         runbook.Should().Contain("параллельн");
+        runbook.Should().Contain("run-verify-gate.sh");
+        runbook.Should().Contain("VERIFY_ASSUME_STACK=1");
+        runbook.Should().Contain("Data-quality gate");
     }
 
     [Fact]
@@ -61,6 +64,40 @@ public sealed class ObservabilityConfigTests
         script.Should().Contain("uniqExact(order_id)");
         script.Should().Contain("FROM orders FINAL");
         script.Should().Contain("N1 A1");
+    }
+
+    [Fact]
+    public void VerifySingleScript_GatesCountVsUniqExactOrderId()
+    {
+        var script = File.ReadAllText(Path.Combine(FindRepositoryRoot(), "scripts", "verify-single.sh"));
+
+        script.Should().Contain("uniqExact(order_id)");
+        script.Should().Contain("FROM orders FINAL");
+        script.Should().Contain("fail");
+    }
+
+    [Fact]
+    public void RunVerifyGateScript_SupportsAssumeStackAndTopologies()
+    {
+        var script = File.ReadAllText(Path.Combine(FindRepositoryRoot(), "scripts", "run-verify-gate.sh"));
+
+        script.Should().Contain("VERIFY_ASSUME_STACK");
+        script.Should().Contain("verify-cluster.sh");
+        script.Should().Contain("verify-single.sh");
+        script.Should().Contain("wait_for_rows");
+    }
+
+    [Fact]
+    public void VerifyDataGateWorkflow_IsNightlyNotPullRequest()
+    {
+        var workflow = File.ReadAllText(
+            Path.Combine(FindRepositoryRoot(), ".github", "workflows", "verify-data-gate.yml"));
+
+        workflow.Should().Contain("schedule:");
+        workflow.Should().Contain("workflow_dispatch:");
+        workflow.Should().Contain("run-verify-gate.sh");
+        workflow.Should().Contain("VERIFY_TOPOLOGY: cluster");
+        workflow.Should().NotContain("pull_request:");
     }
 
     private static string Normalize(string text) => text.Replace("\r\n", "\n").Trim();

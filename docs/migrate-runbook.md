@@ -15,7 +15,15 @@
    WHERE kind = 'migration' ORDER BY version DESC LIMIT 5;
    SELECT * FROM system.kafka_consumers WHERE table = 'orders_queue';
    ```
-5. Только после зелёного migrate — **продьюсеры** / нагрузка.
+5. **Data-quality gate (обязателен, P1-2 / N1 A1).** После того как в `orders` есть строки — прогнать gate; exit ≠ 0 → **не** продвигать релиз, page on-call (тот же канал, что Prometheus critical):
+   ```bash
+   # кластер (staging/prod или уже поднятый compose)
+   VERIFY_ASSUME_STACK=1 ./scripts/run-verify-gate.sh
+   # single-node
+   VERIFY_ASSUME_STACK=1 VERIFY_TOPOLOGY=single ./scripts/run-verify-gate.sh
+   ```
+   Проверка: `scripts/verify-cluster.sh` / `scripts/verify-single.sh` (`count() = uniqExact(order_id) FROM orders FINAL`). Nightly в репозитории — workflow **Verify data gate** (`.github/workflows/verify-data-gate.yml`); на живом staging — тот же cron/Job против кластера (не «по желанию»). См. [observability.md § N1](observability.md#n1-межшардовые-дубли-a1-accept).
+6. Только после зелёного migrate **и** зелёного data gate — **продьюсеры** / нагрузка (если продьюсеры уже работают — gate всё равно обязателен перед promote).
 
 ## Запреты
 

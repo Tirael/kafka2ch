@@ -153,8 +153,8 @@ Workflow: правка proto → build падает на drift → `Cli migrate 
 
 | Механизм | Назначение |
 | --- | --- |
-| Gate | `scripts/verify-cluster.sh`: `count() FROM orders FINAL` vs `uniqExact(order_id)` — ненулевое расхождение = fail |
-| Алерт | Post-deploy / nightly cron: падение `verify-cluster.sh` → pager; опционально SQL-exporter → метрика `clickhouse_orders_cross_shard_dupes` (см. [observability.md](../../docs/observability.md#n1-межшардовые-дубли-a1-accept)) |
+| Gate | `scripts/verify-cluster.sh` / `scripts/run-verify-gate.sh`: `count() FROM orders FINAL` vs `uniqExact(order_id)` — ненулевое расхождение = fail; single-node — `scripts/verify-single.sh` |
+| Алерт | **Обязательны** post-deploy (migrate-runbook) и nightly: workflow `verify-data-gate.yml` + staging cron с `VERIFY_ASSUME_STACK=1`; падение → pager; опционально SQL-exporter → `clickhouse_orders_cross_shard_dupes` (см. [observability.md](../../docs/observability.md#n1-межшардовые-дубли-a1-accept)) |
 | Reconcile | Найти `order_id` на >1 шарде; оставить каноническую копию (обычно min `(kafka_partition, kafka_offset)` или бизнес-правило); `ALTER … DELETE` / ручной DELETE на лишних шардах; повторный `verify-cluster.sh` |
 | Аналитика | Дашборды и глобальные uniq — через `orders_agg_*` / `order_id` с оговоркой A1; не полагаться на `count() FROM orders FINAL` как на глобальный uniq без проверки gate |
 
