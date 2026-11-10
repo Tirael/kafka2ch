@@ -167,15 +167,15 @@ sample_queries() {
     [[ -n $ms ]] || ms="nan"
     echo "$i,$ms" >> "$file"
   done
-  # p50/p95/max ignoring nan
-  awk -F, 'NR>1 && $2+0==$2 { a[++n]=$2+0 }
+  # p50/p95/max ignoring nan (POSIX awk — no gawk asort)
+  awk -F, 'NR>1 && $2+0==$2 { print $2+0 }' "$file" | sort -n | awk '
+    { a[++n]=$1 }
     END {
       if (n == 0) { print ",,,"; exit }
-      asort(a)
       p50 = a[int((n-1)*0.50)+1]
       p95 = a[int((n-1)*0.95)+1]
       printf "%.1f,%.1f,%.1f,%d\n", p50, p95, a[n], n
-    }' "$file"
+    }'
 }
 
 refresh_snapshot() {
@@ -195,32 +195,24 @@ refresh_snapshot() {
 
 force_refresh_samples() {
   local n=$1 file=$2
-  echo "sample_i,duration_ms,status,exception" > "$file"
-  local i before after dur status exc
+  echo "sample_i,duration_ms,read_rows,written_rows,status,exception" > "$file"
+  local i dur status exc read_rows written_rows
   for i in $(seq 1 "$n"); do
-    before=$(ch --query "SELECT last_success_time FROM system.view_refreshes WHERE database = currentDatabase() AND view = 'orders_agg_mv'")
     if ! ch --query "SYSTEM REFRESH VIEW orders_agg_mv" >/dev/null 2>"$OUT/logs/refresh-$i.err"; then
       log "SYSTEM REFRESH VIEW failed (sample $i); see logs/refresh-$i.err — falling back to scheduled wait"
       return 1
     fi
-    # Wait until last_success_time advances (or timeout ~2 min)
-    local deadline
-    deadline=$(calc "$(now) + 120" 0)
-    while :; do
-      after=$(ch --query "SELECT last_success_time FROM system.view_refreshes WHERE database = currentDatabase() AND view = 'orders_agg_mv'")
-      [[ "$after" != "$before" && -n $after ]] && break
-      if (( $(calc "$(now) > $deadline" 0) )); then
-        log "refresh wait timeout sample $i"
-        break
-      fi
-      sleep 0.5
-    done
-    read -r dur status exc < <(ch --format TSV --query "
-      SELECT last_success_duration_ms, status, replaceAll(exception, '\t', ' ')
+    # Wait for the attempt to finish (ClickHouse 26.x).
+    if ! ch --query "SYSTEM WAIT VIEW orders_agg_mv" >/dev/null 2>>"$OUT/logs/refresh-$i.err"; then
+      log "SYSTEM WAIT VIEW failed (sample $i); falling back to scheduled wait"
+      return 1
+    fi
+    read -r dur read_rows written_rows status exc < <(ch --format TSV --query "
+      SELECT last_success_duration_ms, read_rows, written_rows, status, replaceAll(exception, '\t', ' ')
       FROM system.view_refreshes
       WHERE database = currentDatabase() AND view = 'orders_agg_mv'")
-    echo "$i,$dur,$status,$exc" >> "$file"
-    log "forced refresh #$i duration_ms=$dur status=$status"
+    echo "$i,$dur,$read_rows,$written_rows,$status,$exc" >> "$file"
+    log "forced refresh #$i duration_ms=$dur read_rows=$read_rows written_rows=$written_rows status=$status"
   done
   return 0
 }
@@ -252,16 +244,15 @@ wait_scheduled_refresh_samples() {
 
 quantile_from_col() {
   local file=$1 col=$2 q=$3
-  awk -F, -v col="$col" -v q="$q" '
-    NR>1 && $(col)+0==$(col) { a[++n]=$(col)+0 }
+  awk -F, -v col="$col" 'NR>1 && $(col)+0==$(col) { print $(col)+0 }' "$file" | sort -n | awk -v q="$q" '
+    { a[++n]=$1 }
     END {
       if (n==0) { print ""; exit }
-      asort(a)
       idx = int((n-1)*q)+1
       if (idx < 1) idx=1
       if (idx > n) idx=n
       printf "%.1f", a[idx]
-    }' "$file"
+    }'
 }
 
 verdict_tr2() {
@@ -479,11 +470,23 @@ main() {
   PEAK_CPU_CORES=$(awk -F, 'NR>1 && $2+0==$2 { if ($2>m) m=$2 } END { printf "%.3f", m+0 }' "$OUT/timeseries/under-load.csv")
   [[ -n $PEAK_CPU_CORES ]] || PEAK_CPU_CORES=0
 
-  # Allow catch-up before spike
+  # Allow catch-up before spike (only if consumer still behind end offsets).
   log "catch-up before spike"
-  local pre_spike
-  pre_spike=$(orders_count)
-  wait_orders "$(( pre_spike + load_count ))" "$(now)" "$OUT/timeseries/pre-spike-catchup.csv" || true
+  {
+    local ends pos expected
+    ends=$(end_offsets "$TOPIC")
+    pos=$(consumer_position)
+    expected=$ends
+    if (( ends > pos )); then
+      log "waiting for ingest catch-up: position=$pos end=$ends"
+      # wait_orders keys off row count; approximate with current rows + remaining lag.
+      wait_orders "$(( $(orders_count) + ends - pos ))" "$(now)" "$OUT/timeseries/pre-spike-catchup.csv" || true
+    else
+      log "already caught up (position=$pos end=$ends)"
+      echo "t_s,end_offsets,orders_rows,consumer_position,lag_msgs,cpu_s" > "$OUT/timeseries/pre-spike-catchup.csv"
+      echo "0,$ends,$(orders_count),$pos,0,0" >> "$OUT/timeseries/pre-spike-catchup.csv"
+    fi
+  }
 
   log "TR-4 spike: publish $SPIKE_MESSAGES ASAP"
   local spike_started ends_before

@@ -143,14 +143,14 @@ Managed-ingestion в Cloud ([create Kafka ClickPipe](https://clickhouse.com/docs
 | # | Триггер | Как измерять | Куда смотреть | Измерено (P0-2) | Вердикт |
 | --- | --- | --- | --- | --- | --- |
 | TR-1 | Нужны чтения без `FINAL` или инкрементальные insert-triggered агрегаты (бизнес-требование) | — | C (self-hosted) или D (Cloud) | — (требование) | — |
-| TR-2 | Refresh `orders_agg_mv` p95 > 50 % интервала (> 30 с при `EVERY 1 MINUTE`), либо требуемая свежесть агрегатов < интервала | `system.view_refreshes` (W2-9) | TR-1 / P1-1 | _pending CI_ | _pending_ |
-| TR-3 | Ingestion занимает > 30 % CPU ноды на пике, или p95 эталонных запросов (`ReadAggregates`) под ingestion хуже базового > 25 % | W3-5 / P0-2: прогон «запросы без ingestion» vs «с ingestion ×10», CPU ноды по cgroup / `system.asynchronous_metrics` | Сначала выделенные под ingestion реплики/ноды в A; если нельзя — C или B | _pending CI_ | _pending_ |
-| TR-4 | Lag не возвращается к ≤ 60 с после всплеска ×10 при `kafka_num_consumers` = число партиций на ноду (SP-1, SP-2) | `system.kafka_consumers` + end offsets (W2-9) | Тюнинг `kafka_max_block_size`/`kafka_flush_interval_ms` (W3-5), затем C/B | _pending CI_ | _pending_ |
+| TR-2 | Refresh `orders_agg_mv` p95 > 50 % интервала (> 30 с при `EVERY 1 MINUTE`), либо требуемая свежесть агрегатов < интервала | `system.view_refreshes` (W2-9) | TR-1 / P1-1 | p95 **19 ms** @ 350k rows (p50 17, max 23; 2026-11-10, see [load-calibration-tr2-tr4.md](../load-calibration-tr2-tr4.md)) | **GREEN** |
+| TR-3 | Ingestion занимает > 30 % CPU ноды на пике, или p95 эталонных запросов (`ReadAggregates`) под ingestion хуже базового > 25 % | W3-5 / P0-2: прогон «запросы без ingestion» vs «с ingestion ×10», CPU ноды по cgroup / `system.asynchronous_metrics` | Сначала выделенные под ingestion реплики/ноды в A; если нельзя — C или B | CPU peak **17.4%** (0.698/4); ReadAggregates p95 **120.3 → 110.6 ms** under 20 msg/s | **GREEN** |
+| TR-4 | Lag не возвращается к ≤ 60 с после всплеска ×10 при `kafka_num_consumers` = число партиций на ноду (SP-1, SP-2) | `system.kafka_consumers` + end offsets (W2-9) | Тюнинг `kafka_max_block_size`/`kafka_flush_interval_ms` (W3-5), затем C/B | spike 20k → lag ≤60 s in **2.17 s** (final lag 0); consumers=partitions=1 | **GREEN** |
 | TR-5 | Нужна переигровка битых сообщений из топика DLQ или проверка schema id / несколько типов сообщений в топике / message не первый в `.proto` (SP-4) | Требование | C (если .NET-команда) или B | — | — |
 | TR-6 | Переезд на ClickHouse Cloud | — | D | — | — |
 | TR-7 | Доля ошибок парсинга > 0,1 % сообщений в сутки устойчиво | `{queue}_errors` (W1-2, W2-9) | Разбор причин; при системной несовместимости схем — TR-5 | — | — |
 
-**P0-2 path A:** все TR-2..TR-4 green → путь A ок для последующего P0-6 Accept; любой red → **не** Accept A вслепую (P1-1 / P2-1). Статус этого ADR остаётся **Proposed**, пока владелец не примет решение после заполненных чисел и остальных P0.
+**P0-2 path A (2026-11-10):** TR-2..TR-4 все **GREEN** → **GO** для пути A к P0-6 (после остальных P0). Любой будущий red на целевом объёме → **не** Accept A вслепую (P1-1 / P2-1). Статус этого ADR остаётся **Proposed** до явного Accept владельцем (P0-6); этот документ только фиксирует числа.
 
 Между B и C при срабатывании TR-1/TR-3/TR-5 предварительно предпочтителен **C**: команда и codegen уже на .NET, Confluent SR-сериализация уже в проекте, ключ декодируется без SQL UDF. B выбирать, если в организации уже есть эксплуатируемый Kafka Connect.
 

@@ -8,7 +8,7 @@ P0-2 calibration for [ADR-0001](./adr/0001-ingestion-path.md) §5 triggers TR-2.
 # Local (Docker required)
 ./scripts/load-calibrate-adr.sh
 
-# GitHub Actions (no local Docker)
+# GitHub Actions (preferred in CI; agent tokens may lack workflow_dispatch)
 gh workflow run load-test.yml \
   -f mode=adr-calibrate \
   -f messages=300000 \
@@ -21,7 +21,7 @@ Artifact directory: `artifacts/load-calibration/` (`report.md`, `summary.env`, C
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `CAL_SEED_MESSAGES` | `300000` | Rows seeded into real `orders` before refresh/query samples (~×10 vs short demo windows; same order as load-test backlog) |
+| `CAL_SEED_MESSAGES` | `300000` | Rows seeded into real `orders` before refresh/query samples |
 | `CAL_STEADY_RATE` | `20` | ×10 of demo 2 msg/s |
 | `CAL_STEADY_SECONDS` | `90` | Concurrent ingest while sampling ReadAggregates |
 | `CAL_SPIKE_MESSAGES` | `20000` | Burst after catch-up for TR-4 lag recovery |
@@ -33,33 +33,33 @@ Artifact directory: `artifacts/load-calibration/` (`report.md`, `summary.env`, C
 |---|---|
 | TR-2 | `orders_agg_mv` refresh p95 > 50% of interval (> 30 s / 30000 ms at `EVERY 1 MINUTE`) |
 | TR-3 | Ingestion > 30% of node CPU at peak, **or** ReadAggregates p95 under ingest > baseline + 25% |
-| TR-4 | Lag does not return to ≤ 60 s after ×10 spike (lag expressed as backlog seconds at the ×10 rate) |
+| TR-4 | Lag does not return to ≤ 60 s after ×10 spike (lag as backlog seconds at the ×10 rate) |
 
 **Path A go:** TR-2, TR-3, and TR-4 all green → OK to proceed toward P0-6 Accept.  
 **Path A no-go:** any of TR-2/3/4 red → do **not** Accept A blindly; track P1-1 and/or P2-1.
 
-## Measured results
+## Measured results (2026-11-10)
 
-_Pending CI run on this branch. This section will be filled with numbers from `artifacts/load-calibration/report.md` after the Actions job completes._
+Host: 4 vCPU / 15 GiB, Linux, ClickHouse **26.6.3.62**, single-node compose.  
+TR-2/TR-3 seed: **350000** rows on real `orders` (`read_rows=350000` on refresh). Steady: **20 msg/s × 90 s**.  
+TR-4: **20000**-message spike on a restored stack after **50000**-row seed (see caveats).
 
 | Trigger | Measured | Verdict |
 |---|---|---|
-| TR-2 refresh p95 | _TBD_ | _TBD_ |
-| TR-3 CPU peak % | _TBD_ | _TBD_ |
-| TR-3 ReadAggregates p95 (baseline → load) | _TBD_ | _TBD_ |
-| TR-4 lag recovery | _TBD_ | _TBD_ |
+| TR-2 refresh p95 | **19 ms** (p50 17, max 23, n=5) | **GREEN** |
+| TR-3 CPU peak % | **17.4%** (0.698 / 4 cores) | **GREEN** |
+| TR-3 ReadAggregates p95 | baseline **120.3 ms** → under load **110.6 ms** (n=40/40) | **GREEN** |
+| TR-4 lag recovery | **2.17 s** to ≤60 s; final lag **0** msgs | **GREEN** |
 
-**Path A decision:** _TBD_
+**Path A decision: GO** — all TR-2..TR-4 green → path A OK for P0-6 after remaining P0 items. **Do not Accept ADR in the calibration PR.**
 
-### Prior related evidence (load-test.sh, not TR-complete)
+### Caveats
 
-Weekly `load-test.sh` on `main` ([run 42639170726](https://github.com/Tirael/kafka2ch/actions/runs/42639170726), 2026-11-09) exercises temporary `load_*` tables only — useful for Kafka setting throughput/CPU, **not** for `orders_agg_mv` refresh or ReadAggregates:
+1. Agent could not `workflow_dispatch` Load test (HTTP 403); run was local Docker on the Cloud Agent VM (needed `iptables FORWARD ACCEPT` for Kafka inter-container).
+2. First full-script attempt hung on a pre-spike catch-up bug (already caught up but waited for `rows + load_count`). Bug fixed in `scripts/load-calibrate-adr.sh`; TR-4 finished in a follow-up spike run.
+3. Stand is not a sized prod cluster; 350k ≈ load-test ×10 demo backlog, not multi-TB. Re-run on staging volume before treating TR-2 as capacity-proof forever.
+4. Related `load-test.sh` weekly evidence ([run 42639170726](https://github.com/Tirael/kafka2ch/actions/runs/42639170726)) covers Kafka setting throughput on `load_*` tables only — not `orders_agg_mv` / ReadAggregates.
 
-- Drain 300k: ~0.8–1.9 avg CPU cores on 4 vCPU (~20–48% during catch-up); throughput ~16–34k msg/s depending on consumers/tpc.
-- Steady 20 msg/s × 60 s: ~0.18–0.24 avg cores; ingest latency p95 ~1 s with `flushIntervalMs=1000`.
+## Environment notes
 
-That stand **cannot** green/red TR-2 or the ReadAggregates leg of TR-3; use `load-calibrate-adr.sh` for those.
-
-## Environment gap
-
-Cloud Agent VMs in this project have **no Docker**. Calibration must run via the GitHub Actions job above (or a machine with Docker Compose). Local dry-run of the script is limited to `bash -n` / workflow wiring checks.
+Cloud Agent images historically ship without Docker; this calibration installed `docker.io` + Compose v2 in-session. Prefer GitHub Actions `mode=adr-calibrate` for repeatable CI evidence when the token can dispatch workflows.
