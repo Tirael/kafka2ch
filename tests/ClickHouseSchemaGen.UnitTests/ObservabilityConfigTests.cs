@@ -30,12 +30,27 @@ public sealed class ObservabilityConfigTests
     [InlineData("ClickHouseKafkaParseErrors")]
     [InlineData("ClickHouseKafkaNoAssignments")]
     [InlineData("ClickHouseOrdersCrossShardDuplicates")]
+    [InlineData("ClickHouseViewRefreshStuck")]
+    [InlineData("ClickHouseViewRefreshException")]
+    [InlineData("ClickHouseOrdersQueueErrorsGrowth")]
     public void PrometheusAlertRules_DefineAlert(string alert)
     {
         var rules = File.ReadAllText(
             Path.Combine(FindRepositoryRoot(), "docker", "prometheus", "alerts", "clickhouse-kafka.rules.yml"));
 
         rules.Should().Contain($"- alert: {alert}");
+    }
+
+    [Fact]
+    public void MigrateRunbook_DocumentsProdDiscipline()
+    {
+        var runbook = File.ReadAllText(Path.Combine(FindRepositoryRoot(), "docs", "migrate-runbook.md"));
+
+        runbook.Should().Contain("--skip-preflight");
+        runbook.Should().Contain("schema_migrations");
+        runbook.Should().Contain("DETACH");
+        runbook.Should().Contain("Staging drill");
+        runbook.Should().Contain("параллельн");
     }
 
     [Fact]
