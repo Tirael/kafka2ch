@@ -353,6 +353,23 @@ dotnet test tests/ClickHouseSchemaGen.IntegrationTests
 
 Тесты не зависят от `src/Sandbox.Contracts` и `docker/` (из `src/` подключается только `Sandbox.Observability`; unit-тесты лишь сверяют `.env.example`, compose и `docker/clickhouse/config/prometheus.xml` с фикстурами): собственные `.proto`, фикстуры `clickhouse.codegen*.json`, `keeper-test.xml` и `prometheus.xml` лежат в [`tests/ClickHouseSchemaGen.TestContracts`](tests/ClickHouseSchemaGen.TestContracts) и копируются в `bin/…/TestContracts/` (пути — `TestContractsPaths`).
 
+### Docker IPAM: `all predefined address pools have been fully subnetted`
+
+Если Docker API отвечает `BadRequest` с этим текстом при `dotnet test …IntegrationTests`, исчерпан пул подсетей: остатки сетей Testcontainers/Ryuk или тесный `default-address-pools`. К `DOCKER_API_VERSION` в `TestContainersEnv` это не относится. Кластерные и pipeline-тесты поднимают отдельные сети через `NetworkBuilder` (`Cluster*IntegrationTests`, `KafkaPipelineFixture`).
+
+1. Список сетей: `docker network ls`. Неиспользуемые убрать: `docker network prune` (**осторожно**: удаляет все unused networks, в том числе чужие compose-сети без контейнеров).
+2. Если prune не помогает — расширить `default-address-pools` и перезапустить Docker:
+   - Linux (engine): `/etc/docker/daemon.json`
+   - Docker Desktop (Windows / macOS / Linux): Settings → Docker Engine
+
+```json
+{
+  "default-address-pools": [
+    { "base": "172.16.0.0/12", "size": 24 }
+  ]
+}
+```
+
 ### NuGet-пакеты (внешний consumer)
 
 Генератор можно подключить **без** `ProjectReference` на этот репозиторий. Пакеты:
