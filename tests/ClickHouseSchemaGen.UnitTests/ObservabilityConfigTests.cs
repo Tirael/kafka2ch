@@ -33,6 +33,8 @@ public sealed class ObservabilityConfigTests
     [InlineData("ClickHouseViewRefreshStuck")]
     [InlineData("ClickHouseViewRefreshException")]
     [InlineData("ClickHouseOrdersQueueErrorsGrowth")]
+    [InlineData("ClickHouseKafkaQueueWithoutMv")]
+    [InlineData("ClickHouseKafkaQueueMissing")]
     public void PrometheusAlertRules_DefineAlert(string alert)
     {
         var rules = File.ReadAllText(
@@ -54,6 +56,9 @@ public sealed class ObservabilityConfigTests
         runbook.Should().Contain("run-verify-gate.sh");
         runbook.Should().Contain("VERIFY_ASSUME_STACK=1");
         runbook.Should().Contain("Data-quality gate");
+        runbook.Should().Contain("neither attached nor detached");
+        runbook.Should().Contain("ClickHouseKafkaQueueWithoutMv");
+        runbook.Should().Contain("ClickHouseKafkaQueueMissing");
     }
 
     [Fact]

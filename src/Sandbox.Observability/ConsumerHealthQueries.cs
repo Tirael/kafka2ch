@@ -39,6 +39,60 @@ public static partial class ConsumerHealthQueries
         FROM {Identifier(errorsTable, nameof(errorsTable))}
         """;
 
+    /// <summary>
+    /// Attached Kafka queue / main MV dependency / detached metadata.
+    /// Uses system.tables.dependencies_table (same signal Migrator restore uses), not
+    /// system.kafka_consumers.missing_dependencies.
+    /// </summary>
+    public static string PipelineTopology(string queueTable, string viewName, string? cluster)
+    {
+        var queue = Identifier(queueTable, nameof(queueTable));
+        var view = Identifier(viewName, nameof(viewName));
+        if (cluster is null)
+        {
+            return
+                $"""
+                SELECT
+                    toUInt8((
+                        SELECT count() FROM system.tables
+                        WHERE database = currentDatabase()
+                          AND name = '{queue}'
+                          AND engine = 'Kafka'
+                    ) > 0) AS queue_attached,
+                    toUInt8((
+                        SELECT count() FROM system.detached_tables
+                        WHERE database = currentDatabase()
+                          AND table = '{queue}'
+                    ) > 0) AS queue_detached,
+                    toUInt8((
+                        SELECT count() FROM system.tables
+                        WHERE database = currentDatabase()
+                          AND name = '{queue}'
+                          AND engine = 'Kafka'
+                          AND has(dependencies_table, '{view}')
+                    ) > 0) AS main_view_dependency
+                """;
+        }
+
+        var clusterId = Identifier(cluster, nameof(cluster));
+        return
+            $"""
+            SELECT
+                toUInt8(countIf(name = '{queue}' AND engine = 'Kafka') > 0) AS queue_attached,
+                toUInt8((
+                    SELECT count()
+                    FROM clusterAllReplicas('{clusterId}', system.detached_tables)
+                    WHERE database = currentDatabase() AND table = '{queue}'
+                ) > 0) AS queue_detached,
+                toUInt8(
+                    countIf(name = '{queue}' AND engine = 'Kafka' AND NOT has(dependencies_table, '{view}')) = 0
+                    AND countIf(name = '{queue}' AND engine = 'Kafka') > 0
+                ) AS main_view_dependency
+            FROM clusterAllReplicas('{clusterId}', system.tables)
+            WHERE database = currentDatabase()
+            """;
+    }
+
     private static string Identifier(string value, string parameterName) =>
         IdentifierPattern().IsMatch(value)
             ? value

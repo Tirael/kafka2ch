@@ -10,6 +10,8 @@ public sealed class ConsumerHealthOptions
 
     public string ErrorsTable { get; set; } = "orders_queue_errors";
 
+    public string ViewName { get; set; } = "orders_mv";
+
     public string? Cluster { get; set; }
 
     public int MaxPollAgeSeconds { get; set; } = 60;
@@ -21,7 +23,12 @@ public sealed class ConsumerHealthOptions
     public int KafkaTimeoutMs { get; set; } = 10000;
 
     public ConsumerHealthQuery Query =>
-        new(QueueTable, ErrorsTable, string.IsNullOrWhiteSpace(Cluster) ? null : Cluster, ErrorWindow);
+        new(
+            QueueTable,
+            ErrorsTable,
+            string.IsNullOrWhiteSpace(Cluster) ? null : Cluster,
+            ErrorWindow,
+            string.IsNullOrWhiteSpace(ViewName) ? "orders_mv" : ViewName);
 
     public ConsumerHealthThresholds Thresholds =>
         new(TimeSpan.FromSeconds(MaxPollAgeSeconds), TimeSpan.FromMinutes(MaxCommitAgeMinutes), ErrorWindow);

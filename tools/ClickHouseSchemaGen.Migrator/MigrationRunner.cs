@@ -270,7 +270,18 @@ public sealed class MigrationRunner(
                     continue;
 
                 await SnapshotObjectDdlBeforeChangeAsync(connection, statement, snapshots, cancellationToken);
-                await ExecuteAsync(connection, statement, cancellationToken);
+                if (await ShouldSkipAttachBecauseQueueIsGoneAsync(connection, statement, cancellationToken))
+                {
+                    logger.LogWarning(
+                        "Skipping ATTACH for {Table}: it is neither attached nor detached "
+                            + "(possible prior kill between DROP and CREATE); continuing so DROP/CREATE can heal",
+                        AttachTableStatement.Match(statement).Groups["table"].Value);
+                }
+                else
+                {
+                    await ExecuteAsync(connection, statement, cancellationToken);
+                }
+
                 TrackQueueLifecycle(statement, detachedQueues, droppedQueues);
                 TrackViewLifecycle(statement, droppedViews);
             }
@@ -312,6 +323,86 @@ public sealed class MigrationRunner(
         tableName = match.Success ? match.Groups["table"].Value : null;
         clusterName = match.Groups["cluster"] is { Success: true, Value: var value } ? value : null;
         return match.Success;
+    }
+
+    /// <summary>
+    /// ATTACH is required when the queue is still detached (DROP IF EXISTS is a no-op on detached
+    /// metadata). When the table is fully gone (neither system.tables nor system.detached_tables),
+    /// ATTACH cannot help and may abort a replay after kill between DROP and CREATE — skip it.
+    /// </summary>
+    public static bool ShouldSkipAttach(bool attached, bool detached) => !attached && !detached;
+
+    private async Task<bool> ShouldSkipAttachBecauseQueueIsGoneAsync(
+        ClickHouseConnection connection,
+        string statement,
+        CancellationToken cancellationToken)
+    {
+        var attach = AttachTableStatement.Match(statement);
+        if (!attach.Success)
+            return false;
+
+        var tableName = attach.Groups["table"].Value;
+        var clusterName = attach.Groups["cluster"] is { Success: true, Value: var value } ? value : null;
+        try
+        {
+            var (attached, detached) = await ProbeQueuePresenceAsync(
+                connection,
+                tableName,
+                clusterName,
+                cancellationToken);
+            return ShouldSkipAttach(attached, detached);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            logger.LogWarning(
+                exception,
+                "Could not probe presence of {Table} before ATTACH; executing ATTACH (fail closed)",
+                tableName);
+            return false;
+        }
+    }
+
+    private static async Task<(bool Attached, bool Detached)> ProbeQueuePresenceAsync(
+        ClickHouseConnection connection,
+        string tableName,
+        string? clusterName,
+        CancellationToken cancellationToken)
+    {
+        var database = await QueryCurrentDatabaseAsync(connection, cancellationToken);
+        if (clusterName is null)
+        {
+            var attached = Convert.ToInt32(
+                await ScalarAsync(
+                    connection,
+                    "SELECT count() FROM system.tables "
+                        + $"WHERE database = '{EscapeLiteral(database)}' AND name = '{EscapeLiteral(tableName)}'",
+                    cancellationToken)) > 0;
+            var detached = Convert.ToInt32(
+                await ScalarAsync(
+                    connection,
+                    "SELECT count() FROM system.detached_tables "
+                        + $"WHERE database = '{EscapeLiteral(database)}' AND table = '{EscapeLiteral(tableName)}'",
+                    cancellationToken)) > 0;
+            return (attached, detached);
+        }
+
+        // Skip ATTACH only when every host reports neither attached nor detached.
+        // If any host still has the table (count > 0), execute ATTACH.
+        var anyAttached = Convert.ToInt64(
+            await ScalarAsync(
+                connection,
+                "SELECT count() FROM clusterAllReplicas("
+                    + $"'{EscapeLiteral(clusterName)}', system.tables) "
+                    + $"WHERE database = '{EscapeLiteral(database)}' AND name = '{EscapeLiteral(tableName)}'",
+                cancellationToken)) > 0;
+        var anyDetached = Convert.ToInt64(
+            await ScalarAsync(
+                connection,
+                "SELECT count() FROM clusterAllReplicas("
+                    + $"'{EscapeLiteral(clusterName)}', system.detached_tables) "
+                    + $"WHERE database = '{EscapeLiteral(database)}' AND table = '{EscapeLiteral(tableName)}'",
+                cancellationToken)) > 0;
+        return (anyAttached, anyDetached);
     }
 
     public static void TrackQueueLifecycle(

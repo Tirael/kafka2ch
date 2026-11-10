@@ -23,11 +23,23 @@ public sealed record KafkaConsumerState(
     ulong NumCommits,
     bool IsCurrentlyUsed);
 
+/// <summary>
+/// Structural state of the Kafka queue / main MV pair (not consumer assignments).
+/// Detached-only is a normal mid-migration window and is not an issue by itself.
+/// </summary>
+public sealed record KafkaPipelineTopology(
+    bool QueueAttached,
+    bool QueueDetached,
+    bool MainViewDependencyPresent);
+
 public sealed record ConsumerHealthSnapshot(
     DateTime CheckedAt,
     IReadOnlyList<KafkaConsumerState> Consumers,
     ulong RecentErrors,
-    ulong TotalErrors);
+    ulong TotalErrors,
+    KafkaPipelineTopology Pipeline,
+    string QueueTable = "orders_queue",
+    string ViewName = "orders_mv");
 
 public sealed record ConsumerHealthThresholds(TimeSpan MaxPollAge, TimeSpan MaxCommitAge, TimeSpan ErrorWindow);
 

@@ -40,6 +40,32 @@ public sealed class ConsumerHealthQueriesTests
         sql.Should().Contain("count()");
     }
 
+    [Fact]
+    public void GivenSingleNode_WhenPipelineTopology_ThenUsesDependenciesTableAndDetachedTables()
+    {
+        var sql = ConsumerHealthQueries.PipelineTopology("orders_queue", "orders_mv", cluster: null);
+
+        sql.Should().Contain("system.tables");
+        sql.Should().Contain("system.detached_tables");
+        sql.Should().Contain("dependencies_table");
+        sql.Should().Contain("has(dependencies_table, 'orders_mv')");
+        sql.Should().Contain("engine = 'Kafka'");
+        sql.Should().Contain("name = 'orders_queue'");
+        sql.Should().NotContain("missing_dependencies");
+        sql.Should().NotContain("clusterAllReplicas");
+    }
+
+    [Fact]
+    public void GivenCluster_WhenPipelineTopology_ThenReadsAllReplicas()
+    {
+        var sql = ConsumerHealthQueries.PipelineTopology("orders_queue", "orders_mv", "kafka2ch");
+
+        sql.Should().Contain("clusterAllReplicas('kafka2ch', system.tables)");
+        sql.Should().Contain("clusterAllReplicas('kafka2ch', system.detached_tables)");
+        sql.Should().Contain("has(dependencies_table, 'orders_mv')");
+        sql.Should().NotContain("missing_dependencies");
+    }
+
     [Theory]
     [InlineData("orders_queue'; DROP TABLE orders; --")]
     [InlineData("")]
@@ -49,9 +75,13 @@ public sealed class ConsumerHealthQueriesTests
         var consumers = () => ConsumerHealthQueries.KafkaConsumers(identifier, null);
         var cluster = () => ConsumerHealthQueries.KafkaConsumers("orders_queue", identifier);
         var errors = () => ConsumerHealthQueries.Errors(identifier, TimeSpan.FromMinutes(5));
+        var pipeline = () => ConsumerHealthQueries.PipelineTopology(identifier, "orders_mv", null);
+        var view = () => ConsumerHealthQueries.PipelineTopology("orders_queue", identifier, null);
 
         consumers.Should().Throw<ArgumentException>();
         cluster.Should().Throw<ArgumentException>();
         errors.Should().Throw<ArgumentException>();
+        pipeline.Should().Throw<ArgumentException>();
+        view.Should().Throw<ArgumentException>();
     }
 }
