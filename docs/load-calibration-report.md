@@ -10,7 +10,7 @@
 
 ## Go / no-go (path A)
 
-**GO — path A OK for P0-6** (after remaining P0 items). Do **not** Accept ADR in this PR — status stays Proposed.
+**GO — path A OK for P0-6.** Remaining P0 items closed; ADR-0001 **Accepted** in P0-6 (calibration PR #90 left status Proposed).
 
 | Trigger | Measured | Threshold | Verdict |
 |---|---|---|---|
@@ -27,7 +27,7 @@ Combined TR-3: **GREEN**.
 2. **TR-2/TR-3** measured on 350k-row `orders` in one continuous run. Forced `SYSTEM REFRESH VIEW` + `SYSTEM WAIT VIEW`; durations 16–23 ms with `read_rows=350000` (full scan confirmed).
 3. **TR-4** completed in a follow-up after the first script hung on a buggy pre-spike catch-up (already-caught-up row target). Spike measured on a restored stack seeded to 50k, then 20k burst; lag already 0 at first sample (~2.2 s including publish). Script catch-up bug is fixed in this PR.
 4. Stand is **single-node compose**, not a sized prod cluster. Volume ≈ load-test ×10 demo backlog (300k), not multi-TB prod. Re-run on staging-sized data before treating TR-2 as forever-green.
-5. ADR status remains **Proposed** — this PR only fills numbers + go/no-go.
+5. Calibration PR filled numbers + go/no-go only; formal Accept is P0-6.
 
 ## Raw artifacts
 

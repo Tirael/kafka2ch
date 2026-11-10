@@ -2,11 +2,11 @@
 
 | | |
 | --- | --- |
-| **Статус** | **Proposed** — решение за владельцем репозитория |
-| **Дата** | 2026-10-21 |
-| **Пункт плана** | W3-4 (ATAM remediation), риск-тема T1 |
-| **Связано** | [architecture-tradeoff-analysis.md](../architecture-tradeoff-analysis.md) (AD-1, TP-1, TP-6, SP-1..SP-3, SP-16, R1, R2, R5, R15, P2-1, P2-2), [kafka2-production-assessment.md](../kafka2-production-assessment.md), [clickpipes-how-to.md](../clickpipes-how-to.md) |
-| **PR, от которых зависит решение** | W1-2 [#66](https://github.com/Tirael/kafka2ch/pull/66), W1-3 [#67](https://github.com/Tirael/kafka2ch/pull/67), W1-4 [#65](https://github.com/Tirael/kafka2ch/pull/65), W1-7 [#68](https://github.com/Tirael/kafka2ch/pull/68), W2-3 [#77](https://github.com/Tirael/kafka2ch/pull/77), W2-9 [#74](https://github.com/Tirael/kafka2ch/pull/74) |
+| **Статус** | **Accepted** — путь A (Kafka engine), 2026-11-10 (P0-6) |
+| **Дата** | 2026-10-21 (принято 2026-11-10) |
+| **Пункт плана** | W3-4 (ATAM remediation), риск-тема T1; Accept после P0-1..P0-5 |
+| **Связано** | [architecture-tradeoff-analysis.md](../architecture-tradeoff-analysis.md) (AD-1, TP-1, TP-6, SP-1..SP-3, SP-16, R1, R2, R5, R15, P2-1, P2-2), [kafka2-production-assessment.md](../kafka2-production-assessment.md), [clickpipes-how-to.md](../clickpipes-how-to.md), [load-calibration-tr2-tr4.md](../load-calibration-tr2-tr4.md) |
+| **PR, от которых зависит решение** | W1-2 [#66](https://github.com/Tirael/kafka2ch/pull/66), W1-3 [#67](https://github.com/Tirael/kafka2ch/pull/67), W1-4 [#65](https://github.com/Tirael/kafka2ch/pull/65), W1-7 [#68](https://github.com/Tirael/kafka2ch/pull/68), W2-3 [#77](https://github.com/Tirael/kafka2ch/pull/77), W2-9 [#74](https://github.com/Tirael/kafka2ch/pull/74); P0: [#86](https://github.com/Tirael/kafka2ch/pull/86), [#87](https://github.com/Tirael/kafka2ch/pull/87), [#88](https://github.com/Tirael/kafka2ch/pull/88), [#89](https://github.com/Tirael/kafka2ch/pull/89), [#90](https://github.com/Tirael/kafka2ch/pull/90) |
 
 ## 1. Контекст
 
@@ -126,19 +126,21 @@ Managed-ingestion в Cloud ([create Kafka ClickPipe](https://clickhouse.com/docs
 | C8 мульти-топология | Все 3, проверено | Нужно проектировать | Нужно проектировать | Только Cloud |
 | C9 наблюдаемость | W2-9 | JMX | Своя (в стек W2-9) | Cloud UI / API |
 
-## 5. Решение (предлагаемое)
+## 5. Решение (принято)
 
-**Остаться на Kafka engine (вариант A)** после влития W1-2, W1-3, W1-4, W1-7, W2-3, W2-9. Внешний consumer не вводить, пока не сработает один из триггеров ниже.
+**Остаёмся на Kafka engine (вариант A)** после влития W1-2, W1-3, W1-4, W1-7, W2-3, W2-9 и закрытия P0-1..P0-5. Внешний consumer не вводить, пока не сработает один из триггеров ниже.
 
-Обоснование: после W1-3 требование C1 (корректные точные чтения) выполнено без новой инфраструктуры; R2 и R5 закрыты W1-2 и W1-4; наблюдаемость — W2-9. Оставшиеся минусы A (CPU в CH, нет SR, нет EOS на уровне вставки) пока не подтверждены как проблема измерениями, а цена выхода из A — новая runtime-платформа (B) или новый сервис (C) и частичная потеря codegen.
+Обоснование: после W1-3 требование C1 (корректные точные чтения) выполнено без новой инфраструктуры; R2 и R5 закрыты W1-2 и W1-4; наблюдаемость — W2-9. P0-2 на ×10 потоке показал TR-2..TR-4 **GREEN** (path A **GO**). Оставшиеся минусы A (CPU в CH, нет SR, нет EOS на уровне вставки) на калибровочном объёме не сработали как red-триггеры; цена выхода из A — новая runtime-платформа (B) или новый сервис (C) и частичная потеря codegen.
 
-**Условия решения:**
+**Условия решения (закрыты):**
 1. W1-2, W1-3, W1-4 влиты; E2E (W1-1) зелёный во всех трёх топологиях.
-2. Чтения, требующие точности, идут через `FINAL` или агрегаты из refreshable MV; это задокументировано для потребителей данных.
-3. Алерты W2-9 (`no commits`, `parse errors`, `no assignments`) включены.
-4. **N1 (межшардовые дубли):** выбрана политика **A1 Accept** — MV → `*_local` без write-through; gate/алерт `scripts/verify-cluster.sh` (`count() FROM orders FINAL` vs `uniqExact(order_id)`); reconcile вручную ([observability.md](../observability.md#n1-межшардовые-дубли-a1-accept)). Статус ADR остаётся **Proposed**, пока не заполнены пороги TR-2..TR-4 (P0-2).
+2. **P0-1:** точные чтения — только `orders FINAL` или `orders_agg_*`; контракт в README / `clickhouse.codegen.md`; `Sandbox.App` / `ReadAggregates` читает агрегаты ([#86](https://github.com/Tirael/kafka2ch/pull/86)).
+3. **P0-5:** алерты W2-9 (`no commits`, `parse errors`, `no assignments`) плюс refresh stuck/exception и рост `orders_queue_errors` → prod Prometheus/Alertmanager/on-call; deploy-дисциплина — [migrate-runbook.md](../migrate-runbook.md) ([#89](https://github.com/Tirael/kafka2ch/pull/89)).
+4. **P0-3 / N1:** политика **A1 Accept** — MV → `*_local` без write-through; gate/алерт `scripts/verify-cluster.sh` (`count() FROM orders FINAL` vs `uniqExact(order_id)`); reconcile вручную ([observability.md](../observability.md#n1-межшардовые-дубли-a1-accept), [#87](https://github.com/Tirael/kafka2ch/pull/87)).
+5. **P0-2:** TR-2..TR-4 измерены на реальном `orders`/`orders_agg_mv` и **GREEN** → path A **GO** ([load-calibration-tr2-tr4.md](../load-calibration-tr2-tr4.md), [#90](https://github.com/Tirael/kafka2ch/pull/90)); числа — в таблице ниже.
+6. **P0-4:** staging/prod named collection с SASL/TLS из secret store; секреты не в git; ротация credential без schema-миграции ([#88](https://github.com/Tirael/kafka2ch/pull/88)).
 
-**Триггеры пересмотра** (пороги — начальные; калибровка P0-2 / `scripts/load-calibrate-adr.sh` на ×10 потоке — см. [load-calibration-tr2-tr4.md](../load-calibration-tr2-tr4.md)):
+**Триггеры пересмотра** (пороги калиброваны P0-2 / `scripts/load-calibrate-adr.sh` на ×10 потоке — см. [load-calibration-tr2-tr4.md](../load-calibration-tr2-tr4.md)):
 
 | # | Триггер | Как измерять | Куда смотреть | Измерено (P0-2) | Вердикт |
 | --- | --- | --- | --- | --- | --- |
@@ -150,7 +152,7 @@ Managed-ingestion в Cloud ([create Kafka ClickPipe](https://clickhouse.com/docs
 | TR-6 | Переезд на ClickHouse Cloud | — | D | — | — |
 | TR-7 | Доля ошибок парсинга > 0,1 % сообщений в сутки устойчиво | `{queue}_errors` (W1-2, W2-9) | Разбор причин; при системной несовместимости схем — TR-5 | — | — |
 
-**P0-2 path A (2026-11-10):** TR-2..TR-4 все **GREEN** → **GO** для пути A к P0-6 (после остальных P0). Любой будущий red на целевом объёме → **не** Accept A вслепую (P1-1 / P2-1). Статус этого ADR остаётся **Proposed** до явного Accept владельцем (P0-6); этот документ только фиксирует числа.
+**P0-2 path A (2026-11-10):** TR-2..TR-4 все **GREEN** → **GO**. **P0-6:** ADR **Accepted** (путь A) при закрытых P0-1..P0-5. Любой будущий red на целевом/staging объёме → пересмотр по триггерам (P1-1 / P2-1), не «Accept вслепую» заново.
 
 Между B и C при срабатывании TR-1/TR-3/TR-5 предварительно предпочтителен **C**: команда и codegen уже на .NET, Confluent SR-сериализация уже в проекте, ключ декодируется без SQL UDF. B выбирать, если в организации уже есть эксплуатируемый Kafka Connect.
 
@@ -163,14 +165,15 @@ Managed-ingestion в Cloud ([create Kafka ClickPipe](https://clickhouse.com/docs
 **Отрицательные / принимаемые риски**
 - Дубли физически хранятся до слияния; потребители обязаны читать через `FINAL` или агрегаты. Стоимость `FINAL` и полного refresh растёт с объёмом (TR-2).
 - **N1 A1:** после rebalance CG повтор может лечь на другой шард; глобальный `count() FROM orders FINAL` может превышать `uniqExact(order_id)` — мониторинг + reconcile, без смены write-through.
-- CPU ingestion и UDF-декода ключа остаётся на нодах ClickHouse (TP-1, TP-6) — подтверждается или опровергается только W3-5 (TR-3).
+- CPU ingestion и UDF-декода ключа остаётся на нодах ClickHouse (TP-1, TP-6); на калибровке P0-2 TR-3 **GREEN** (17.4 % CPU peak; ReadAggregates p95 не деградировал).
 - Schema id не валидируется; дисциплина раскладки `.proto` по нодам (R7) — через preflight миграций (W2-2), а не через SR.
 - DDL-lifecycle очередей (DETACH/DROP/CREATE) остаётся частью каждой миграции (T2).
 
 **Последующие действия**
 - W3-5: стенд `scripts/load-test.sh` (throughput / Kafka settings) — сделано.
-- P0-2: `scripts/load-calibrate-adr.sh` + [load-calibration-tr2-tr4.md](../load-calibration-tr2-tr4.md) — снять TR-2..TR-4 на реальном `orders`/`orders_agg_mv`, вписать числа в таблицу выше; **не** менять статус ADR на `Accepted` в том же PR.
-- P0-6: после P0-1..P0-5 и go по TR — `Accepted` или `Superseded`.
+- P0-1..P0-5: контракт FINAL (#86), N1 A1 (#87), SASL overlay (#88), алерты+runbook (#89), калибровка TR-2..TR-4 (#90) — сделано.
+- P0-6: статус **Accepted** (этот документ) — путь A.
+- P1 по необходимости (масштаб агрегатов, verify-cluster gate, migrate drill, тюнинг `kafka_*`).
 - При срабатывании триггера — новый ADR с выбором C/B/D; для C — прототип consumer'а в `src/` с E2E-тестом exactly-once (рестарт после вставки до commit → `count() = uniqExact(kafka_partition, kafka_offset)` без `FINAL`).
 
 ## 7. Источники

@@ -1,6 +1,6 @@
 # ADR-0001 load calibration (TR-2..TR-4)
 
-P0-2 calibration for [ADR-0001](./adr/0001-ingestion-path.md) §5 triggers TR-2..TR-4. **ADR status stays Proposed** — this document records measurements and a path-A go/no-go; it does not Accept the ADR.
+P0-2 calibration for [ADR-0001](./adr/0001-ingestion-path.md) §5 triggers TR-2..TR-4. This document records measurements and the path-A go/no-go that unblocked P0-6. ADR status was left **Proposed** in #90; **Accepted** in P0-6 after P0-1..P0-5.
 
 ## How to reproduce
 
@@ -51,7 +51,7 @@ TR-4: **20000**-message spike on a restored stack after **50000**-row seed (see 
 | TR-3 ReadAggregates p95 | baseline **120.3 ms** → under load **110.6 ms** (n=40/40) | **GREEN** |
 | TR-4 lag recovery | **2.17 s** to ≤60 s; final lag **0** msgs | **GREEN** |
 
-**Path A decision: GO** — all TR-2..TR-4 green → path A OK for P0-6 after remaining P0 items. **Do not Accept ADR in the calibration PR.**
+**Path A decision: GO** — all TR-2..TR-4 green. Remaining P0 items closed; ADR-0001 **Accepted** in P0-6.
 
 ### Caveats
 
