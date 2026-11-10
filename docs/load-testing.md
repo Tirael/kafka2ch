@@ -41,15 +41,27 @@ Outputs under `LOAD_OUT`:
 
 Workflow: [`.github/workflows/load-test.yml`](../.github/workflows/load-test.yml).
 
-- Trigger: **workflow_dispatch** (inputs: messages, steady rate/seconds, scenario filter) and a weekly schedule
-- Runner brings up the same compose stack as local (`scripts/load-test.sh`)
-- Artifact: `load-test-report` (`artifacts/load-test/`)
+- Trigger: **workflow_dispatch** (inputs: mode, messages, steady rate/seconds, scenario filter, spike size) and a weekly schedule
+- `mode=full` (default, also used by the weekly schedule): Kafka settings stand via `scripts/load-test.sh`
+- `mode=adr-calibrate`: ADR-0001 TR-2..TR-4 calibration via `scripts/load-calibrate-adr.sh` on the real `orders` → `orders_agg_mv` path (see [load-calibration-tr2-tr4.md](./load-calibration-tr2-tr4.md))
+- Artifacts: `load-test-report` or `load-calibration-report`
 
 Example:
 
 ```bash
-gh workflow run load-test.yml -f messages=300000 -f steady_rate=20 -f steady_seconds=60
+gh workflow run load-test.yml -f mode=full -f messages=300000 -f steady_rate=20 -f steady_seconds=60
+gh workflow run load-test.yml -f mode=adr-calibrate -f messages=300000 -f steady_rate=20 -f steady_seconds=90 -f spike_messages=20000
 ```
+
+## ADR TR-2..TR-4 calibration
+
+For path-A go/no-go (P0-2), use the calibrate mode above or run locally:
+
+```bash
+./scripts/load-calibrate-adr.sh
+```
+
+It seeds the real `orders` pipeline, samples `system.view_refreshes` for `orders_agg_mv`, compares `ReadAggregates`-shaped query latency with/without ×10 ingest, records cgroup CPU, and times lag recovery after a publish spike. Results land in `artifacts/load-calibration/` and are summarized in [load-calibration-tr2-tr4.md](./load-calibration-tr2-tr4.md).
 
 ## What the stand measures
 
