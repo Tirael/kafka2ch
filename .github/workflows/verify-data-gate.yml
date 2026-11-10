@@ -1,0 +1,82 @@
+# P1-2 / N1 A1: obligatory data-quality gate. Needs a live compose stack.
+# Not a PR check — staging/prod post-deploy uses the same scripts against the
+# live cluster (VERIFY_ASSUME_STACK=1). See docs/migrate-runbook.md.
+name: Verify data gate
+
+on:
+  schedule:
+    # Daily; distinct from TLA (02:17) and load-test (Mon 06:00).
+    - cron: "0 4 * * *"
+  workflow_dispatch:
+    inputs:
+      topology:
+        description: Compose topology to verify (schedule runs both)
+        type: choice
+        options:
+          - cluster
+          - single
+          - both
+        default: both
+
+concurrency:
+  group: verify-data-gate-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify-cluster:
+    name: verify-cluster
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.topology == 'cluster' || inputs.topology == 'both' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Run cluster data-quality gate
+        env:
+          VERIFY_TOPOLOGY: cluster
+          VERIFY_WAIT_SECONDS: "240"
+        run: ./scripts/run-verify-gate.sh
+
+      - name: Job summary
+        if: always()
+        run: |
+          {
+            echo "## Verify data gate (\`cluster\`)"
+            echo
+            echo "\`scripts/run-verify-gate.sh\` → \`scripts/verify-cluster.sh\`"
+            echo
+            echo "Predicate: \`count() = uniqExact(order_id) FROM orders FINAL\` (N1 A1)."
+            echo
+            echo "Staging/prod post-deploy: \`VERIFY_ASSUME_STACK=1 ./scripts/run-verify-gate.sh\`"
+            echo "(see docs/migrate-runbook.md)."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  verify-single:
+    name: verify-single
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.topology == 'single' || inputs.topology == 'both' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Run single-node data-quality gate
+        env:
+          VERIFY_TOPOLOGY: single
+          VERIFY_WAIT_SECONDS: "180"
+        run: ./scripts/run-verify-gate.sh
+
+      - name: Job summary
+        if: always()
+        run: |
+          {
+            echo "## Verify data gate (\`single\`)"
+            echo
+            echo "\`scripts/run-verify-gate.sh\` → \`scripts/verify-single.sh\`"
+            echo
+            echo "Same FINAL predicate as cluster; cross-shard N1 checks are cluster-only."
+          } >> "$GITHUB_STEP_SUMMARY"

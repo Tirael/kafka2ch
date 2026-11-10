@@ -173,7 +173,7 @@ Managed-ingestion в Cloud ([create Kafka ClickPipe](https://clickhouse.com/docs
 - W3-5: стенд `scripts/load-test.sh` (throughput / Kafka settings) — сделано.
 - P0-1..P0-5: контракт FINAL (#86), N1 A1 (#87), SASL overlay (#88), алерты+runbook (#89), калибровка TR-2..TR-4 (#90) — сделано.
 - P0-6: статус **Accepted** (этот документ) — путь A.
-- P1 по необходимости (масштаб агрегатов, verify-cluster gate, migrate drill, тюнинг `kafka_*`).
+- P1 по необходимости (масштаб агрегатов, verify-cluster gate / P1-2, migrate drill, тюнинг `kafka_*`).
 - При срабатывании триггера — новый ADR с выбором C/B/D; для C — прототип consumer'а в `src/` с E2E-тестом exactly-once (рестарт после вставки до commit → `count() = uniqExact(kafka_partition, kafka_offset)` без `FINAL`).
 
 ## 7. Источники

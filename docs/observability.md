@@ -119,16 +119,24 @@ FORMAT Vertical"
 
 Политика prod (см. [clickhouse.codegen.md § N1](../src/Sandbox.Contracts/clickhouse.codegen.md#политика-n1-межшардовые-дубли-a1-accept)): MV пишут в `*_local`, write-through **выключен**. После rebalance CG повтор того же Kafka-сообщения может попасть на другой шард; внутришардовый `FINAL` его не уберёт.
 
-### Gate
+### Gate (обязателен, P1-2)
 
-[`scripts/verify-cluster.sh`](../scripts/verify-cluster.sh) падает, если:
+[`scripts/verify-cluster.sh`](../scripts/verify-cluster.sh) (кластер) и [`scripts/verify-single.sh`](../scripts/verify-single.sh) (single-node) падают, если:
 
 ```sql
 SELECT count(), uniqExact(order_id) FROM orders FINAL
 -- ожидание: count = uniqExact(order_id)
 ```
 
-Запускайте после deploy кластера и по nightly cron; exit ≠ 0 → алерт on-call (тот же канал, что у Prometheus critical).
+**Как гонять (обязательный путь, не «по желанию»):**
+
+| Когда | Что |
+| --- | --- |
+| Post-deploy staging/prod | `VERIFY_ASSUME_STACK=1 ./scripts/run-verify-gate.sh` — шаг 5 [migrate-runbook](migrate-runbook.md); exit ≠ 0 → стоп promote + page |
+| Nightly в репозитории | workflow [Verify data gate](../.github/workflows/verify-data-gate.yml) (`schedule` + `workflow_dispatch`, **без** `pull_request`): поднимает compose, ждёт строки, гоняет gate, гасит стек |
+| Nightly на живом staging | тот же `run-verify-gate.sh` с `VERIFY_ASSUME_STACK=1` из cron/Job окружения → page |
+
+Оркестратор: [`scripts/run-verify-gate.sh`](../scripts/run-verify-gate.sh). Cross-shard проверки (реплики, `clusterAllReplicas`) — только в `verify-cluster.sh`; single-node проверяет тот же FINAL-предикат.
 
 ### Алерт (опциональный SQL-exporter)
 

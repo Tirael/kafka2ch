@@ -184,9 +184,11 @@ done
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.cluster.yml up -d --build
 ./scripts/verify-cluster.sh
+# или одним шагом (поднять → дождаться строк → gate → down):
+./scripts/run-verify-gate.sh
 ```
 
-**N1 / межшардовые дубли (A1 Accept).** При MV → `*_local` повтор после rebalance consumer group может лечь на другой шард: `ReplacingMergeTree`/`FINAL` схлопывают только внутри шарда. Prod-политика — **принять** этот риск, не включать write-through: gate и алерт — `scripts/verify-cluster.sh` (`count() FROM orders FINAL` vs `uniqExact(order_id)`), reconcile вручную. Подробности — [clickhouse.codegen.md § N1](src/Sandbox.Contracts/clickhouse.codegen.md#политика-n1-межшардовые-дубли-a1-accept) и [observability.md § N1](docs/observability.md#n1-межшардовые-дубли-a1-accept).
+**N1 / межшардовые дубли (A1 Accept).** При MV → `*_local` повтор после rebalance consumer group может лечь на другой шард: `ReplacingMergeTree`/`FINAL` схлопывают только внутри шарда. Prod-политика — **принять** этот риск, не включать write-through. Gate **обязателен** post-deploy и nightly: `scripts/verify-cluster.sh` / `scripts/run-verify-gate.sh` (`count() FROM orders FINAL` vs `uniqExact(order_id)`); workflow **Verify data gate**; reconcile вручную. Подробности — [clickhouse.codegen.md § N1](src/Sandbox.Contracts/clickhouse.codegen.md#политика-n1-межшардовые-дубли-a1-accept), [observability.md § N1](docs/observability.md#n1-межшардовые-дубли-a1-accept), [migrate-runbook](docs/migrate-runbook.md).
 
 Альтернатива DDL через Replicated database (без `ON CLUSTER` на таблицах, MV пишут через `Distributed`):
 
@@ -448,6 +450,8 @@ docker/prometheus/        # scrape-конфиги, правила алертов
 docs/                     # ATAM, ADR, TLA+/TLC-отчёт, Kafka2/ClickPipes assessments, observability
 scripts/verify-pipeline.sh
 scripts/verify-cluster.sh
+scripts/verify-single.sh  # single-node FINAL gate (P1-2)
+scripts/run-verify-gate.sh # compose/post-deploy orchestrator for the gate
 scripts/pack-verify.sh    # dotnet pack + NuGet smoke + unit tests
 docker-compose.yml
 docker-compose.cluster.yml
