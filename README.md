@@ -248,6 +248,18 @@ dotnet run --project src/Sandbox.App
 
 Или передайте те же ключи через `appsettings.Development.json` / User Secrets.
 
+## Контракт чтения данных (FINAL / агрегаты)
+
+Kafka engine доставляет **at-least-once**: до слияния в `orders` могут жить физические дубли. Точные метрики и BI **обязаны** читать только канонические пути:
+
+| Путь | Когда | Пример |
+|---|---|---|
+| **`orders_agg_*`** (предпочтительно) | Продовые дашборды, `ReadAggregates`, SLA по свежести ≈ интервал refresh | `SELECT … FROM orders_agg_1m … GROUP BY …` |
+| **`orders FINAL`** | Точечные точные чтения / отладка счётчиков | `SELECT count() FROM orders FINAL` |
+| **`orders` без `FINAL`** | Только отладка наличия строк; **не** для метрик и отчётов | — |
+
+`orders_agg_1m` пересчитывается refreshable MV `FROM orders FINAL` (`REFRESH EVERY 1 MINUTE`). `Sandbox.App` / `ReadAggregates` читает только `orders_agg_1m` (см. `OrderAggregateQueries` в `Sandbox.Observability`). Подробности и кластерные оговорки — [clickhouse.codegen.md § дедуп](src/Sandbox.Contracts/clickhouse.codegen.md#дедуп-orders-at-least-once-kafka-engine) и [§ контракт чтения](src/Sandbox.Contracts/clickhouse.codegen.md#контракт-чтения-final--агрегаты).
+
 ## Проверка пайплайна
 
 Скрипт smoke-проверки (стенд должен быть запущен):
@@ -262,11 +274,11 @@ dotnet run --project src/Sandbox.App
 # Schema Registry subjects
 curl -s http://localhost:8081/subjects
 
-# Число заказов (ReplacingMergeTree по (kafka_partition, kafka_offset): точный счёт — через FINAL)
+# Число заказов (канон: только через FINAL)
 docker exec clickhouse clickhouse-client --password sandbox \
   --query "SELECT count() FROM orders FINAL"
 
-# Поминутные агрегаты (refreshable MV раз в минуту поверх orders FINAL; в кластере — через GROUP BY / sum)
+# Поминутные агрегаты (канон для prod: orders_agg_*; refreshable MV поверх orders FINAL)
 docker exec clickhouse clickhouse-client --password sandbox --query "
 SELECT minute, category,
        sum(orders_count) AS orders_count,

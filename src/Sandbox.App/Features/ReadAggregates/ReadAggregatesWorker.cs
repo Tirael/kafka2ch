@@ -1,3 +1,5 @@
+using Sandbox.Observability;
+
 namespace Sandbox.App.Features.ReadAggregates;
 
 public sealed class ReadAggregatesWorker(
@@ -56,28 +58,12 @@ public sealed class ReadAggregatesWorker(
         await connection.OpenAsync(cancellationToken);
 
         await using var refreshCommand = connection.CreateCommand();
-        var database = _options.Database is null ? "currentDatabase()" : $"'{_options.Database}'";
-        var table = _options.Database is null ? "orders_agg_1m" : $"{_options.Database}.orders_agg_1m";
-        refreshCommand.CommandText =
-            $"""
-            SELECT max(last_success_time)
-            FROM system.view_refreshes
-            WHERE database = {database} AND view = 'orders_agg_mv'
-            """;
+        refreshCommand.CommandText = OrderAggregateQueries.LastRefreshSuccess(_options.Database);
         var refreshedAt = await refreshCommand.ExecuteScalarAsync(cancellationToken) as DateTime?;
 
         await using var command = connection.CreateCommand();
-        command.CommandText =
-            $"""
-            SELECT minute, category,
-                   sum(orders_count) AS orders_count,
-                   sum(total_amount) AS total_amount,
-                   sum(total_qty) AS total_qty
-            FROM {table}
-            WHERE minute >= now() - INTERVAL {_options.WindowMinutes} MINUTE
-            GROUP BY minute, category
-            ORDER BY minute DESC, category
-            """;
+        // Prod path: only orders_agg_* (built FROM orders FINAL). Never read raw orders without FINAL.
+        command.CommandText = OrderAggregateQueries.AggregatesWindow(_options.Database, _options.WindowMinutes);
 
         List<OrderAggregateRow> rows = [];
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
