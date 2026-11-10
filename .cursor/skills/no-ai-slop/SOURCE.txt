@@ -1,0 +1,3 @@
+source: https://github.com/petergyang/no-ai-slop
+commit: 000650b156983f5159695b441477f4e63b25dc85
+installed: 2026-11-10
