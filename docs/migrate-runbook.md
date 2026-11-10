@@ -57,11 +57,47 @@ SELECT * FROM system.kafka_consumers WHERE table = 'orders_queue';
 
 Цель: убедиться, что partial failure между `DROP` и `CREATE` очереди восстанавливается или имеет ручной playbook.
 
-1. На staging запустить migrate с instrumentation / `kill -9` Migrator **после** `DETACH`/`DROP` queue и **до** успешного `CREATE`.
-2. Проверить: очередь снова `ATTACH`/`CREATE` (auto-restore или ручной шаг выше); `system.kafka_consumers` непустой; lag не растёт бесконечно.
+1. На staging запустить migrate с instrumentation / `kill -9` Migrator **после** `DROP TABLE` queue и **до** успешного `CREATE`.
+2. Проверить состояние (см. матрицу ниже): очередь снова `ATTACH`/`CREATE`; при необходимости — один повторный Job.
 3. Повторный migrate дописывает `schema_migrations` без дубля checksum.
 4. Зафиксировать результат drill (дата, топология, auto vs manual) в on-call notes.
 
+### Результат разбора P1-3 (код + тесты; live `kill -9` — подтверждение на staging)
+
+Дата: 2026-11-10. Топология: single-node recreate SQL (`ATTACH` → `DROP TABLE` → `CREATE TABLE` без `IF NOT EXISTS` → `CREATE MV`), `origin/main` @ `f481363` + этот PR. Live `kill -9` в этой среде **не** гонялся (нет Docker/staging CH); интеграционные тесты exception-path остаются источником для restore при пойманном исключении.
+
+| Момент смерти процесса | Объекты | Следующий Job |
+| --- | --- | --- |
+| Пока очередь detached (в т.ч. длинный `INSERT` в dedup-миграции) | Detached queue; MV могут быть сняты | Heals: `DETACH IF EXISTS` / `ATTACH` / дальше по файлу |
+| После `ATTACH`/`CREATE`, до `CREATE MV` | Attached queue **без** `orders_mv` | Heals переигровкой файла; страница `ClickHouseKafkaQueueWithoutMv` / ConsumerHealth, если окно > 5m |
+| **Между `DROP TABLE` и `CREATE TABLE` (drill)** | neither attached nor detached (`system.tables` / `system.detached_tables` пусты) | Migrator **пропускает** `ATTACH`, если очередь нигде не числится → `DROP IF EXISTS` / `CREATE` / `CREATE MV`. Без пропуска `ATTACH` мог оборвать replay |
+| Exception после `CREATE` с **другой** схемой колонок | Новая queue; старый MV **намеренно** не restore | Как в `GivenQueueRecreatedWithOtherSchemaBeforeFailure`; руками старый MV на новую схему не вешать |
+
+Пойманное исключение в том же процессе: `RestoreDroppedObjectsAsync` / `ReattachDetachedQueuesAsync` (см. `MigrationQueueLifecycleIntegrationTests`). Снимок `SHOW CREATE` живёт только в памяти процесса — после `kill -9` его нет; восстановление = **один** повторный Job.
+
+Перед повтором: дождаться `--lock-ttl` (дефолт 1800 с) или удалить lease мёртвого владельца (`schema_migrations_lock` / `kind='lock'`) **только** когда процесс точно мёртв. Не красть live lease.
+
+Журнал (не алерт по возрасту — длинный dedup держит `started` весь `INSERT`):
+
+```sql
+SELECT version, name, min(applied_at) AS started_at
+FROM schema_migrations
+WHERE kind = 'started'
+  AND version NOT IN (SELECT version FROM schema_migrations WHERE kind = 'migration')
+GROUP BY version, name;
+```
+
+Проверка «очередь без MV» / «очереди нет»:
+
+```sql
+SELECT name, engine, dependencies_table
+FROM system.tables
+WHERE database = currentDatabase() AND name = 'orders_queue';
+
+SELECT table FROM system.detached_tables
+WHERE database = currentDatabase() AND table = 'orders_queue';
+```
+
 ## Алерты рядом с migrate
 
-Пока идёт Job: ожидаемы краткие `NoAssignments` / отсутствие commits. После Job — правила из [observability.md](observability.md) (`NoCommits`, `ParseErrors`, `ViewRefresh*`, `OrdersQueueErrorsGrowth`) должны быть в prod Prometheus → Alertmanager → pager.
+Пока идёт Job: ожидаемы краткие `NoAssignments` / отсутствие commits. После Job — правила из [observability.md](observability.md) (`NoCommits`, `ParseErrors`, `ViewRefresh*`, `OrdersQueueErrorsGrowth`, **`ClickHouseKafkaQueueWithoutMv`**, **`ClickHouseKafkaQueueMissing`**) должны быть в prod Prometheus → Alertmanager → pager.

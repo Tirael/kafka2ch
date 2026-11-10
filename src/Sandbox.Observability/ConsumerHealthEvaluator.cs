@@ -12,6 +12,21 @@ public static class ConsumerHealthEvaluator
         long? lag = knownLags.Count > 0 ? knownLags.Sum() : null;
         var lastCommit = assigned.Max(consumer => consumer.LastCommitTime);
 
+        var pipeline = snapshot.Pipeline;
+        if (pipeline.QueueAttached && !pipeline.MainViewDependencyPresent)
+        {
+            issues.Add((ConsumerHealthStatus.Unhealthy,
+                $"queue {snapshot.QueueTable} is attached without dependency {snapshot.ViewName}; "
+                    + "Kafka engine does not stream (No attached views)"));
+        }
+
+        if (!pipeline.QueueAttached && !pipeline.QueueDetached)
+        {
+            issues.Add((ConsumerHealthStatus.Unhealthy,
+                $"queue {snapshot.QueueTable} is neither attached nor detached "
+                    + "(possible kill between DROP and CREATE)"));
+        }
+
         if (snapshot.Consumers.Count == 0)
         {
             issues.Add((ConsumerHealthStatus.Unhealthy, "no Kafka consumers registered for the queue table"));

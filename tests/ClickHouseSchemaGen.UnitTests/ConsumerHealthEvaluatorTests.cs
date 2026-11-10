@@ -163,7 +163,20 @@ public sealed class ConsumerHealthEvaluatorTests
         ulong recentErrors,
         ulong totalErrors,
         params KafkaConsumerState[] consumers) =>
-        ConsumerHealthEvaluator.Evaluate(new ConsumerHealthSnapshot(Now, consumers, recentErrors, totalErrors), Thresholds);
+        Evaluate(
+            new KafkaPipelineTopology(QueueAttached: true, QueueDetached: false, MainViewDependencyPresent: true),
+            recentErrors,
+            totalErrors,
+            consumers);
+
+    private static ConsumerHealthReport Evaluate(
+        KafkaPipelineTopology pipeline,
+        ulong recentErrors,
+        ulong totalErrors,
+        params KafkaConsumerState[] consumers) =>
+        ConsumerHealthEvaluator.Evaluate(
+            new ConsumerHealthSnapshot(Now, consumers, recentErrors, totalErrors, pipeline),
+            Thresholds);
 
     private static KafkaConsumerState Consumer(params KafkaPartitionAssignment[] assignments) =>
         new(
@@ -179,4 +192,55 @@ public sealed class ConsumerHealthEvaluatorTests
 
     private static KafkaPartitionAssignment Assignment(int partition, long currentOffset, long? endOffset) =>
         new("orders", partition, currentOffset, endOffset);
+
+    [Fact]
+    public void GivenAttachedQueueWithoutMainView_WhenEvaluate_ThenUnhealthyWithDistinctMessage()
+    {
+        var pipeline = new KafkaPipelineTopology(
+            QueueAttached: true,
+            QueueDetached: false,
+            MainViewDependencyPresent: false);
+
+        var report = Evaluate(pipeline, 0, 0, Consumer(Assignment(0, 1, 1)));
+
+        report.Status.Should().Be(ConsumerHealthStatus.Unhealthy);
+        report.Issues.Should().Contain(issue =>
+            issue.Contains("attached without dependency orders_mv", StringComparison.Ordinal)
+            && issue.Contains("No attached views", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void GivenQueueNeitherAttachedNorDetached_WhenEvaluate_ThenUnhealthyWithDistinctMessage()
+    {
+        var pipeline = new KafkaPipelineTopology(
+            QueueAttached: false,
+            QueueDetached: false,
+            MainViewDependencyPresent: false);
+
+        var report = Evaluate(pipeline, 0, 0);
+
+        report.Status.Should().Be(ConsumerHealthStatus.Unhealthy);
+        report.Issues.Should().Contain(issue =>
+            issue.Contains("neither attached nor detached", StringComparison.Ordinal)
+            && issue.Contains("DROP and CREATE", StringComparison.Ordinal));
+        report.Issues.Should().NotContain(issue =>
+            issue.Contains("attached without dependency", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void GivenDetachedQueueOnly_WhenEvaluate_ThenDoesNotAddStructuralDetachIssue()
+    {
+        var pipeline = new KafkaPipelineTopology(
+            QueueAttached: false,
+            QueueDetached: true,
+            MainViewDependencyPresent: false);
+
+        var report = Evaluate(pipeline, 0, 0);
+
+        report.Issues.Should().NotContain(issue =>
+            issue.Contains("neither attached nor detached", StringComparison.Ordinal));
+        report.Issues.Should().NotContain(issue =>
+            issue.Contains("attached without dependency", StringComparison.Ordinal));
+        report.Issues.Should().Contain(issue => issue.Contains("no Kafka consumers", StringComparison.Ordinal));
+    }
 }

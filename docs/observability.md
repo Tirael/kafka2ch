@@ -57,7 +57,7 @@ ORDER BY host"
 - `last_poll_time` старше минуты при непустых назначениях — consumer не опрашивает брокер.
 - `last_commit_time` не растёт, а lag > 0 — сообщения читаются, но блок не вставляется (poison message без `kafka_handle_error_mode`, ошибка целевой таблицы). При lag = 0 отсутствие commit — просто пустой топик.
 - `exceptions.*` — кольцевой буфер последних ошибок consumer'а.
-- `missing_dependencies` не пуст — Kafka-таблица ссылается на отсутствующие MV, чтения нет.
+- `missing_dependencies` — массив по consumer'ам; в доке ClickHouse это сигнал про зависимости Kafka engine. **Не** используйте его как детектор «MV дропнут»: для P1-3 смотрите `system.tables.dependencies_table` у `orders_queue` и алерты `ClickHouseKafkaQueueWithoutMv` / `ClickHouseKafkaQueueMissing` ниже.
 
 ## Lag
 
@@ -221,8 +221,12 @@ UI: http://localhost:9090 (вкладка Alerts).
 | `ClickHouseViewRefreshStuck` | SQL-exporter | `clickhouse_view_refresh_last_success_age_seconds > 120` 2 минуты | warning |
 | `ClickHouseViewRefreshException` | SQL-exporter | `clickhouse_view_refresh_exceptions > 0` 1 минута | warning |
 | `ClickHouseOrdersQueueErrorsGrowth` | SQL-exporter | `increase(clickhouse_orders_queue_errors_total[5m]) > 0` | warning |
+| `ClickHouseKafkaQueueWithoutMv` | SQL-exporter | `clickhouse_kafka_queue_without_mv == 1` 5 минут | critical |
+| `ClickHouseKafkaQueueMissing` | SQL-exporter | `clickhouse_kafka_queue_missing == 1` 5 минут | critical |
 
 `NoCommits` требует роста `KafkaMessagesPolled`, чтобы не срабатывать на пустом топике. Окно (10 минут) — это N из «нет commit > N минут»; меняется в `expr`.
+
+`QueueWithoutMv` / `QueueMissing` — структурные дыры после partial migrate (P1-3): attached Kafka без `orders_mv` в `dependencies_table`, либо очередь ни в `system.tables`, ни в `system.detached_tables`. `for: 5m` закрывает короткое окно `ATTACH`→`CREATE MV`. Detached на время длинного dedup **не** страницает. См. [migrate-runbook § drill](migrate-runbook.md#staging-drill-обязателен-до-prod).
 
 SQL-exporter (не `:9363`) — те же запросы, что в разделах выше / N1:
 
@@ -238,6 +242,21 @@ GROUP BY view;
 
 -- poison table growth
 SELECT count() AS clickhouse_orders_queue_errors_total FROM orders_queue_errors;
+
+-- P1-3: queue without MV / queue fully missing (label host=… on cluster scrapes)
+SELECT
+    toUInt8(
+        count() > 0 AND countIf(has(dependencies_table, 'orders_mv')) = 0
+    ) AS clickhouse_kafka_queue_without_mv
+FROM system.tables
+WHERE database = currentDatabase() AND name = 'orders_queue' AND engine = 'Kafka';
+
+SELECT toUInt8(
+    (SELECT count() FROM system.tables
+      WHERE database = currentDatabase() AND name = 'orders_queue' AND engine = 'Kafka') = 0
+    AND (SELECT count() FROM system.detached_tables
+      WHERE database = currentDatabase() AND table = 'orders_queue') = 0
+) AS clickhouse_kafka_queue_missing;
 ```
 
 Проверка правил (`promtool` из дистрибутива Prometheus):
@@ -255,7 +274,7 @@ Deploy / migrate дисциплина — [migrate-runbook.md](migrate-runbook.m
 
 | Статус | Уровень лога | Условия |
 |---|---|---|
-| `Unhealthy` | Error | нет consumers; ни одной назначенной партиции; consumer с назначениями не делал poll дольше `MaxPollAgeSeconds`; нет commit дольше `MaxCommitAgeMinutes` при lag > 0 |
+| `Unhealthy` | Error | очередь attached без `ViewName` в `dependencies_table`; очередь ни attached ни detached; нет consumers; ни одной назначенной партиции; consumer с назначениями не делал poll дольше `MaxPollAgeSeconds`; нет commit дольше `MaxCommitAgeMinutes` при lag > 0 |
 | `Degraded` | Warning | ошибки парсинга в `{queue}_errors` за `ErrorWindowMinutes`; исключение consumer за то же окно; нет commit дольше `MaxCommitAgeMinutes`, а lag неизвестен (Kafka недоступна) |
 | `Healthy` | Information | остальное (в т.ч. нет commit при lag = 0 — пустой топик) |
 
@@ -270,6 +289,7 @@ warn: Sandbox.App.Features.ConsumerHealth.ConsumerHealthWorker[0]
 |---|---|---|
 | `ConsumerHealth__IntervalMs` | `30000` | период проверки |
 | `ConsumerHealth__QueueTable` / `ErrorsTable` | `orders_queue` / `orders_queue_errors` | Kafka-таблица и её таблица ошибок |
+| `ConsumerHealth__ViewName` | `orders_mv` | имя основного MV для проверки `dependencies_table` |
 | `ConsumerHealth__Cluster` | — | имя кластера: `clusterAllReplicas(...)` вместо локальной `system.kafka_consumers` (в `docker-compose.cluster.yml` — `kafka2ch`) |
 | `ConsumerHealth__MaxPollAgeSeconds` | `60` | допустимый возраст `last_poll_time` |
 | `ConsumerHealth__MaxCommitAgeMinutes` | `5` | допустимый возраст `last_commit_time` при lag > 0 |

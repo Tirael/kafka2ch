@@ -129,4 +129,17 @@ public sealed class MigrationRunnerSplitTests
         MigrationRunner.WithClusterClause(tableSql, null)
             .Should().Be(tableSql);
     }
+
+    [Theory]
+    [InlineData(true, false, false)]
+    [InlineData(false, true, false)]
+    [InlineData(true, true, false)]
+    [InlineData(false, false, true)]
+    public void GivenQueuePresence_WhenShouldSkipAttach_ThenSkipsOnlyWhenNeitherAttachedNorDetached(
+        bool attached,
+        bool detached,
+        bool expectedSkip)
+    {
+        MigrationRunner.ShouldSkipAttach(attached, detached).Should().Be(expectedSkip);
+    }
 }

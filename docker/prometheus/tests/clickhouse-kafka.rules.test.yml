@@ -143,3 +143,45 @@ tests:
               description: >-
                 Poison / parse failures are landing in orders_queue_errors (handle_error_mode=stream).
                 Inspect _topic/_partition/_offset/_error; see docs/observability.md.
+
+  - interval: 1m
+    input_series:
+      - series: 'clickhouse_kafka_queue_without_mv{job="clickhouse-sql",host="clickhouse"}'
+        values: '0x3 1x7'
+      - series: 'clickhouse_kafka_queue_missing{job="clickhouse-sql",host="clickhouse"}'
+        values: '0x3 1x7'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: ClickHouseKafkaQueueWithoutMv
+        exp_alerts: []
+      - eval_time: 4m
+        alertname: ClickHouseKafkaQueueMissing
+        exp_alerts: []
+      - eval_time: 9m
+        alertname: ClickHouseKafkaQueueWithoutMv
+        exp_alerts:
+          - exp_labels:
+              job: clickhouse-sql
+              host: clickhouse
+              severity: critical
+            exp_annotations:
+              summary: orders_queue is attached without orders_mv dependency
+              description: >-
+                system.tables shows orders_queue (Kafka) but dependencies_table does not contain
+                orders_mv. Kafka logs "No attached views" and does not stream. Typical after a killed
+                migrate (ATTACH/CREATE without CREATE MV) or intentional non-restore when queue schema
+                changed. Rerun one Migrator Job after the lock is gone; see docs/migrate-runbook.md.
+      - eval_time: 9m
+        alertname: ClickHouseKafkaQueueMissing
+        exp_alerts:
+          - exp_labels:
+              job: clickhouse-sql
+              host: clickhouse
+              severity: critical
+            exp_annotations:
+              summary: orders_queue is neither attached nor detached
+              description: >-
+                orders_queue is absent from system.tables and system.detached_tables — the drill
+                state after DROP and before CREATE, or a failed replay. Rerun one Migrator Job after
+                the lock TTL / dead owner cleanup; Migrator skips ATTACH when the table is fully gone
+                so DROP/CREATE can heal. See docs/migrate-runbook.md.

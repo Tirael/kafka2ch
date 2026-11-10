@@ -3,7 +3,12 @@ using ClickHouse.Client.ADO;
 
 namespace Sandbox.Observability;
 
-public sealed record ConsumerHealthQuery(string QueueTable, string ErrorsTable, string? Cluster, TimeSpan ErrorWindow);
+public sealed record ConsumerHealthQuery(
+    string QueueTable,
+    string ErrorsTable,
+    string? Cluster,
+    TimeSpan ErrorWindow,
+    string ViewName = "orders_mv");
 
 public static class ConsumerHealthReader
 {
@@ -14,7 +19,15 @@ public static class ConsumerHealthReader
     {
         var (checkedAt, recentErrors, totalErrors) = await ReadErrorsAsync(connection, query, cancellationToken);
         var consumers = await ReadConsumersAsync(connection, query, cancellationToken);
-        return new ConsumerHealthSnapshot(checkedAt, consumers, recentErrors, totalErrors);
+        var pipeline = await ReadPipelineAsync(connection, query, cancellationToken);
+        return new ConsumerHealthSnapshot(
+            checkedAt,
+            consumers,
+            recentErrors,
+            totalErrors,
+            pipeline,
+            query.QueueTable,
+            query.ViewName);
     }
 
     private static async Task<(DateTime CheckedAt, ulong Recent, ulong Total)> ReadErrorsAsync(
@@ -64,6 +77,24 @@ public static class ConsumerHealthReader
         }
 
         return consumers;
+    }
+
+    private static async Task<KafkaPipelineTopology> ReadPipelineAsync(
+        ClickHouseConnection connection,
+        ConsumerHealthQuery query,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = ConsumerHealthQueries.PipelineTopology(
+            query.QueueTable,
+            query.ViewName,
+            query.Cluster);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        await reader.ReadAsync(cancellationToken);
+        return new KafkaPipelineTopology(
+            Convert.ToBoolean(reader.GetValue(0)),
+            Convert.ToBoolean(reader.GetValue(1)),
+            Convert.ToBoolean(reader.GetValue(2)));
     }
 
     private static DateTime? NullableDateTime(DbDataReader reader, int ordinal) =>
