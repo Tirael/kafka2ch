@@ -68,3 +68,24 @@ tests:
       - eval_time: 12m
         alertname: ClickHouseKafkaNoCommits
         exp_alerts: []
+
+  - interval: 1m
+    input_series:
+      - series: 'clickhouse_orders_cross_shard_dupes{job="clickhouse-sql"}'
+        values: '0x4 2x6'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: ClickHouseOrdersCrossShardDuplicates
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: ClickHouseOrdersCrossShardDuplicates
+        exp_alerts:
+          - exp_labels:
+              job: clickhouse-sql
+              severity: warning
+            exp_annotations:
+              summary: Cross-shard duplicate order_id after Kafka consumer rebalance
+              description: >-
+                count() FROM orders FINAL exceeds uniqExact(order_id): a redelivered message
+                likely landed on another shard (MV writes to *_local; FINAL dedupes per shard only).
+                Run scripts/verify-cluster.sh and follow the N1 A1 reconcile steps in docs/observability.md.

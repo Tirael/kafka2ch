@@ -136,6 +136,7 @@ Managed-ingestion в Cloud ([create Kafka ClickPipe](https://clickhouse.com/docs
 1. W1-2, W1-3, W1-4 влиты; E2E (W1-1) зелёный во всех трёх топологиях.
 2. Чтения, требующие точности, идут через `FINAL` или агрегаты из refreshable MV; это задокументировано для потребителей данных.
 3. Алерты W2-9 (`no commits`, `parse errors`, `no assignments`) включены.
+4. **N1 (межшардовые дубли):** выбрана политика **A1 Accept** — MV → `*_local` без write-through; gate/алерт `scripts/verify-cluster.sh` (`count() FROM orders FINAL` vs `uniqExact(order_id)`); reconcile вручную ([observability.md](../observability.md#n1-межшардовые-дубли-a1-accept)). Статус ADR остаётся **Proposed**, пока не заполнены пороги TR-2..TR-4 (P0-2).
 
 **Триггеры пересмотра** (пороги — начальные, калибруются нагрузочным стендом W3-5 на ×10 потоке):
 
@@ -159,6 +160,7 @@ Managed-ingestion в Cloud ([create Kafka ClickPipe](https://clickhouse.com/docs
 
 **Отрицательные / принимаемые риски**
 - Дубли физически хранятся до слияния; потребители обязаны читать через `FINAL` или агрегаты. Стоимость `FINAL` и полного refresh растёт с объёмом (TR-2).
+- **N1 A1:** после rebalance CG повтор может лечь на другой шард; глобальный `count() FROM orders FINAL` может превышать `uniqExact(order_id)` — мониторинг + reconcile, без смены write-through.
 - CPU ingestion и UDF-декода ключа остаётся на нодах ClickHouse (TP-1, TP-6) — подтверждается или опровергается только W3-5 (TR-3).
 - Schema id не валидируется; дисциплина раскладки `.proto` по нодам (R7) — через preflight миграций (W2-2), а не через SR.
 - DDL-lifecycle очередей (DETACH/DROP/CREATE) остаётся частью каждой миграции (T2).

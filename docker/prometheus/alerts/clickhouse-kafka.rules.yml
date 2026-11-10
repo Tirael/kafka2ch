@@ -36,3 +36,18 @@ groups:
             Consumers of every Kafka engine table hold no partition assignments: broker
             unavailable, consumer group rebalancing, or the queue table / its materialized views
             were dropped. Check system.kafka_consumers and kafka-consumer-groups --describe.
+
+      # Requires a SQL exporter gauge: count() - uniqExact(order_id) FROM orders FINAL
+      # (not on ClickHouse :9363/metrics). Gate without exporter: scripts/verify-cluster.sh.
+      # Policy N1 A1 Accept — see docs/observability.md#n1-межшардовые-дубли-a1-accept
+      - alert: ClickHouseOrdersCrossShardDuplicates
+        expr: max by (job) (clickhouse_orders_cross_shard_dupes) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Cross-shard duplicate order_id after Kafka consumer rebalance
+          description: >-
+            count() FROM orders FINAL exceeds uniqExact(order_id): a redelivered message
+            likely landed on another shard (MV writes to *_local; FINAL dedupes per shard only).
+            Run scripts/verify-cluster.sh and follow the N1 A1 reconcile steps in docs/observability.md.

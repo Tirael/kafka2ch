@@ -186,6 +186,8 @@ docker compose -f docker-compose.yml -f docker-compose.cluster.yml up -d --build
 ./scripts/verify-cluster.sh
 ```
 
+**N1 / межшардовые дубли (A1 Accept).** При MV → `*_local` повтор после rebalance consumer group может лечь на другой шард: `ReplacingMergeTree`/`FINAL` схлопывают только внутри шарда. Prod-политика — **принять** этот риск, не включать write-through: gate и алерт — `scripts/verify-cluster.sh` (`count() FROM orders FINAL` vs `uniqExact(order_id)`), reconcile вручную. Подробности — [clickhouse.codegen.md § N1](src/Sandbox.Contracts/clickhouse.codegen.md#политика-n1-межшардовые-дубли-a1-accept) и [observability.md § N1](docs/observability.md#n1-межшардовые-дубли-a1-accept).
+
 Альтернатива DDL через Replicated database (без `ON CLUSTER` на таблицах, MV пишут через `Distributed`):
 
 ```bash

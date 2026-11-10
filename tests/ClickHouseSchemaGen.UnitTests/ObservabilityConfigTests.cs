@@ -29,12 +29,23 @@ public sealed class ObservabilityConfigTests
     [InlineData("ClickHouseKafkaNoCommits")]
     [InlineData("ClickHouseKafkaParseErrors")]
     [InlineData("ClickHouseKafkaNoAssignments")]
+    [InlineData("ClickHouseOrdersCrossShardDuplicates")]
     public void PrometheusAlertRules_DefineAlert(string alert)
     {
         var rules = File.ReadAllText(
             Path.Combine(FindRepositoryRoot(), "docker", "prometheus", "alerts", "clickhouse-kafka.rules.yml"));
 
         rules.Should().Contain($"- alert: {alert}");
+    }
+
+    [Fact]
+    public void VerifyClusterScript_GatesCountVsUniqExactOrderId()
+    {
+        var script = File.ReadAllText(Path.Combine(FindRepositoryRoot(), "scripts", "verify-cluster.sh"));
+
+        script.Should().Contain("uniqExact(order_id)");
+        script.Should().Contain("FROM orders FINAL");
+        script.Should().Contain("N1 A1");
     }
 
     private static string Normalize(string text) => text.Replace("\r\n", "\n").Trim();

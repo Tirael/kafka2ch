@@ -115,6 +115,53 @@ FORMAT Vertical"
 
 Проблема — непустой `exception`, растущий `retry` или `last_success_time` старше двух интервалов (2 минуты). В кластере — `clusterAllReplicas('kafka2ch', system.view_refreshes)`. `ReadAggregates` в `Sandbox.App` логирует `last_success_time` рядом с агрегатами.
 
+## N1: межшардовые дубли (A1 Accept)
+
+Политика prod (см. [clickhouse.codegen.md § N1](../src/Sandbox.Contracts/clickhouse.codegen.md#политика-n1-межшардовые-дубли-a1-accept)): MV пишут в `*_local`, write-through **выключен**. После rebalance CG повтор того же Kafka-сообщения может попасть на другой шард; внутришардовый `FINAL` его не уберёт.
+
+### Gate
+
+[`scripts/verify-cluster.sh`](../scripts/verify-cluster.sh) падает, если:
+
+```sql
+SELECT count(), uniqExact(order_id) FROM orders FINAL
+-- ожидание: count = uniqExact(order_id)
+```
+
+Запускайте после deploy кластера и по nightly cron; exit ≠ 0 → алерт on-call (тот же канал, что у Prometheus critical).
+
+### Алерт (опциональный SQL-exporter)
+
+Встроенный `:9363/metrics` эту разницу не отдаёт. Если нужен PromQL-алерт, экспортируйте gauge (имя в [`clickhouse-kafka.rules.yml`](../docker/prometheus/alerts/clickhouse-kafka.rules.yml)):
+
+```sql
+SELECT
+    count() - uniqExact(order_id) AS clickhouse_orders_cross_shard_dupes
+FROM orders FINAL
+```
+
+Алерт `ClickHouseOrdersCrossShardDuplicates`: `clickhouse_orders_cross_shard_dupes > 0` for 5m → warning (см. rules + promtool tests).
+
+### Reconcile
+
+1. Найти дубликаты бизнес-ключа по шардам:
+
+```bash
+docker exec clickhouse clickhouse-client --password sandbox --query "
+SELECT order_id, groupArray((getMacro('shard'), kafka_partition, kafka_offset)) AS copies
+FROM clusterAllReplicas('kafka2ch', currentDatabase(), orders_local) FINAL
+GROUP BY order_id
+HAVING uniqExact(getMacro('shard')) > 1
+ORDER BY order_id
+LIMIT 50"
+```
+
+2. Оставить одну каноническую копию (обычно минимальный `(kafka_partition, kafka_offset)` или правило продукта); на остальных шардах удалить лишние строки (`ALTER TABLE orders_local ON CLUSTER … DELETE WHERE …` / ручной DELETE на `*_local` нужного шарда).
+3. Дождаться merge / проверить `SELECT count(), uniqExact(order_id) FROM orders FINAL`.
+4. Повторить `./scripts/verify-cluster.sh`.
+
+Глобальные uniq в отчётах — через `order_id` / агрегаты с оговоркой A1, не через «слепой» `count() FROM orders FINAL` без gate.
+
 ## Prometheus
 
 ClickHouse отдаёт метрики в формате Prometheus через [`docker/clickhouse/config/prometheus.xml`](../docker/clickhouse/config/prometheus.xml) (`http://<node>:9363/metrics`: `metrics`, `events`, `asynchronous_metrics`, `errors`). Конфиг смонтирован на single-node и на всех нодах кластера; с хоста доступен `clickhouse` на `localhost:9363`.
@@ -162,6 +209,7 @@ UI: http://localhost:9090 (вкладка Alerts).
 | `ClickHouseKafkaNoCommits` | 10 минут нет `KafkaCommits`, но `KafkaMessagesPolled` растёт (сообщения читаются, offsets стоят) | critical |
 | `ClickHouseKafkaParseErrors` | `increase(KafkaMessagesFailed[5m]) > 0` | warning |
 | `ClickHouseKafkaNoAssignments` | `sum(KafkaAssignedPartitions) == 0` по всем нодам 5 минут | critical |
+| `ClickHouseOrdersCrossShardDuplicates` | `clickhouse_orders_cross_shard_dupes > 0` 5 минут (метрика SQL-exporter / gate `verify-cluster.sh`) | warning |
 
 `NoCommits` требует роста `KafkaMessagesPolled`, чтобы не срабатывать на пустом топике. Окно (10 минут) — это N из «нет commit > N минут»; меняется в `expr`.
 
