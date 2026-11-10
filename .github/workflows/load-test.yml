@@ -3,18 +3,28 @@ name: Load test
 on:
   workflow_dispatch:
     inputs:
+      mode:
+        description: "full = Kafka settings stand (load-test.sh); adr-calibrate = TR-2..TR-4 on real orders path"
+        type: choice
+        options:
+          - full
+          - adr-calibrate
+        default: full
       messages:
-        description: Backlog size (messages) for drain scenarios
+        description: Backlog / seed size (messages)
         default: "300000"
       steady_rate:
-        description: Steady flow, msg/s (default flow is 2 msg/s)
+        description: Steady flow, msg/s (default demo flow is 2 msg/s)
         default: "20"
       steady_seconds:
         description: Steady flow duration, s
         default: "60"
       scenarios:
-        description: Comma-separated scenario names (empty = all)
+        description: Comma-separated load-test.sh scenario names (full mode only; empty = all)
         default: ""
+      spike_messages:
+        description: ADR calibrate spike size (adr-calibrate mode)
+        default: "20000"
   schedule:
     - cron: "0 6 * * 1"
 
@@ -28,6 +38,7 @@ permissions:
 jobs:
   load-test:
     name: load-test
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.mode == 'full' }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -52,4 +63,33 @@ jobs:
         with:
           name: load-test-report
           path: artifacts/load-test
+          if-no-files-found: ignore
+
+  adr-calibrate:
+    name: adr-calibrate-tr2-tr4
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.mode == 'adr-calibrate' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Run ADR TR-2..TR-4 calibration
+        env:
+          CAL_SEED_MESSAGES: ${{ inputs.messages || '300000' }}
+          CAL_STEADY_RATE: ${{ inputs.steady_rate || '20' }}
+          CAL_STEADY_SECONDS: ${{ inputs.steady_seconds || '90' }}
+          CAL_SPIKE_MESSAGES: ${{ inputs.spike_messages || '20000' }}
+        run: ./scripts/load-calibrate-adr.sh
+
+      - name: Job summary
+        if: always()
+        run: cat artifacts/load-calibration/report.md >> "$GITHUB_STEP_SUMMARY" || true
+
+      - name: Upload calibration report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: load-calibration-report
+          path: artifacts/load-calibration
           if-no-files-found: ignore

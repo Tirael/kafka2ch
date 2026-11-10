@@ -138,17 +138,19 @@ Managed-ingestion в Cloud ([create Kafka ClickPipe](https://clickhouse.com/docs
 3. Алерты W2-9 (`no commits`, `parse errors`, `no assignments`) включены.
 4. **N1 (межшардовые дубли):** выбрана политика **A1 Accept** — MV → `*_local` без write-through; gate/алерт `scripts/verify-cluster.sh` (`count() FROM orders FINAL` vs `uniqExact(order_id)`); reconcile вручную ([observability.md](../observability.md#n1-межшардовые-дубли-a1-accept)). Статус ADR остаётся **Proposed**, пока не заполнены пороги TR-2..TR-4 (P0-2).
 
-**Триггеры пересмотра** (пороги — начальные, калибруются нагрузочным стендом W3-5 на ×10 потоке):
+**Триггеры пересмотра** (пороги — начальные; калибровка P0-2 / `scripts/load-calibrate-adr.sh` на ×10 потоке — см. [load-calibration-tr2-tr4.md](../load-calibration-tr2-tr4.md)):
 
-| # | Триггер | Как измерять | Куда смотреть |
-| --- | --- | --- | --- |
-| TR-1 | Нужны чтения без `FINAL` или инкрементальные insert-triggered агрегаты (бизнес-требование) | — | C (self-hosted) или D (Cloud) |
-| TR-2 | Refresh `orders_agg_mv` p95 > 50 % интервала (> 30 с при `EVERY 1 MINUTE`), либо требуемая свежесть агрегатов < интервала | `system.view_refreshes` (W2-9) | TR-1 |
-| TR-3 | Ingestion занимает > 30 % CPU ноды на пике, или p95 эталонных запросов (`ReadAggregates`) под ingestion хуже базового > 25 % | W3-5: прогон «запросы без ingestion» vs «с ingestion ×10», CPU ноды по `system.asynchronous_metrics` / cgroup | Сначала выделенные под ingestion реплики/ноды в A; если нельзя — C или B |
-| TR-4 | Lag не возвращается к ≤ 60 с после всплеска ×10 при `kafka_num_consumers` = число партиций на ноду (SP-1, SP-2) | `system.kafka_consumers` + end offsets (W2-9) | Тюнинг `kafka_max_block_size`/`kafka_flush_interval_ms` (W3-5), затем C/B |
-| TR-5 | Нужна переигровка битых сообщений из топика DLQ или проверка schema id / несколько типов сообщений в топике / message не первый в `.proto` (SP-4) | Требование | C (если .NET-команда) или B |
-| TR-6 | Переезд на ClickHouse Cloud | — | D |
-| TR-7 | Доля ошибок парсинга > 0,1 % сообщений в сутки устойчиво | `{queue}_errors` (W1-2, W2-9) | Разбор причин; при системной несовместимости схем — TR-5 |
+| # | Триггер | Как измерять | Куда смотреть | Измерено (P0-2) | Вердикт |
+| --- | --- | --- | --- | --- | --- |
+| TR-1 | Нужны чтения без `FINAL` или инкрементальные insert-triggered агрегаты (бизнес-требование) | — | C (self-hosted) или D (Cloud) | — (требование) | — |
+| TR-2 | Refresh `orders_agg_mv` p95 > 50 % интервала (> 30 с при `EVERY 1 MINUTE`), либо требуемая свежесть агрегатов < интервала | `system.view_refreshes` (W2-9) | TR-1 / P1-1 | _pending CI_ | _pending_ |
+| TR-3 | Ingestion занимает > 30 % CPU ноды на пике, или p95 эталонных запросов (`ReadAggregates`) под ingestion хуже базового > 25 % | W3-5 / P0-2: прогон «запросы без ingestion» vs «с ingestion ×10», CPU ноды по cgroup / `system.asynchronous_metrics` | Сначала выделенные под ingestion реплики/ноды в A; если нельзя — C или B | _pending CI_ | _pending_ |
+| TR-4 | Lag не возвращается к ≤ 60 с после всплеска ×10 при `kafka_num_consumers` = число партиций на ноду (SP-1, SP-2) | `system.kafka_consumers` + end offsets (W2-9) | Тюнинг `kafka_max_block_size`/`kafka_flush_interval_ms` (W3-5), затем C/B | _pending CI_ | _pending_ |
+| TR-5 | Нужна переигровка битых сообщений из топика DLQ или проверка schema id / несколько типов сообщений в топике / message не первый в `.proto` (SP-4) | Требование | C (если .NET-команда) или B | — | — |
+| TR-6 | Переезд на ClickHouse Cloud | — | D | — | — |
+| TR-7 | Доля ошибок парсинга > 0,1 % сообщений в сутки устойчиво | `{queue}_errors` (W1-2, W2-9) | Разбор причин; при системной несовместимости схем — TR-5 | — | — |
+
+**P0-2 path A:** все TR-2..TR-4 green → путь A ок для последующего P0-6 Accept; любой red → **не** Accept A вслепую (P1-1 / P2-1). Статус этого ADR остаётся **Proposed**, пока владелец не примет решение после заполненных чисел и остальных P0.
 
 Между B и C при срабатывании TR-1/TR-3/TR-5 предварительно предпочтителен **C**: команда и codegen уже на .NET, Confluent SR-сериализация уже в проекте, ключ декодируется без SQL UDF. B выбирать, если в организации уже есть эксплуатируемый Kafka Connect.
 
@@ -166,7 +168,9 @@ Managed-ingestion в Cloud ([create Kafka ClickPipe](https://clickhouse.com/docs
 - DDL-lifecycle очередей (DETACH/DROP/CREATE) остаётся частью каждой миграции (T2).
 
 **Последующие действия**
-- W3-5: снять метрики для TR-2..TR-4 и зафиксировать пороги в этом ADR (перевести в `Accepted` или `Superseded`).
+- W3-5: стенд `scripts/load-test.sh` (throughput / Kafka settings) — сделано.
+- P0-2: `scripts/load-calibrate-adr.sh` + [load-calibration-tr2-tr4.md](../load-calibration-tr2-tr4.md) — снять TR-2..TR-4 на реальном `orders`/`orders_agg_mv`, вписать числа в таблицу выше; **не** менять статус ADR на `Accepted` в том же PR.
+- P0-6: после P0-1..P0-5 и go по TR — `Accepted` или `Superseded`.
 - При срабатывании триггера — новый ADR с выбором C/B/D; для C — прототип consumer'а в `src/` с E2E-тестом exactly-once (рестарт после вставки до commit → `count() = uniqExact(kafka_partition, kafka_offset)` без `FINAL`).
 
 ## 7. Источники
