@@ -1,0 +1,3 @@
+source: https://github.com/smixs/humanizer-ru
+commit: ff990df404f78fb1a43fc574a725490bd1be8070
+installed: 2026-11-10
