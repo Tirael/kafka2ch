@@ -204,6 +204,8 @@ Overlay [`docker-compose.cluster.yml`](docker-compose.cluster.yml): `clickhouse`
 
 **Staging/prod SASL/TLS:** demo `kafka.xml` — PLAINTEXT без паролей. Для staging/prod смонтируйте overlay [`kafka.sasl.xml.example`](docker/clickhouse/config/kafka.sasl.xml.example) (или копию из secret store) вместо demo XML, передайте `KAFKA_SASL_*` / TLS из secret store, сохраните грант `NAMED COLLECTION`. Ротация пароля — без schema-миграции. В CI секреты Kafka SASL не класть. Подробности — [§ Staging / prod overlay](src/Sandbox.Contracts/clickhouse.codegen.md#staging--prod-overlay-sasltls).
 
+**Throughput overlay (P1-4):** demo/prod steady — `numConsumers: 1`, `flushIntervalMs: 1000` ([demo](src/Sandbox.Contracts/clickhouse.codegen.throughput-demo.example.json) / [prod](src/Sandbox.Contracts/clickhouse.codegen.throughput-prod.example.json) example fragments). `numConsumers` считается на ноду (`ceil(partitions / nodes)`); на compose-кластере 4×1 = 4 партиции. Live `clickhouse.codegen.json` optional fields не задаёт (TR-4 GREEN). Catch-up и миграция queue — [§ Demo / prod throughput overlay](src/Sandbox.Contracts/clickhouse.codegen.md#demo--prod-throughput-overlay), замеры — [load-testing.md](docs/load-testing.md).
+
 | Нода | Шард | Реплика |
 |---|---|---|
 | `clickhouse` | 01 | `clickhouse` |
