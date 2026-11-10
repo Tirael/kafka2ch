@@ -1,0 +1,7 @@
+{
+  "_readme": "P1-4 demo throughput overlay. Copy the kafka object fields into clickhouse.codegen.json → kafkaTables[].kafka (do not extends this file: arrays replace wholesale). Not listed in clickhouse.topologies.json — live demo keeps optional fields unset so init stays part-light. Evidence: docs/load-testing.md steady s2; ADR TR-4 GREEN at consumers=partitions=1.",
+  "kafka": {
+    "numConsumers": 1,
+    "flushIntervalMs": 1000
+  }
+}

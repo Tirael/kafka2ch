@@ -124,9 +124,14 @@ Recommendation for **backlog recovery / high sustained ingest**: set `numConsume
 
 Recommendation for the **demo / low-rate path (≤ tens of msg/s)**: keep `numConsumers: 1` and set `flushIntervalMs: 1000` so MV blocks flush within ~1 s. Do not raise consumer count for latency at this rate.
 
+`kafka_num_consumers` is **per ClickHouse server**. On the compose cluster (4 partitions, 4 nodes in one group) keep `numConsumers: 1` per node — same steady fragment as demo. Raising consumers helps only when **one** node owns many partitions.
+
 ### Defaults left in the sandbox config
 
-Committed `clickhouse.codegen.json` still uses `numConsumers: 1` without the optional throughput fields so the demo stays simple and part-light. Apply tuned values when you need catch-up or tighter latency:
+Committed `clickhouse.codegen.json` still uses `numConsumers: 1` without the optional throughput fields so the demo stays simple and part-light (TR-4 already GREEN at that setting). Copy-ready overlays (not in `clickhouse.topologies.json`):
+
+- Demo / prod-cluster steady: [`clickhouse.codegen.throughput-demo.example.json`](../src/Sandbox.Contracts/clickhouse.codegen.throughput-demo.example.json), [`clickhouse.codegen.throughput-prod.example.json`](../src/Sandbox.Contracts/clickhouse.codegen.throughput-prod.example.json) — both `{ "numConsumers": 1, "flushIntervalMs": 1000 }`
+- Full table + catch-up snippets: [clickhouse.codegen.md § Demo / prod throughput overlay](../src/Sandbox.Contracts/clickhouse.codegen.md#demo--prod-throughput-overlay)
 
 ```json
 "kafka": {
@@ -135,16 +140,25 @@ Committed `clickhouse.codegen.json` still uses `numConsumers: 1` without the opt
 }
 ```
 
-High-throughput catch-up example:
+Catch-up on a **single node** that owns the partitions (measured separately; always pair extra consumers with `threadPerConsumer: true`):
 
 ```json
 "kafka": {
   "numConsumers": 2,
   "threadPerConsumer": true,
-  "maxBlockSize": 65536,
-  "flushIntervalMs": 1000,
-  "pollMaxBatchSize": 16384
+  "flushIntervalMs": 1000
 }
 ```
+
+```json
+"kafka": {
+  "numConsumers": 4,
+  "threadPerConsumer": true,
+  "maxBlockSize": 65536,
+  "flushIntervalMs": 1000
+}
+```
+
+Do not recommend `pollMaxBatchSize` from the stand — it was not varied in `load-test.sh` scenarios. Applying any of these into a live topology recreates the queue (`KafkaTableChanged`).
 
 Re-run the stand after changing settings or ClickHouse/Kafka images; paste the new `report.md` summary into PRs that claim a throughput win.

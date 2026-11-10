@@ -1,0 +1,7 @@
+{
+  "_readme": "P1-4 prod/staging throughput overlay for the compose cluster shape (4 partitions, 4 ClickHouse nodes sharing one kafka_group_name). numConsumers is per server: 1 × 4 nodes = 4 consumers for 4 partitions. Copy kafka fields into the live kafkaTables[].kafka of the topology you deploy; applying them recreates the queue (KafkaTableChanged). Do not set numConsumers to the topic partition count on every node. Single-node catch-up (one node owns many partitions) is a different profile — see clickhouse.codegen.md § Demo / prod throughput overlay.",
+  "kafka": {
+    "numConsumers": 1,
+    "flushIntervalMs": 1000
+  }
+}

@@ -300,6 +300,35 @@ buf build -o contracts.binpb
 
 `maxBlockSize`, `flushIntervalMs`, `pollMaxBatchSize`, `threadPerConsumer` попадают в `SETTINGS` только если заданы (иначе действуют дефолты ClickHouse: `max_insert_block_size`, `stream_flush_interval_ms`, `max_block_size`, `0`), сохраняются в `schema.snapshot.json` и при изменении пересоздают queue (`KafkaTableChanged`). Как их подбирать — [docs/load-testing.md](../../docs/load-testing.md).
 
+##### Demo / prod throughput overlay
+
+`kafka_num_consumers` — **на сервер**. Сумма в consumer group = значение × число нод, где создана очередь с тем же `kafka_group_name`. Ставьте `ceil(partitions / consuming_nodes)` на ноду, а не число партиций топика на каждую ноду.
+
+| Профиль | Когда | `numConsumers` | `flushIntervalMs` | `maxBlockSize` / `threadPerConsumer` | Файл-образец |
+| --- | --- | --- | --- | --- | --- |
+| Demo / low-rate | single-node demo, 1 партиция, ≤ десятки msg/s | `1` | `1000` | не задавать | [`clickhouse.codegen.throughput-demo.example.json`](clickhouse.codegen.throughput-demo.example.json) |
+| Prod cluster (compose) | 4 партиции, 4 ноды в одной group | `1` на ноду | `1000` | не задавать | [`clickhouse.codegen.throughput-prod.example.json`](clickhouse.codegen.throughput-prod.example.json) |
+| Catch-up (одна нода владеет партициями) | backlog / высокий drain на single-node | `2` (+ tpc) или `4` (+ tpc) | `1000` | при `4`: `maxBlockSize` `65536`, всегда `threadPerConsumer: true` если consumers > 1 | сниппеты ниже; замеры d4/d8 в [load-testing.md](../../docs/load-testing.md) |
+
+Committed [`clickhouse.codegen.json`](clickhouse.codegen.json) намеренно **без** optional throughput-полей (`numConsumers: 1` только): TR-4 уже GREEN при `consumers=partitions=1` ([load-calibration-tr2-tr4.md](../../docs/load-calibration-tr2-tr4.md)). Образцы **не** в [`clickhouse.topologies.json`](clickhouse.topologies.json) и не подключаются через `extends` (массивы в loader заменяются целиком). Чтобы применить — скопируйте поля в `kafkaTables[].kafka` нужной топологии и сделайте `migrate` (пересоздание queue, offsets группы сохраняются).
+
+```json
+// demo / prod cluster steady — тот же kafka-фрагмент
+{ "numConsumers": 1, "flushIntervalMs": 1000 }
+```
+
+```json
+// catch-up single-node, 4 партиции на одной ноде (замер d4 ≈ 31.7k msg/s)
+{ "numConsumers": 2, "threadPerConsumer": true, "flushIntervalMs": 1000 }
+```
+
+```json
+// catch-up single-node, максимум стенда (замер d8 ≈ 34.4k msg/s)
+{ "numConsumers": 4, "threadPerConsumer": true, "maxBlockSize": 65536, "flushIntervalMs": 1000 }
+```
+
+`pollMaxBatchSize` в рекомендации не входит: на load-стенде отдельно не мерился. Не копируйте `numConsumers: 4` на каждую ноду кластера (получите 16 членов группы на 4 партиции).
+
 #### `namedCollection` (брокеры и секреты вне DDL)
 
 Демо-конфиг использует `"namedCollection": "kafka_orders"`. Генератор пишет:
