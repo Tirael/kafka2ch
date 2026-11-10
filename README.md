@@ -140,7 +140,7 @@ dotnet exec tools/ClickHouseSchemaGen.Migrator/bin/Debug/net8.0/ClickHouseSchema
    самую долгую миграцию). Перед применением пишется `kind = 'started'`, после — `migration`; `started` без `migration`
    при следующем запуске даёт предупреждение «interrupted run», и миграция применяется повторно (SQL должен быть идемпотентным).
 
-   До первого statement'а Migrator выполняет preflight: проверяет `-- require:format_schema <file> sha256=<hash>` на всех репликах через `file()` (поэтому `format_schemas` смонтирован в `/var/lib/clickhouse/user_files/format_schemas`, см. `docker/clickhouse/config/format_schemas.xml`) и dry-run'ит DDL очередей/MV во временной БД. Отключить — `--skip-preflight`. Подробности — [clickhouse.codegen.md](src/Sandbox.Contracts/clickhouse.codegen.md#миграции-схемы).
+   До первого statement'а Migrator выполняет preflight: проверяет `-- require:format_schema <file> sha256=<hash>` на всех репликах через `file()` (поэтому `format_schemas` смонтирован в `/var/lib/clickhouse/user_files/format_schemas`, см. `docker/clickhouse/config/format_schemas.xml`) и dry-run'ит DDL очередей/MV во временной БД. Отключить — `--skip-preflight` (в prod **нельзя**). On-call порядок, запрет параллельных Job'ов, rollback/DETACH и staging drill — [docs/migrate-runbook.md](docs/migrate-runbook.md). Подробности codegen — [clickhouse.codegen.md](src/Sandbox.Contracts/clickhouse.codegen.md#миграции-схемы).
 
 Контроль мутаций и распределённого DDL:
 
@@ -300,7 +300,7 @@ docker exec clickhouse clickhouse-client --password sandbox \
   --query "SELECT * FROM system.kafka_consumers FORMAT Vertical"
 ```
 
-Наблюдаемость (назначения, lag, `orders_queue_errors`, `system.view_refreshes`, Prometheus endpoint `:9363`, алерты, health-check `ConsumerHealth` в логах `sandbox-app`) — [docs/observability.md](docs/observability.md). Prometheus с правилами алертов: `docker compose --profile observability up -d`.
+Наблюдаемость (назначения, lag, `orders_queue_errors`, `system.view_refreshes`, Prometheus endpoint `:9363`, алерты, health-check `ConsumerHealth` в логах `sandbox-app`) — [docs/observability.md](docs/observability.md). Prometheus с правилами алертов: `docker compose --profile observability up -d`. Prod: те же rules → Alertmanager; migrate playbook — [docs/migrate-runbook.md](docs/migrate-runbook.md).
 
 Kafka UI: http://localhost:8080
 

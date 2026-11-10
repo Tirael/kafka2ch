@@ -202,16 +202,35 @@ UI: http://localhost:9090 (вкладка Alerts).
 
 ### Алерты
 
-[`docker/prometheus/alerts/clickhouse-kafka.rules.yml`](../docker/prometheus/alerts/clickhouse-kafka.rules.yml):
+Подключите [`docker/prometheus/alerts/clickhouse-kafka.rules.yml`](../docker/prometheus/alerts/clickhouse-kafka.rules.yml) к **prod** Prometheus + Alertmanager → pager (critical → on-call). Compose profile `observability` грузит тот же файл для локальной проверки (UI `:9090` → Alerts).
 
-| Алерт | Условие | Severity |
-|---|---|---|
-| `ClickHouseKafkaNoCommits` | 10 минут нет `KafkaCommits`, но `KafkaMessagesPolled` растёт (сообщения читаются, offsets стоят) | critical |
-| `ClickHouseKafkaParseErrors` | `increase(KafkaMessagesFailed[5m]) > 0` | warning |
-| `ClickHouseKafkaNoAssignments` | `sum(KafkaAssignedPartitions) == 0` по всем нодам 5 минут | critical |
-| `ClickHouseOrdersCrossShardDuplicates` | `clickhouse_orders_cross_shard_dupes > 0` 5 минут (метрика SQL-exporter / gate `verify-cluster.sh`) | warning |
+| Алерт | Источник метрик | Условие | Severity |
+|---|---|---|---|
+| `ClickHouseKafkaNoCommits` | `:9363` | 10 минут нет `KafkaCommits`, но `KafkaMessagesPolled` растёт | critical |
+| `ClickHouseKafkaParseErrors` | `:9363` | `increase(KafkaMessagesFailed[5m]) > 0` | warning |
+| `ClickHouseKafkaNoAssignments` | `:9363` | `sum(KafkaAssignedPartitions) == 0` 5 минут | critical |
+| `ClickHouseOrdersCrossShardDuplicates` | SQL-exporter / `verify-cluster` | `clickhouse_orders_cross_shard_dupes > 0` 5 минут | warning |
+| `ClickHouseViewRefreshStuck` | SQL-exporter | `clickhouse_view_refresh_last_success_age_seconds > 120` 2 минуты | warning |
+| `ClickHouseViewRefreshException` | SQL-exporter | `clickhouse_view_refresh_exceptions > 0` 1 минута | warning |
+| `ClickHouseOrdersQueueErrorsGrowth` | SQL-exporter | `increase(clickhouse_orders_queue_errors_total[5m]) > 0` | warning |
 
 `NoCommits` требует роста `KafkaMessagesPolled`, чтобы не срабатывать на пустом топике. Окно (10 минут) — это N из «нет commit > N минут»; меняется в `expr`.
+
+SQL-exporter (не `:9363`) — те же запросы, что в разделах выше / N1:
+
+```sql
+-- view refresh age (seconds) + exception flag
+SELECT
+    view,
+    dateDiff('second', max(last_success_time), now()) AS clickhouse_view_refresh_last_success_age_seconds,
+    countIf(exception != '') AS clickhouse_view_refresh_exceptions
+FROM system.view_refreshes
+WHERE view = 'orders_agg_mv'
+GROUP BY view;
+
+-- poison table growth
+SELECT count() AS clickhouse_orders_queue_errors_total FROM orders_queue_errors;
+```
 
 Проверка правил (`promtool` из дистрибутива Prometheus):
 
@@ -219,6 +238,8 @@ UI: http://localhost:9090 (вкладка Alerts).
 promtool check rules docker/prometheus/alerts/clickhouse-kafka.rules.yml
 promtool test rules docker/prometheus/tests/clickhouse-kafka.rules.test.yml
 ```
+
+Deploy / migrate дисциплина — [migrate-runbook.md](migrate-runbook.md).
 
 ## Health-check в Sandbox.App
 

@@ -51,3 +51,40 @@ groups:
             count() FROM orders FINAL exceeds uniqExact(order_id): a redelivered message
             likely landed on another shard (MV writes to *_local; FINAL dedupes per shard only).
             Run scripts/verify-cluster.sh and follow the N1 A1 reconcile steps in docs/observability.md.
+
+      # SQL exporter: dateDiff('second', last_success_time, now()) FROM system.view_refreshes
+      # for view = orders_agg_mv (REFRESH EVERY 1 MINUTE → stuck if > 2 intervals).
+      - alert: ClickHouseViewRefreshStuck
+        expr: max by (job, view) (clickhouse_view_refresh_last_success_age_seconds) > 120
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: Refreshable aggregate view has not succeeded for over 2 minutes
+          description: >-
+            system.view_refreshes.last_success_time for {{ $labels.view }} is older than two
+            REFRESH intervals. Check exception/retry in system.view_refreshes and SYSTEM REFRESH VIEW.
+
+      # SQL exporter: countIf(exception != '') FROM system.view_refreshes WHERE view = orders_agg_mv
+      - alert: ClickHouseViewRefreshException
+        expr: max by (job, view) (clickhouse_view_refresh_exceptions) > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: Refreshable aggregate view reports a non-empty exception
+          description: >-
+            system.view_refreshes.exception is set for {{ $labels.view }}. Inspect the text,
+            fix the query/source, then SYSTEM REFRESH VIEW / SYSTEM WAIT VIEW.
+
+      # SQL exporter counter: SELECT count() FROM orders_queue_errors (scrape as gauge/counter).
+      # Complements ClickHouseKafkaParseErrors (KafkaMessagesFailed on :9363).
+      - alert: ClickHouseOrdersQueueErrorsGrowth
+        expr: increase(clickhouse_orders_queue_errors_total[5m]) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: orders_queue_errors row count grew in the last 5 minutes
+          description: >-
+            Poison / parse failures are landing in orders_queue_errors (handle_error_mode=stream).
+            Inspect _topic/_partition/_offset/_error; see docs/observability.md.
