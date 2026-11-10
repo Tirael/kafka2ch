@@ -357,7 +357,7 @@ SETTINGS
 | --- | --- | --- |
 | Брокеры / SASL user+password | env `KAFKA_BROKER_LIST`, `KAFKA_SASL_USERNAME`, `KAFKA_SASL_PASSWORD` (`from_env`) | Значения — только из secret store / K8s Secret / Vault; **не** в git и **не** в CI |
 | `kafka_security_protocol` / `kafka_sasl_mechanism` | XML overlay | Обычно `SASL_SSL` + `SCRAM-SHA-512` |
-| TLS material | `ssl_*` во вложенном `<kafka>` + volume с `ca.pem` / client cert | Пути на ноде, не содержимое PEM в репозитории |
+| TLS material | `ssl_*` во вложенном `<kafka>` + volume с `ca.pem` / client cert | Пути на ноде, не содержимое PEM в репозитории. `ssl_endpoint_identification_algorithm` = `https` при совпадении SAN/CN с bootstrap host; **не** оставляйте тег пустым — cppkafka кидает `ConfigException` |
 | Гранты | [`named-collections-users.xml`](../../docker/clickhouse/config/named-collections-users.xml) или `GRANT NAMED COLLECTION ON kafka_orders TO <migrator>` | Нужны пользователю init/Migrator на **каждой** ноде; `show_named_collections_secrets` = `0` |
 | CI | compose + demo `kafka.xml` | Секреты в workflow secrets для ClickHouse Kafka **не** класть; unit-тест запрещает plaintext password literals в demo XML |
 
