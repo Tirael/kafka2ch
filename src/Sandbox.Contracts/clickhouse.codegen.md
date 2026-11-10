@@ -320,9 +320,24 @@ SETTINGS
 - Precedence в ClickHouse 26.6: значения из `SETTINGS` перекрывают одноимённые ключи коллекции (`loadFromNamedCollection`, затем `loadFromQuery`). Держите в коллекции только подключение (`kafka_broker_list`, `kafka_security_protocol`, `kafka_sasl_*`, `<kafka>`), а `kafka_topic_list` / `kafka_group_name` / `kafka_format` / `kafka_schema` / `kafka_num_consumers` / `kafka_handle_error_mode` — в codegen (они в snapshot и диффятся). Ключи схемы, положенные в коллекцию, генератор не видит.
 - Глобальная секция `<kafka>` сервера **не** мержится для таблиц на named collection: librdkafka-настройки (`session_timeout_ms`, `heartbeat_interval_ms`, TLS, OAUTHBEARER) кладите во вложенный `<kafka>` коллекции (точки → `_`).
 
-SASL/TLS (пример для production; значения — из env/секретов, в git не коммитить):
+##### Staging / prod overlay (SASL/TLS)
+
+Демо [`kafka.xml`](../../docker/clickhouse/config/kafka.xml) — **PLAINTEXT** + `KAFKA_BROKER_LIST` (без паролей). Для staging/prod подмените его overlay'ем [`kafka.sasl.xml.example`](../../docker/clickhouse/config/kafka.sasl.xml.example) (или эквивалентом из secret store):
+
+| Что | Где | Примечание |
+| --- | --- | --- |
+| Брокеры / SASL user+password | env `KAFKA_BROKER_LIST`, `KAFKA_SASL_USERNAME`, `KAFKA_SASL_PASSWORD` (`from_env`) | Значения — только из secret store / K8s Secret / Vault; **не** в git и **не** в CI |
+| `kafka_security_protocol` / `kafka_sasl_mechanism` | XML overlay | Обычно `SASL_SSL` + `SCRAM-SHA-512` |
+| TLS material | `ssl_*` во вложенном `<kafka>` + volume с `ca.pem` / client cert | Пути на ноде, не содержимое PEM в репозитории |
+| Гранты | [`named-collections-users.xml`](../../docker/clickhouse/config/named-collections-users.xml) или `GRANT NAMED COLLECTION ON kafka_orders TO <migrator>` | Нужны пользователю init/Migrator на **каждой** ноде; `show_named_collections_secrets` = `0` |
+| CI | compose + demo `kafka.xml` | Секреты в workflow secrets для ClickHouse Kafka **не** класть; unit-тест запрещает plaintext password literals в demo XML |
+
+**Ротация credentials без schema-миграции:** обновите secret → перезапустите ClickHouse (или `DETACH`/`ATTACH` очереди) на всех нодах. Snapshot/DDL не меняются, т.к. в схеме только имя `namedCollection`.
+
+**Staging smoke:** очередь потребляет по `SASL_SSL` (`system.kafka_consumers` без exceptions, lag движется); смена пароля в store без `migrate` — consumers поднимаются после рестарта.
 
 ```xml
+<!-- фрагмент; полный файл — kafka.sasl.xml.example -->
 <clickhouse>
     <named_collections>
         <kafka_orders>

@@ -199,6 +199,8 @@ Overlay replicated-db дополнительно монтирует на все 
 
 Overlay [`docker-compose.cluster.yml`](docker-compose.cluster.yml): `clickhouse` = шард 1 / реплика 1 (порты те же), плюс `clickhouse-02..04`, `clickhouse-keeper-01..03`, `clickhouse-cluster-init`, топики на 4 партиции. На всех нодах (и на single-node) монтируется [`docker/clickhouse/config/kafka.xml`](docker/clickhouse/config/kafka.xml): named collection `kafka_orders` (брокеры из env `KAFKA_BROKER_LIST`, `session_timeout_ms` / `heartbeat_interval_ms`), на которую ссылается `ENGINE = Kafka(kafka_orders)`, и [`named-collections-users.xml`](docker/clickhouse/config/named-collections-users.xml) (грант на её использование для `default`). Брокеры и SASL/TLS-секреты не попадают в DDL, миграции и snapshot — см. [`namedCollection`](src/Sandbox.Contracts/clickhouse.codegen.md#namedcollection-брокеры-и-секреты-вне-ddl).
 
+**Staging/prod SASL/TLS:** demo `kafka.xml` — PLAINTEXT без паролей. Для staging/prod смонтируйте overlay [`kafka.sasl.xml.example`](docker/clickhouse/config/kafka.sasl.xml.example) (или копию из secret store) вместо demo XML, передайте `KAFKA_SASL_*` / TLS из secret store, сохраните грант `NAMED COLLECTION`. Ротация пароля — без schema-миграции. В CI секреты Kafka SASL не класть. Подробности — [§ Staging / prod overlay](src/Sandbox.Contracts/clickhouse.codegen.md#staging--prod-overlay-sasltls).
+
 | Нода | Шард | Реплика |
 |---|---|---|
 | `clickhouse` | 01 | `clickhouse` |
