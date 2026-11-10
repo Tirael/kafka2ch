@@ -1,0 +1,37 @@
+<!--
+  Staging / prod overlay for named collection kafka_orders (SASL_SSL).
+
+  Usage (ops, not committed with secrets):
+    1. Copy to a path outside git or a secret-managed ConfigMap/volume, e.g.
+         /etc/clickhouse-server/config.d/kafka.xml
+       Replace the demo PLAINTEXT kafka.xml mount with this file on every node.
+    2. Inject env from the secret store (K8s Secret, Vault, compose secrets):
+         KAFKA_BROKER_LIST, KAFKA_SASL_USERNAME, KAFKA_SASL_PASSWORD
+    3. Mount TLS material read-only (paths below are examples):
+         ca.pem / client.pem / client.key
+    4. Keep named-collections-users.xml (or GRANT NAMED COLLECTION ON kafka_orders)
+       for the user that runs init/Migrator. Leave show_named_collections_secrets = 0.
+
+  Do NOT put plaintext passwords in this file or commit a filled copy.
+  Credential rotation: update the secret store → restart ClickHouse (or detach/attach
+  the Kafka queue) — no schema migration.
+-->
+<clickhouse>
+    <named_collections>
+        <kafka_orders>
+            <kafka_broker_list from_env="KAFKA_BROKER_LIST"/>
+            <kafka_security_protocol>SASL_SSL</kafka_security_protocol>
+            <kafka_sasl_mechanism>SCRAM-SHA-512</kafka_sasl_mechanism>
+            <kafka_sasl_username from_env="KAFKA_SASL_USERNAME"/>
+            <kafka_sasl_password from_env="KAFKA_SASL_PASSWORD"/>
+            <kafka>
+                <ssl_ca_location>/etc/clickhouse-server/kafka/ca.pem</ssl_ca_location>
+                <ssl_certificate_location>/etc/clickhouse-server/kafka/client.pem</ssl_certificate_location>
+                <ssl_key_location>/etc/clickhouse-server/kafka/client.key</ssl_key_location>
+                <ssl_endpoint_identification_algorithm>https</ssl_endpoint_identification_algorithm>
+                <session_timeout_ms>60000</session_timeout_ms>
+                <heartbeat_interval_ms>10000</heartbeat_interval_ms>
+            </kafka>
+        </kafka_orders>
+    </named_collections>
+</clickhouse>

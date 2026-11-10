@@ -167,6 +167,63 @@ public sealed class KafkaNamedCollectionTests
             new KafkaTableChanged("orders_queue", "namedCollection changed"));
     }
 
+    [Fact]
+    public void DemoKafkaXml_HasNoPlaintextPasswordLiterals()
+    {
+        var xml = File.ReadAllText(Path.Combine(FindRepositoryRoot(), "docker", "clickhouse", "config", "kafka.xml"));
+
+        xml.Should().Contain("from_env=\"KAFKA_BROKER_LIST\"");
+        xml.Should().NotContain("kafka_sasl_password");
+        ForbidPlaintextPasswordLiterals(xml);
+    }
+
+    [Fact]
+    public void SaslOverlayExample_UsesFromEnvForSecretsAndHasNoPasswordLiterals()
+    {
+        var xml = File.ReadAllText(
+            Path.Combine(FindRepositoryRoot(), "docker", "clickhouse", "config", "kafka.sasl.xml.example"));
+
+        xml.Should().Contain("kafka_security_protocol>SASL_SSL");
+        xml.Should().Contain("from_env=\"KAFKA_SASL_USERNAME\"");
+        xml.Should().Contain("from_env=\"KAFKA_SASL_PASSWORD\"");
+        xml.Should().Contain("from_env=\"KAFKA_BROKER_LIST\"");
+        ForbidPlaintextPasswordLiterals(xml);
+    }
+
+    [Fact]
+    public void NamedCollectionsUsersXml_GrantsNamedCollectionControlToDefault()
+    {
+        var xml = File.ReadAllText(
+            Path.Combine(FindRepositoryRoot(), "docker", "clickhouse", "config", "named-collections-users.xml"));
+
+        xml.Should().Contain("<named_collection_control>1</named_collection_control>");
+        xml.Should().Contain("<default>");
+    }
+
+    private static void ForbidPlaintextPasswordLiterals(string xml)
+    {
+        // Allow from_env="…PASSWORD…" and comments; reject element text / attributes with literal secrets.
+        System.Text.RegularExpressions.Regex
+            .IsMatch(xml, @"<kafka_sasl_password(?![^>]*\bfrom_env=)[^>]*>\s*[^<\s]", System.Text.RegularExpressions.RegexOptions.IgnoreCase)
+            .Should().BeFalse("demo/overlay must not embed plaintext kafka_sasl_password values");
+        System.Text.RegularExpressions.Regex
+            .IsMatch(xml, @"password\s*=\s*""[^""]+""", System.Text.RegularExpressions.RegexOptions.IgnoreCase)
+            .Should().BeFalse("demo/overlay must not embed password=\"…\" literals");
+    }
+
+    private static string FindRepositoryRoot()
+    {
+        for (var directory = new DirectoryInfo(AppContext.BaseDirectory); directory is not null; directory = directory.Parent)
+        {
+            if (File.Exists(Path.Combine(directory.FullName, "kafka2ch.sln")))
+            {
+                return directory.FullName;
+            }
+        }
+
+        throw new InvalidOperationException("Repository root with kafka2ch.sln was not found.");
+    }
+
     private static void UseNamedCollection(KafkaSettingsConfig kafka)
     {
         kafka.BrokerList = null;
