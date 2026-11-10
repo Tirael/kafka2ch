@@ -12,7 +12,7 @@ PublishOrders  →  Kafka + Schema Registry
               ReadAggregates (лог агрегатов)
 ```
 
-Подробности архитектуры и решений — в [PLAN.md](PLAN.md). ATAM-разбор trade-off'ов и рисков — в [docs/architecture-tradeoff-analysis.md](docs/architecture-tradeoff-analysis.md). Архитектурные решения (ADR) — в [docs/adr/](docs/adr/), выбор пути ingestion — [ADR-0001](docs/adr/0001-ingestion-path.md).
+Подробности архитектуры и решений — в [PLAN.md](PLAN.md). ATAM-разбор trade-off'ов и рисков — в [docs/architecture-tradeoff-analysis.md](docs/architecture-tradeoff-analysis.md). Архитектурные решения (ADR) — в [docs/adr/](docs/adr/), выбор пути ingestion — [ADR-0001](docs/adr/0001-ingestion-path.md) (**Accepted**, путь A / Kafka engine).
 
 ## Требования
 
